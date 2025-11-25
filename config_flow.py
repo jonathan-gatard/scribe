@@ -19,10 +19,14 @@ from .const import (
     CONF_EXCLUDE_ENTITIES,
     CONF_RECORD_STATES,
     CONF_RECORD_EVENTS,
+    CONF_BATCH_SIZE,
+    CONF_FLUSH_INTERVAL,
     DEFAULT_CHUNK_TIME_INTERVAL,
     DEFAULT_COMPRESS_AFTER,
     DEFAULT_RECORD_STATES,
     DEFAULT_RECORD_EVENTS,
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_FLUSH_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -59,6 +63,10 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
         )
+
+    async def async_step_import(self, user_input=None) -> FlowResult:
+        """Handle import from YAML."""
+        return await self.async_step_user(user_input)
 
     def _validate_connection(self, db_url):
         """Validate the database connection."""
@@ -100,6 +108,18 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_COMPRESS_AFTER, DEFAULT_COMPRESS_AFTER
                         ),
                     ): selector.TextSelector(),
+                    vol.Optional(
+                        CONF_BATCH_SIZE,
+                        default=self.config_entry.options.get(
+                            CONF_BATCH_SIZE, DEFAULT_BATCH_SIZE
+                        ),
+                    ): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=10000)),
+                    vol.Optional(
+                        CONF_FLUSH_INTERVAL,
+                        default=self.config_entry.options.get(
+                            CONF_FLUSH_INTERVAL, DEFAULT_FLUSH_INTERVAL
+                        ),
+                    ): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=60, unit_of_measurement="seconds")),
                     vol.Optional(
                         CONF_RECORD_STATES,
                         default=self.config_entry.options.get(

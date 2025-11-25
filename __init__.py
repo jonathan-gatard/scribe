@@ -37,17 +37,47 @@ from .writer import ScribeWriter
 
 _LOGGER = logging.getLogger(__name__)
 
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers import discovery
+
+CONFIG_SCHEMA = vol.Schema(
+    {
+        DOMAIN: vol.Schema(
+            {
+                vol.Required(CONF_DB_URL): cv.string,
+                vol.Optional(CONF_CHUNK_TIME_INTERVAL, default=DEFAULT_CHUNK_TIME_INTERVAL): cv.string,
+                vol.Optional(CONF_COMPRESS_AFTER, default=DEFAULT_COMPRESS_AFTER): cv.string,
+                vol.Optional(CONF_RECORD_STATES, default=DEFAULT_RECORD_STATES): cv.boolean,
+                vol.Optional(CONF_RECORD_EVENTS, default=DEFAULT_RECORD_EVENTS): cv.boolean,
+                vol.Optional(CONF_BATCH_SIZE, default=DEFAULT_BATCH_SIZE): cv.positive_int,
+                vol.Optional(CONF_FLUSH_INTERVAL, default=DEFAULT_FLUSH_INTERVAL): cv.positive_int,
+                vol.Optional(CONF_INCLUDE_DOMAINS, default=[]): vol.All(cv.ensure_list, [cv.string]),
+                vol.Optional(CONF_INCLUDE_ENTITIES, default=[]): vol.All(cv.ensure_list, [cv.entity_id]),
+                vol.Optional(CONF_EXCLUDE_DOMAINS, default=[]): vol.All(cv.ensure_list, [cv.string]),
+                vol.Optional(CONF_EXCLUDE_ENTITIES, default=[]): vol.All(cv.ensure_list, [cv.entity_id]),
+            }
+        )
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Scribe component from YAML."""
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN]["yaml_config"] = config.get(DOMAIN, {})
+    
+    if DOMAIN in config:
+        hass.async_create_task(
+            hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=config[DOMAIN]
+            )
+        )
+    
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Scribe from a config entry."""
     config = entry.data
     options = entry.options
-    yaml_config = hass.data.get(DOMAIN, {}).get("yaml_config", {})
 
     db_url = config[CONF_DB_URL]
     chunk_interval = options.get(CONF_CHUNK_TIME_INTERVAL, config.get(CONF_CHUNK_TIME_INTERVAL, DEFAULT_CHUNK_TIME_INTERVAL))
@@ -55,9 +85,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     record_states = options.get(CONF_RECORD_STATES, config.get(CONF_RECORD_STATES, DEFAULT_RECORD_STATES))
     record_events = options.get(CONF_RECORD_EVENTS, config.get(CONF_RECORD_EVENTS, DEFAULT_RECORD_EVENTS))
     
-    # Advanced Config (YAML only)
-    batch_size = yaml_config.get(CONF_BATCH_SIZE, DEFAULT_BATCH_SIZE)
-    flush_interval = yaml_config.get(CONF_FLUSH_INTERVAL, DEFAULT_FLUSH_INTERVAL)
+    # Advanced Config
+    batch_size = options.get(CONF_BATCH_SIZE, config.get(CONF_BATCH_SIZE, DEFAULT_BATCH_SIZE))
+    flush_interval = options.get(CONF_FLUSH_INTERVAL, config.get(CONF_FLUSH_INTERVAL, DEFAULT_FLUSH_INTERVAL))
 
     # Entity Filter
     include_domains = options.get(CONF_INCLUDE_DOMAINS, [])

@@ -27,6 +27,8 @@
                 "data": {
                     "chunk_time_interval": "Chunk Time Interval",
                     "compress_after": "Compress After",
+                    "batch_size": "Batch Size (Events)",
+                    "flush_interval": "Flush Interval (Seconds)",
                     "record_states": "Record States",
                     "record_events": "Record Events",
                     "include_domains": "Include Domains",

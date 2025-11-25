@@ -43,13 +43,25 @@ It is designed as a lightweight, "set-and-forget" alternative to the built-in Re
     - **Record Events**: Enable to record automation triggers, service calls, etc. (default: False).
 
 ### Advanced Configuration (YAML)
-For advanced tuning (optional), you can add the following to your `configuration.yaml`:
+Scribe supports full configuration via `configuration.yaml`. This is useful if you prefer "Infrastructure as Code" or want to configure advanced settings not available in the initial setup flow.
 
 ```yaml
 scribe:
-  batch_size: 100        # Number of events to buffer before writing (default: 100)
-  flush_interval: 5      # Seconds to wait before flushing buffer (default: 5)
+  db_url: postgresql://user:password@host:5432/dbname
+  chunk_time_interval: 30 days
+  compress_after: 7 days
+  record_states: true
+  record_events: false
+  batch_size: 100        # Number of events to buffer before writing
+  flush_interval: 5      # Seconds to wait before flushing buffer
+  include_domains:
+    - sensor
+    - switch
+  exclude_entities:
+    - sensor.noisy_sensor
 ```
+
+**Note**: If you configure Scribe via YAML, the settings will be imported into the UI config entry. You can still modify them later via the UI "Configure" button.
 
 ## 📊 Database Schema
 
