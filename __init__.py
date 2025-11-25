@@ -132,8 +132,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Start writer
     writer.start()
     
+    from .coordinator import ScribeDataUpdateCoordinator
+    
+    coordinator = None
+    if options.get(CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS):
+        coordinator = ScribeDataUpdateCoordinator(hass, writer)
+        await coordinator.async_config_entry_first_refresh()
+
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = writer
+    hass.data[DOMAIN][entry.entry_id] = {
+        "writer": writer,
+        "coordinator": coordinator
+    }
 
     # Forward setup to platforms
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "binary_sensor"])
@@ -217,6 +227,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor", "binary_sensor"])
     if unload_ok:
-        writer = hass.data[DOMAIN].pop(entry.entry_id)
+        data = hass.data[DOMAIN].pop(entry.entry_id)
+        writer = data["writer"]
         await hass.async_add_executor_job(writer.shutdown, None)
     return unload_ok

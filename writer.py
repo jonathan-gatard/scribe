@@ -203,13 +203,48 @@ class ScribeWriter(threading.Thread):
             _LOGGER.debug(f"Flushed {len(batch)} items in {duration:.3f}s")
             
         except Exception as e:
-            _LOGGER.error(f"Error flushing buffer: {e}")
+            _LOGGER.error(f"Error inserting batch: {e}")
             with self._lock:
                 self._connected = False
                 self._last_error = str(e)
-            # Put items back in queue? For now, we drop them to avoid memory explosion
-            # But in a real robust system, we might retry.
-            # For Scribe, we prioritize stability of HA over data loss.
+
+    def get_db_stats(self):
+        """Fetch database statistics."""
+        stats = {}
+        if not self._engine:
+            return stats
+            
+        try:
+            with self._engine.connect() as conn:
+                # States Table Stats
+                if self.record_states:
+                    try:
+                        # Size
+                        res = conn.execute(text(f"SELECT hypertable_size('{self.table_name_states}')")).scalar()
+                        stats["states_size_bytes"] = res
+                        
+                        # Compression Stats
+                        res = conn.execute(text(f"SELECT total_chunks, compressed_chunks, compressed_total_bytes, uncompressed_total_bytes FROM hypertable_compression_stats('{self.table_name_states}')")).fetchone()
+                        if res:
+                            stats["states_total_chunks"] = res[0]
+                            stats["states_compressed_chunks"] = res[1]
+                            stats["states_compressed_bytes"] = res[2]
+                            stats["states_uncompressed_bytes"] = res[3]
+                    except Exception:
+                        pass # Likely not a hypertable or no compression yet
+
+                # Events Table Stats
+                if self.record_events:
+                    try:
+                        res = conn.execute(text(f"SELECT hypertable_size('{self.table_name_events}')")).scalar()
+                        stats["events_size_bytes"] = res
+                    except Exception:
+                        pass
+
+        except Exception as e:
+            _LOGGER.error(f"Error fetching stats: {e}")
+            
+        return stats
     def shutdown(self, event):
         """Shutdown the handler."""
         self.running = False

@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -21,13 +21,22 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Scribe sensors."""
-    writer = hass.data[DOMAIN][entry.entry_id]
+    writer = hass.data[DOMAIN][entry.entry_id]["writer"]
+    coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
     
     entities = [
         ScribeEventsWrittenSensor(writer, entry),
         ScribeBufferSizeSensor(writer, entry),
         ScribeWriteDurationSensor(writer, entry),
     ]
+    
+    # Add Statistics Sensors if enabled
+    if entry.options.get(CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS) and coordinator:
+        entities.extend([
+            ScribeDatabaseSizeSensor(coordinator, entry, "states_size_bytes", "States Table Size"),
+            ScribeCompressionRatioSensor(coordinator, entry, "states_compression", "States Compression Ratio"),
+            ScribeCompressedSizeSensor(coordinator, entry, "states_compressed_bytes", "States Compressed Size"),
+        ])
     
     async_add_entities(entities, True)
 
@@ -51,6 +60,70 @@ class ScribeSensor(SensorEntity):
     def available(self) -> bool:
         """Return True if writer is running."""
         return self._writer.running
+
+class ScribeCoordinatorSensor(CoordinatorEntity, SensorEntity):
+    """Base class for Scribe coordinator sensors."""
+    
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, entry, key, name):
+        """Initialize."""
+        super().__init__(coordinator)
+        self._entry = entry
+        self._key = key
+        self._attr_unique_id = f"{entry.entry_id}_{key}"
+        self._attr_name = name
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": "Scribe",
+            "manufacturer": "Jonathan Gatard",
+        }
+
+class ScribeDatabaseSizeSensor(ScribeCoordinatorSensor):
+    """Sensor for DB size."""
+    
+    _attr_native_unit_of_measurement = "B"
+    _attr_device_class = "data_size"
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_icon = "mdi:database"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get(self._key)
+
+class ScribeCompressedSizeSensor(ScribeCoordinatorSensor):
+    """Sensor for Compressed DB size."""
+    
+    _attr_native_unit_of_measurement = "B"
+    _attr_device_class = "data_size"
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_icon = "mdi:zip-box"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get(self._key)
+
+class ScribeCompressionRatioSensor(ScribeCoordinatorSensor):
+    """Sensor for Compression Ratio."""
+    
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:ratio"
+
+    @property
+    def native_value(self):
+        data = self.coordinator.data
+        uncompressed = data.get("states_uncompressed_bytes", 0)
+        compressed = data.get("states_compressed_bytes", 0)
+        
+        if not uncompressed or not compressed:
+            return None
+            
+        # Ratio: How much space saved? Or compression ratio?
+        # Typically ratio = uncompressed / compressed (e.g. 10x)
+        # Or percentage saved = (1 - compressed/uncompressed) * 100
+        
+        return round((1 - (compressed / uncompressed)) * 100, 1)
 
 class ScribeEventsWrittenSensor(ScribeSensor):
     """Sensor for total events written."""
