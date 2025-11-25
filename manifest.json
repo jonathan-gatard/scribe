@@ -8,7 +8,9 @@
         "@jonathan-gatard"
     ],
     "requirements": [
-        "psycopg2-binary>=2.9.0"
+        "psycopg2-binary>=2.9.0",
+        "sqlalchemy>=2.0.0"
     ],
+    "config_flow": true,
     "iot_class": "local_push"
 }

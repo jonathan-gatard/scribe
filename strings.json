@@ -1,0 +1,33 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Configure Chronicle",
+                "description": "Enter your TimescaleDB connection details.",
+                "data": {
+                    "db_url": "Database URL (postgresql://user:pass@host/db)",
+                    "table_name": "Table Name",
+                    "chunk_time_interval": "Chunk Time Interval (e.g., 7 days)",
+                    "compress_after": "Compress After (e.g., 14 days)"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Failed to connect to the database. Check your URL."
+        },
+        "abort": {
+            "already_configured": "Chronicle is already configured."
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Chronicle Options",
+                "data": {
+                    "chunk_time_interval": "Chunk Time Interval",
+                    "compress_after": "Compress After"
+                }
+            }
+        }
+    }
+}
