@@ -2,6 +2,10 @@
 import pytest
 from unittest.mock import MagicMock
 
+@pytest.fixture(autouse=True)
+def auto_enable_custom_integrations(enable_custom_integrations):
+    yield
+
 @pytest.fixture
 def mock_setup_entry():
     """Mock setup entry."""

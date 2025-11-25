@@ -3,7 +3,7 @@ import logging
 import voluptuous as vol
 from sqlalchemy import create_engine, text
 from homeassistant import config_entries
-from homeassistant.core import callback
+from homeassistant.core import callback, HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import selector
@@ -134,7 +134,8 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry):
         """Initialize options flow."""
-        self.config_entry = config_entry
+        # self.config_entry is set by the parent class in recent HA versions
+        pass
 
     async def async_step_init(self, user_input=None) -> FlowResult:
         """Manage the options."""

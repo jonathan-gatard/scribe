@@ -4,6 +4,7 @@ from __future__ import annotations
 from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
+    SensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -125,17 +126,18 @@ class ScribeCompressionRatioSensor(ScribeCoordinatorSensor):
         
         return round((1 - (compressed / uncompressed)) * 100, 1)
 
+
 class ScribeEventsWrittenSensor(ScribeSensor):
     """Sensor for total events written."""
 
     def __init__(self, writer, entry):
         super().__init__(writer, entry)
-        self.entity_description = type("EntityDescription", (), {
-            "key": "events_written",
-            "name": "Events Written",
-            "icon": "mdi:database-plus",
-            "state_class": SensorStateClass.TOTAL_INCREASING,
-        })
+        self.entity_description = SensorEntityDescription(
+            key="events_written",
+            name="Events Written",
+            icon="mdi:database-plus",
+            state_class=SensorStateClass.TOTAL_INCREASING,
+        )
 
     @property
     def native_value(self):
@@ -147,12 +149,12 @@ class ScribeBufferSizeSensor(ScribeSensor):
 
     def __init__(self, writer, entry):
         super().__init__(writer, entry)
-        self.entity_description = type("EntityDescription", (), {
-            "key": "buffer_size",
-            "name": "Buffer Size",
-            "icon": "mdi:buffer",
-            "state_class": SensorStateClass.MEASUREMENT,
-        })
+        self.entity_description = SensorEntityDescription(
+            key="buffer_size",
+            name="Buffer Size",
+            icon="mdi:buffer",
+            state_class=SensorStateClass.MEASUREMENT,
+        )
 
     @property
     def native_value(self):
@@ -165,13 +167,13 @@ class ScribeWriteDurationSensor(ScribeSensor):
 
     def __init__(self, writer, entry):
         super().__init__(writer, entry)
-        self.entity_description = type("EntityDescription", (), {
-            "key": "write_duration",
-            "name": "Last Write Duration",
-            "icon": "mdi:timer-sand",
-            "state_class": SensorStateClass.MEASUREMENT,
-            "native_unit_of_measurement": "s",
-        })
+        self.entity_description = SensorEntityDescription(
+            key="write_duration",
+            name="Last Write Duration",
+            icon="mdi:timer-sand",
+            state_class=SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement="s",
+        )
 
     @property
     def native_value(self):

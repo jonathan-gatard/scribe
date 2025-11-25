@@ -4,6 +4,7 @@ from __future__ import annotations
 from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
     BinarySensorDeviceClass,
+    BinarySensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -41,10 +42,10 @@ class ScribeConnectionBinarySensor(BinarySensorEntity):
             "name": "Scribe",
             "manufacturer": "Jonathan Gatard",
         }
-        self.entity_description = type("EntityDescription", (), {
-            "key": "connected",
-            "name": "Database Connection",
-        })
+        self.entity_description = BinarySensorEntityDescription(
+            key="connected",
+            name="Database Connection",
+        )
 
     @property
     def is_on(self) -> bool:

@@ -61,10 +61,10 @@ class ScribeWriter(threading.Thread):
 
     def enqueue(self, data):
         """Add data to the queue."""
-        with self.lock:
-            self.queue.append(data)
+        with self._lock:
+            self._queue.append(data)
             
-        if len(self.queue) >= self.batch_size:
+        if len(self._queue) >= self.batch_size:
             self._flush()
 
     def _connect(self):
@@ -160,11 +160,11 @@ class ScribeWriter(threading.Thread):
 
     def _flush(self):
         """Flush the queue to the database."""
-        with self.lock:
-            if not self.queue:
+        with self._lock:
+            if not self._queue:
                 return
-            batch = list(self.queue)
-            self.queue = []
+            batch = list(self._queue)
+            self._queue = []
 
         if not self._engine:
             self._connect()

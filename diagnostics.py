@@ -7,9 +7,9 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_DB_URL
+from .const import CONF_DB_URL, CONF_DB_PASSWORD, CONF_DB_USER
 
-TO_REDACT = {CONF_DB_URL}
+TO_REDACT = {CONF_DB_URL, CONF_DB_PASSWORD, CONF_DB_USER}
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry

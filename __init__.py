@@ -33,6 +33,7 @@ from .const import (
     CONF_TABLE_NAME_STATES,
     CONF_TABLE_NAME_EVENTS,
     CONF_DEBUG,
+    CONF_ENABLE_STATISTICS,
     DEFAULT_CHUNK_TIME_INTERVAL,
     DEFAULT_COMPRESS_AFTER,
     DEFAULT_RECORD_STATES,
@@ -42,6 +43,7 @@ from .const import (
     DEFAULT_TABLE_NAME_STATES,
     DEFAULT_TABLE_NAME_EVENTS,
     DEFAULT_DEBUG,
+    DEFAULT_ENABLE_STATISTICS,
 )
 from .writer import ScribeWriter
 
@@ -128,9 +130,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         exclude_entities,
     )
 
-    writer = ScribeWriter(hass, db_url, chunk_interval, compress_after, record_states, record_events, batch_size, flush_interval, table_name_states, table_name_events)
-    
-    # Initialize DB (async)
+    # Determine record_states and record_events for handle_event
+    record_states = options.get(CONF_RECORD_STATES, config.get(CONF_RECORD_STATES, DEFAULT_RECORD_STATES))
+    record_events = options.get(CONF_RECORD_EVENTS, config.get(CONF_RECORD_EVENTS, DEFAULT_RECORD_EVENTS))
+
+    # Initialize Writer
+    writer = ScribeWriter(
+        hass=hass,
+        db_url=db_url,
+        chunk_interval=chunk_interval,
+        compress_after=compress_after,
+        record_states=record_states,
+        record_events=record_events,
+        batch_size=options.get(CONF_BATCH_SIZE, config.get(CONF_BATCH_SIZE, DEFAULT_BATCH_SIZE)),
+        flush_interval=options.get(CONF_FLUSH_INTERVAL, config.get(CONF_FLUSH_INTERVAL, DEFAULT_FLUSH_INTERVAL)),
+        table_name_states=table_name_states,
+        table_name_events=table_name_events
+    )
     await hass.async_add_executor_job(writer.init_db)
     
     # Start writer
