@@ -56,6 +56,7 @@ scribe:
   flush_interval: 5      # Seconds to wait before flushing buffer
   table_name_states: states   # Custom table name for states
   table_name_events: events   # Custom table name for events
+  debug: true                 # Enable debug logging (default: false)
   include_domains:
     - sensor
     - switch
