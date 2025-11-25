@@ -74,6 +74,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.data.setdefault(DOMAIN, {})
     
     if DOMAIN in config:
+        hass.data[DOMAIN]["yaml_config"] = config[DOMAIN]
         hass.async_create_task(
             hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=config[DOMAIN]
@@ -88,14 +89,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     options = entry.options
 
     db_url = config[CONF_DB_URL]
-    chunk_interval = options.get(CONF_CHUNK_TIME_INTERVAL, config.get(CONF_CHUNK_TIME_INTERVAL, DEFAULT_CHUNK_TIME_INTERVAL))
-    compress_after = options.get(CONF_COMPRESS_AFTER, config.get(CONF_COMPRESS_AFTER, DEFAULT_COMPRESS_AFTER))
+    # Advanced Config (YAML Only)
+    yaml_config = hass.data[DOMAIN].get("yaml_config", {})
+    chunk_interval = yaml_config.get(CONF_CHUNK_TIME_INTERVAL, DEFAULT_CHUNK_TIME_INTERVAL)
+    compress_after = yaml_config.get(CONF_COMPRESS_AFTER, DEFAULT_COMPRESS_AFTER)
+    
+    # Options Flow Config
     record_states = options.get(CONF_RECORD_STATES, config.get(CONF_RECORD_STATES, DEFAULT_RECORD_STATES))
     record_events = options.get(CONF_RECORD_EVENTS, config.get(CONF_RECORD_EVENTS, DEFAULT_RECORD_EVENTS))
     
-    # Advanced Config
+    # Advanced Config (Options Flow)
     batch_size = options.get(CONF_BATCH_SIZE, config.get(CONF_BATCH_SIZE, DEFAULT_BATCH_SIZE))
     flush_interval = options.get(CONF_FLUSH_INTERVAL, config.get(CONF_FLUSH_INTERVAL, DEFAULT_FLUSH_INTERVAL))
+    
+    # YAML Only
     table_name_states = yaml_config.get(CONF_TABLE_NAME_STATES, DEFAULT_TABLE_NAME_STATES)
     table_name_events = yaml_config.get(CONF_TABLE_NAME_EVENTS, DEFAULT_TABLE_NAME_EVENTS)
     debug_mode = yaml_config.get(CONF_DEBUG, DEFAULT_DEBUG)

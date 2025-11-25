@@ -57,11 +57,13 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_DB_URL, default="postgresql://user:password@host:5432/db"): cv.string,
-                    vol.Optional(CONF_CHUNK_TIME_INTERVAL, default=DEFAULT_CHUNK_TIME_INTERVAL): cv.string,
-                    vol.Optional(CONF_COMPRESS_AFTER, default=DEFAULT_COMPRESS_AFTER): cv.string,
-                    vol.Optional(CONF_RECORD_STATES, default=DEFAULT_RECORD_STATES): selector.BooleanSelector(),
-                    vol.Optional(CONF_RECORD_EVENTS, default=DEFAULT_RECORD_EVENTS): selector.BooleanSelector(),
+                    vol.Required(CONF_DB_URL): str,
+                    vol.Optional(
+                        CONF_RECORD_STATES, default=DEFAULT_RECORD_STATES
+                    ): bool,
+                    vol.Optional(
+                        CONF_RECORD_EVENTS, default=DEFAULT_RECORD_EVENTS
+                    ): bool,
                 }
             ),
             errors=errors,
@@ -104,18 +106,6 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Optional(
-                        CONF_CHUNK_TIME_INTERVAL,
-                        default=self.config_entry.options.get(
-                            CONF_CHUNK_TIME_INTERVAL, DEFAULT_CHUNK_TIME_INTERVAL
-                        ),
-                    ): selector.TextSelector(),
-                    vol.Optional(
-                        CONF_COMPRESS_AFTER,
-                        default=self.config_entry.options.get(
-                            CONF_COMPRESS_AFTER, DEFAULT_COMPRESS_AFTER
-                        ),
-                    ): selector.TextSelector(),
                     vol.Optional(
                         CONF_BATCH_SIZE,
                         default=self.config_entry.options.get(

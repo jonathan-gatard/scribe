@@ -42,16 +42,16 @@ It is designed as a lightweight, "set-and-forget" alternative to the built-in Re
     - **Record States**: Enable to record sensor history (default: True).
     - **Record Events**: Enable to record automation triggers, service calls, etc. (default: False).
 
-### Advanced Configuration (YAML)
-Scribe supports full configuration via `configuration.yaml`. This is useful if you prefer "Infrastructure as Code" or want to configure advanced settings not available in the initial setup flow.
+### Advanced Configuration (YAML Only)
+Some advanced settings are only available via `configuration.yaml`:
 
 ```yaml
 scribe:
   db_url: postgresql://user:password@host:5432/dbname
-  chunk_time_interval: 30 days
-  compress_after: 7 days
-  record_states: true
-  record_events: false
+  chunk_time_interval: 30 days # Optional, default: 7 days
+  compress_after: 7 days # Optional, default: 60 days
+  record_states: true # Optional, default: true
+  record_events: false # Optional, default: false
   batch_size: 100        # Number of events to buffer before writing
   flush_interval: 5      # Seconds to wait before flushing buffer
   table_name_states: states   # Custom table name for states
