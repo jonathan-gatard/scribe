@@ -5,11 +5,14 @@
                 "title": "Configure Scribe",
                 "description": "Scribe stores your Home Assistant history in TimescaleDB.\n\nFor more information, see the [TimescaleDB Documentation](https://docs.timescale.com/).",
                 "data": {
-                    "db_url": "Database URL (postgresql://user:pass@host:5432/db)",
-                    "chunk_time_interval": "Chunk Time Interval (e.g., 30 days)",
-                    "compress_after": "Compress After (e.g., 7 days)",
+                    "db_host": "Database Host",
+                    "db_port": "Database Port",
+                    "db_user": "Database User",
+                    "db_password": "Database Password",
+                    "db_name": "Database Name",
                     "record_states": "Record States (Sensor History)",
-                    "record_events": "Record Events (Automation Triggers, etc.)"
+                    "record_events": "Record Events (Automation Triggers, etc.)",
+                    "enable_statistics": "Enable Statistics"
                 }
             }
         },
@@ -32,6 +35,7 @@
                     "flush_interval": "Flush Interval (Seconds)",
                     "record_states": "Record States",
                     "record_events": "Record Events",
+                    "enable_statistics": "Enable Statistics",
                     "include_domains": "Include Domains",
                     "include_entities": "Include Entities",
                     "exclude_domains": "Exclude Domains",

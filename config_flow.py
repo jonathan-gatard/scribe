@@ -10,7 +10,11 @@ from homeassistant.helpers import selector
 
 from .const import (
     DOMAIN,
-    CONF_DB_URL,
+    CONF_DB_HOST,
+    CONF_DB_PORT,
+    CONF_DB_USER,
+    CONF_DB_PASSWORD,
+    CONF_DB_NAME,
     CONF_CHUNK_TIME_INTERVAL,
     CONF_COMPRESS_AFTER,
     CONF_INCLUDE_DOMAINS,
@@ -29,6 +33,9 @@ from .const import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_FLUSH_INTERVAL,
     DEFAULT_ENABLE_STATISTICS,
+    DEFAULT_DB_PORT,
+    DEFAULT_DB_USER,
+    DEFAULT_DB_NAME,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,7 +55,7 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 try:
                     await self.hass.async_add_executor_job(
-                        self._validate_connection, user_input[CONF_DB_URL]
+                        self.validate_input, self.hass, user_input
                     )
                     return self.async_create_entry(title="Scribe", data=user_input)
                 except Exception as e:
@@ -57,12 +64,16 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_DB_URL): str,
-                    vol.Optional(
-                        CONF_RECORD_STATES, default=DEFAULT_RECORD_STATES
-                    ): bool,
+            data_schema = vol.Schema(
+            {
+                vol.Required(CONF_DB_HOST): str,
+                vol.Required(CONF_DB_PORT, default=DEFAULT_DB_PORT): int,
+                vol.Required(CONF_DB_USER, default=DEFAULT_DB_USER): str,
+                vol.Required(CONF_DB_PASSWORD): str,
+                vol.Required(CONF_DB_NAME, default=DEFAULT_DB_NAME): str,
+                vol.Optional(
+                    CONF_RECORD_STATES, default=DEFAULT_RECORD_STATES
+                ): bool,
                     vol.Optional(
                         CONF_RECORD_EVENTS, default=DEFAULT_RECORD_EVENTS
                     ): bool,
@@ -78,11 +89,39 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle import from YAML."""
         return await self.async_step_user(user_input)
 
-    def _validate_connection(self, db_url):
-        """Validate the database connection."""
-        engine = create_engine(db_url)
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+    @staticmethod
+    def validate_input(hass: HomeAssistant, data: dict) -> dict:
+        """Validate the user input allows us to connect.
+
+        Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
+        """
+        db_url = f"postgresql://{data[CONF_DB_USER]}:{data[CONF_DB_PASSWORD]}@{data[CONF_DB_HOST]}:{data[CONF_DB_PORT]}/{data[CONF_DB_NAME]}"
+        
+        try:
+            engine = create_engine(db_url)
+            with engine.connect() as conn:
+                pass
+        except Exception:
+            # Try to connect to postgres db to create the target db
+            postgres_url = f"postgresql://{data[CONF_DB_USER]}:{data[CONF_DB_PASSWORD]}@{data[CONF_DB_HOST]}:{data[CONF_DB_PORT]}/postgres"
+            try:
+                engine = create_engine(postgres_url, isolation_level="AUTOCOMMIT")
+                with engine.connect() as conn:
+                    # Check if db exists
+                    res = conn.execute(text(f"SELECT 1 FROM pg_database WHERE datname = '{data[CONF_DB_NAME]}'"))
+                    if not res.fetchone():
+                        conn.execute(text(f"CREATE DATABASE {data[CONF_DB_NAME]}"))
+                
+                # Verify connection to new db
+                engine = create_engine(db_url)
+                with engine.connect() as conn:
+                    pass
+                    
+            except Exception as e:
+                _LOGGER.error(f"Database connection failed: {e}")
+                raise InvalidAuth
+
+        return {"title": "Scribe"}
 
     @staticmethod
     @callback

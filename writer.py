@@ -171,18 +171,15 @@ class ScribeWriter(threading.Thread):
             if not self._engine:
                 return
 
+        start_time = time.time()
         try:
             # Separate batches
             states_data = [x for x in batch if x['type'] == 'state']
             events_data = [x for x in batch if x['type'] == 'event']
 
-            with self._engine.raw_connection() as conn:
-                with conn.cursor() as cursor:
-                    
-                    # Insert States
+            with self._engine.connect() as conn:
+                with conn.begin():
                     if states_data:
-                        sql = f"""
-                            INSERT INTO {self.table_name_states} (time, entity_id, state, value, attributes)
                         conn.execute(
                             text(f"INSERT INTO {self.table_name_states} (time, entity_id, state, value, attributes) VALUES (:time, :entity_id, :state, :value, :attributes)"),
                             states_data
