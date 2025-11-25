@@ -135,6 +135,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = writer
 
+    # Forward setup to platforms
+    await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "binary_sensor"])
+
     # Listener
     async def handle_event(event: Event):
         """Handle incoming events."""
@@ -193,6 +196,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.bus.async_listen(EVENT_HOMEASSISTANT_STOP, writer.shutdown)
     )
     
+    # Services
+    async def handle_flush(call):
+        """Handle flush service."""
+        await hass.async_add_executor_job(writer._flush)
+        
+    hass.services.async_register(DOMAIN, "flush", handle_flush)
+
     # Reload entry when options change
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
@@ -205,6 +215,8 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    writer = hass.data[DOMAIN].pop(entry.entry_id)
-    await hass.async_add_executor_job(writer.shutdown, None)
-    return True
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor", "binary_sensor"])
+    if unload_ok:
+        writer = hass.data[DOMAIN].pop(entry.entry_id)
+        await hass.async_add_executor_job(writer.shutdown, None)
+    return unload_ok

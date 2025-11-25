@@ -35,8 +35,17 @@ class ScribeWriter(threading.Thread):
         self.table_name_states = table_name_states
         self.table_name_events = table_name_events
         
-        self.queue = []
-        self.lock = threading.Lock()
+        # Stats
+        self._events_written = 0
+        self._last_write_duration = 0.0
+        self._connected = False
+        self._last_error = None
+        
+        self._queue = []
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread = None
+        
         self.running = True
         self.daemon = True
         
@@ -174,31 +183,33 @@ class ScribeWriter(threading.Thread):
                     if states_data:
                         sql = f"""
                             INSERT INTO {self.table_name_states} (time, entity_id, state, value, attributes)
-                            VALUES %s
-                        """
-                        values = [
-                            (x['time'], x['entity_id'], x['state'], x['value'], x['attributes'])
-                            for x in states_data
-                        ]
-                        execute_values(cursor, sql, values)
-
-                    # Insert Events
+                        conn.execute(
+                            text(f"INSERT INTO {self.table_name_states} (time, entity_id, state, value, attributes) VALUES (:time, :entity_id, :state, :value, :attributes)"),
+                            states_data
+                        )
                     if events_data:
-                        sql = f"""
-                            INSERT INTO {self.table_name_events} (time, event_type, event_data, origin, context_id, context_user_id, context_parent_id)
-                            VALUES %s
-                        """
-                        values = [
-                            (x['time'], x['event_type'], x['event_data'], x['origin'], x['context_id'], x['context_user_id'], x['context_parent_id'])
-                            for x in events_data
-                        ]
-                        execute_values(cursor, sql, values)
-                        
-                conn.commit()
+                        conn.execute(
+                            text(f"INSERT INTO {self.table_name_events} (time, event_type, event_data, origin, context_id, context_user_id, context_parent_id) VALUES (:time, :event_type, :event_data, :origin, :context_id, :context_user_id, :context_parent_id)"),
+                            events_data
+                        )
+            
+            duration = time.time() - start_time
+            with self._lock:
+                self._events_written += len(batch)
+                self._last_write_duration = duration
+                self._connected = True
+                self._last_error = None
+                
+            _LOGGER.debug(f"Flushed {len(batch)} items in {duration:.3f}s")
             
         except Exception as e:
-            _LOGGER.error(f"Error inserting batch: {e}")
-
+            _LOGGER.error(f"Error flushing buffer: {e}")
+            with self._lock:
+                self._connected = False
+                self._last_error = str(e)
+            # Put items back in queue? For now, we drop them to avoid memory explosion
+            # But in a real robust system, we might retry.
+            # For Scribe, we prioritize stability of HA over data loss.
     def shutdown(self, event):
         """Shutdown the handler."""
         self.running = False
