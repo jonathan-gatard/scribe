@@ -5,10 +5,8 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, Event
-from homeassistant.const import (
     EVENT_STATE_CHANGED,
     EVENT_HOMEASSISTANT_STOP,
-    EVENT_TIME_CHANGED,
 )
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.entityfilter import generate_filter
@@ -134,10 +132,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Handle incoming events."""
         event_type = event.event_type
         
-        # Skip time changes (too noisy)
-        if event_type == EVENT_TIME_CHANGED:
-            return
-
         # Handle States
         if event_type == EVENT_STATE_CHANGED:
             if not record_states:

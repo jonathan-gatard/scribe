@@ -1,0 +1,43 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "配置 Scribe",
+                "description": "Scribe 将您的 Home Assistant 历史记录存储在 TimescaleDB 中。\n\n有关更多信息，请参阅 [TimescaleDB 文档](https://docs.timescale.com/)。",
+                "data": {
+                    "db_url": "数据库 URL (postgresql://user:pass@host:5432/db)",
+                    "chunk_time_interval": "块时间间隔 (例如 30 days)",
+                    "compress_after": "压缩时间 (例如 7 days)",
+                    "record_states": "记录状态 (传感器历史)",
+                    "record_events": "记录事件 (自动化触发器等)"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "无法连接到数据库。请检查您的 URL。",
+            "must_record_something": "您必须至少选择一个记录选项 (状态或事件)。"
+        },
+        "abort": {
+            "already_configured": "Scribe 已配置。"
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Scribe 选项",
+                "data": {
+                    "chunk_time_interval": "块时间间隔",
+                    "compress_after": "压缩时间",
+                    "batch_size": "批处理大小 (事件)",
+                    "flush_interval": "刷新间隔 (秒)",
+                    "record_states": "记录状态",
+                    "record_events": "记录事件",
+                    "include_domains": "包含域",
+                    "include_entities": "包含实体",
+                    "exclude_domains": "排除域",
+                    "exclude_entities": "排除实体"
+                }
+            }
+        }
+    }
+}

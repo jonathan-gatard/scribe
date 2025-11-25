@@ -1,0 +1,43 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Configurar Scribe",
+                "description": "O Scribe armazena o histórico do Home Assistant no TimescaleDB.\n\nPara mais informações, consulte a [Documentação do TimescaleDB](https://docs.timescale.com/).",
+                "data": {
+                    "db_url": "URL da Base de Dados (postgresql://user:pass@host:5432/db)",
+                    "chunk_time_interval": "Intervalo de Chunk (ex: 30 days)",
+                    "compress_after": "Comprimir Após (ex: 7 days)",
+                    "record_states": "Gravar Estados (Histórico de Sensores)",
+                    "record_events": "Gravar Eventos (Gatilhos de Automação, etc.)"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Falha ao conectar à base de dados. Verifique o URL.",
+            "must_record_something": "Deve selecionar pelo menos uma opção de gravação (Estados ou Eventos)."
+        },
+        "abort": {
+            "already_configured": "O Scribe já está configurado."
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Opções do Scribe",
+                "data": {
+                    "chunk_time_interval": "Intervalo de Chunk",
+                    "compress_after": "Comprimir Após",
+                    "batch_size": "Tamanho do Lote (Eventos)",
+                    "flush_interval": "Intervalo de Flush (Segundos)",
+                    "record_states": "Gravar Estados",
+                    "record_events": "Gravar Eventos",
+                    "include_domains": "Incluir Domínios",
+                    "include_entities": "Incluir Entidades",
+                    "exclude_domains": "Excluir Domínios",
+                    "exclude_entities": "Excluir Entidades"
+                }
+            }
+        }
+    }
+}

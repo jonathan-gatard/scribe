@@ -1,0 +1,43 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Konfigurera Scribe",
+                "description": "Scribe lagrar din Home Assistant-historik i TimescaleDB.\n\nFör mer information, se [TimescaleDB-dokumentationen](https://docs.timescale.com/).",
+                "data": {
+                    "db_url": "Databas-URL (postgresql://user:pass@host:5432/db)",
+                    "chunk_time_interval": "Chunk-tidsintervall (t.ex. 30 days)",
+                    "compress_after": "Komprimera efter (t.ex. 7 days)",
+                    "record_states": "Spela in tillstånd (Sensorhistorik)",
+                    "record_events": "Spela in händelser (Automationsutlösare, etc.)"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Kunde inte ansluta till databasen. Kontrollera din URL.",
+            "must_record_something": "Du måste välja minst ett inspelningsalternativ (Tillstånd eller Händelser)."
+        },
+        "abort": {
+            "already_configured": "Scribe är redan konfigurerat."
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Scribe-alternativ",
+                "data": {
+                    "chunk_time_interval": "Chunk-tidsintervall",
+                    "compress_after": "Komprimera efter",
+                    "batch_size": "Batchstorlek (Händelser)",
+                    "flush_interval": "Flush-intervall (Sekunder)",
+                    "record_states": "Spela in tillstånd",
+                    "record_events": "Spela in händelser",
+                    "include_domains": "Inkludera domäner",
+                    "include_entities": "Inkludera enheter",
+                    "exclude_domains": "Exkludera domäner",
+                    "exclude_entities": "Exkludera enheter"
+                }
+            }
+        }
+    }
+}
