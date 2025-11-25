@@ -1,8 +1,8 @@
 {
-    "domain": "chronicle",
-    "name": "Chronicle",
+    "domain": "scribe",
+    "name": "Scribe",
     "version": "1.0.0",
-    "documentation": "https://github.com/jonathan-gatard/homeassistant_recorder_timescaledb",
+    "documentation": "https://github.com/jonathan-gatard/scribe",
     "dependencies": [],
     "codeowners": [
         "@jonathan-gatard"

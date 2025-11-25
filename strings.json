@@ -2,13 +2,14 @@
     "config": {
         "step": {
             "user": {
-                "title": "Configure Chronicle",
-                "description": "Chronicle stores your Home Assistant history in TimescaleDB.\n\nFor more information on configuration options, see the [TimescaleDB Documentation](https://docs.timescale.com/).",
+                "title": "Configure Scribe",
+                "description": "Scribe stores your Home Assistant history in TimescaleDB.\n\nFor more information, see the [TimescaleDB Documentation](https://docs.timescale.com/).",
                 "data": {
                     "db_url": "Database URL (postgresql://user:pass@host/db)",
-                    "table_name": "Table Name",
-                    "chunk_time_interval": "Chunk Time Interval (e.g., 7 days)",
-                    "compress_after": "Compress After (e.g., 14 days)"
+                    "chunk_time_interval": "Chunk Time Interval (e.g., 30 days)",
+                    "compress_after": "Compress After (e.g., 7 days)",
+                    "record_states": "Record States (Sensor History)",
+                    "record_events": "Record Events (Automation Triggers, etc.)"
                 }
             }
         },
@@ -16,16 +17,18 @@
             "cannot_connect": "Failed to connect to the database. Check your URL."
         },
         "abort": {
-            "already_configured": "Chronicle is already configured."
+            "already_configured": "Scribe is already configured."
         }
     },
     "options": {
         "step": {
             "init": {
-                "title": "Chronicle Options",
+                "title": "Scribe Options",
                 "data": {
                     "chunk_time_interval": "Chunk Time Interval",
                     "compress_after": "Compress After",
+                    "record_states": "Record States",
+                    "record_events": "Record Events",
                     "include_domains": "Include Domains",
                     "include_entities": "Include Entities",
                     "exclude_domains": "Exclude Domains",

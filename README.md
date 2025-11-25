@@ -1,42 +1,43 @@
-# Chronicle
+# Scribe
 
-**Chronicle** is a high-performance custom component for Home Assistant that stores your history and long-term statistics in **TimescaleDB**.
+**Scribe** is a high-performance custom component for Home Assistant that records your history and long-term statistics directly into **TimescaleDB** (PostgreSQL).
 
-It is designed to be a lightweight, "set-and-forget" alternative to the built-in Recorder or other custom components like LTSS.
+It is designed as a lightweight, "set-and-forget" alternative to the built-in Recorder, optimized for long-term data retention and analysis in Grafana.
 
 ## 🚀 Features
 
-- **UI Configuration**: Fully configurable via Home Assistant's Integrations page.
-- **Entity Filtering**: Select exactly which entities or domains to record via the UI.
-- **Automatic Hypertables**: Automatically converts your table to a TimescaleDB hypertable.
-- **Native Compression**: Automatically enables TimescaleDB compression to save massive amounts of disk space (up to 95%).
-- **Performance**: Uses `SQLAlchemy` and batch inserts for minimal impact on Home Assistant's performance.
+- **Performance**: Uses `SQLAlchemy` and batch inserts for minimal impact on Home Assistant.
+- **Efficient Storage**: Automatically uses **TimescaleDB Hypertables** and **Native Compression** (up to 95% storage savings).
+- **Flexible Schema**: Uses `JSONB` for attributes, allowing for a flexible schema that is still fully queryable.
+- **Configurable**: Choose to record **States**, **Events**, or both. Filter entities and domains via the UI.
+- **UI Configuration**: Fully managed via Home Assistant's Integrations page.
 
 ## 📦 Installation
 
 ### Option 1: HACS (Recommended)
 1.  Open HACS.
 2.  Go to "Integrations" > "Custom repositories".
-3.  Add `https://github.com/jonathan-gatard/chronicle` as an Integration.
+3.  Add `https://github.com/jonathan-gatard/scribe` as an Integration.
 4.  Click "Download".
 5.  Restart Home Assistant.
 
 ### Option 2: Manual
-1.  Copy the `custom_components/chronicle` folder to your Home Assistant `config/custom_components/` directory.
+1.  Copy the `custom_components/scribe` folder to your Home Assistant `config/custom_components/` directory.
 2.  Restart Home Assistant.
 
 ## ⚙️ Configuration
 
 1.  Go to **Settings > Devices & Services**.
 2.  Click **Add Integration**.
-3.  Search for **Chronicle**.
+3.  Search for **Scribe**.
 4.  Enter your PostgreSQL / TimescaleDB connection details:
     - **Database URL**: `postgresql://user:password@host:5432/dbname`
-    - **Table Name**: `chronicle_events` (default)
-    - **Chunk Interval**: `7 days` (default)
-    - **Compress After**: `14 days` (default)
+    - **Chunk Interval**: `30 days` (default)
+    - **Compress After**: `7 days` (default)
+    - **Record States**: Enable to record sensor history (default: True).
+    - **Record Events**: Enable to record automation triggers, service calls, etc. (default: False).
 
-### Options
+### Advanced Options
 Click "Configure" on the integration card to change settings later:
 - **Include/Exclude Domains**: Filter by domain (e.g., `sensor`, `switch`).
 - **Include/Exclude Entities**: Filter specific entities.
@@ -44,27 +45,68 @@ Click "Configure" on the integration card to change settings later:
 
 ## 📊 Database Schema
 
-Chronicle creates a single table (default: `chronicle_events`) with the following schema:
+Scribe creates two tables (if enabled): `states` and `events`.
+
+### `states` Table
+Stores the history of your entities (sensors, lights, etc.).
 
 | Column       | Type             | Description                                      |
 | :----------- | :--------------- | :----------------------------------------------- |
-| `time`       | `TIMESTAMPTZ`    | Timestamp of the event (indexed, partitioning key)|
+| `time`       | `TIMESTAMPTZ`    | Timestamp of the state change (Primary Key)      |
 | `entity_id`  | `TEXT`           | Entity ID (e.g., `sensor.temperature`)           |
-| `state`      | `TEXT`           | Raw state value                                  |
+| `state`      | `TEXT`           | Raw state value (e.g., "20.5", "on")             |
 | `value`      | `DOUBLE PRECISION`| Numeric value of the state (NULL if non-numeric) |
-| `attributes` | `JSONB`          | Full attributes of the state                     |
+| `attributes` | `JSONB`          | Full attributes (friendly_name, unit, etc.)      |
 
-## 📈 Grafana Example
+### `events` Table
+Stores system events (automation triggers, service calls, etc.).
 
-Visualize your data in Grafana using PostgreSQL/TimescaleDB as the data source:
+| Column            | Type             | Description                                      |
+| :---------------- | :--------------- | :----------------------------------------------- |
+| `time`            | `TIMESTAMPTZ`    | Timestamp of the event (Primary Key)             |
+| `event_type`      | `TEXT`           | Type of event (e.g., `call_service`)             |
+| `event_data`      | `JSONB`          | Full event data payload                          |
+| `origin`          | `TEXT`           | Origin of the event (LOCAL, REMOTE)              |
+| `context_id`      | `TEXT`           | Context ID for tracing                           |
+| `context_user_id` | `TEXT`           | User ID who triggered the event                  |
 
+## 📈 Grafana Examples
+
+### Plot a Sensor Value
 ```sql
 SELECT
   time AS "time",
   value
-FROM chronicle_events
+FROM states
 WHERE
   entity_id = 'sensor.temperature'
   AND $__timeFilter(time)
 ORDER BY time
+```
+
+### Query Attributes (JSONB)
+Extract specific attributes like battery level:
+```sql
+SELECT
+  time AS "time",
+  (attributes->>'battery_level')::float as battery
+FROM states
+WHERE
+  entity_id = 'sensor.motion_sensor'
+  AND attributes->>'battery_level' IS NOT NULL
+  AND $__timeFilter(time)
+ORDER BY time
+```
+
+### Count Automations Triggered
+```sql
+SELECT
+  time_bucket('1 hour', time) AS "time",
+  count(*) as triggers
+FROM events
+WHERE
+  event_type = 'automation_triggered'
+  AND $__timeFilter(time)
+GROUP BY 1
+ORDER BY 1
 ```
