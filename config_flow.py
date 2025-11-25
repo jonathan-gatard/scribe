@@ -158,4 +158,5 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
                     ): selector.EntitySelector(selector.EntitySelectorConfig(multiple=True)),
                 }
             ),
+            errors=errors,
         )
