@@ -14,6 +14,10 @@ from .const import (
     CONF_TABLE_NAME,
     CONF_CHUNK_TIME_INTERVAL,
     CONF_COMPRESS_AFTER,
+    CONF_INCLUDE_DOMAINS,
+    CONF_INCLUDE_ENTITIES,
+    CONF_EXCLUDE_DOMAINS,
+    CONF_EXCLUDE_ENTITIES,
     DEFAULT_TABLE_NAME,
     DEFAULT_CHUNK_TIME_INTERVAL,
     DEFAULT_COMPRESS_AFTER,
@@ -66,6 +70,8 @@ class ChronicleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Get the options flow for this handler."""
         return ChronicleOptionsFlowHandler(config_entry)
 
+from homeassistant.helpers import selector
+
 class ChronicleOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options flow for Chronicle."""
 
@@ -87,13 +93,29 @@ class ChronicleOptionsFlowHandler(config_entries.OptionsFlow):
                         default=self.config_entry.options.get(
                             CONF_CHUNK_TIME_INTERVAL, DEFAULT_CHUNK_TIME_INTERVAL
                         ),
-                    ): cv.string,
+                    ): selector.TextSelector(),
                     vol.Optional(
                         CONF_COMPRESS_AFTER,
                         default=self.config_entry.options.get(
                             CONF_COMPRESS_AFTER, DEFAULT_COMPRESS_AFTER
                         ),
-                    ): cv.string,
+                    ): selector.TextSelector(),
+                    vol.Optional(
+                        CONF_INCLUDE_DOMAINS,
+                        default=self.config_entry.options.get(CONF_INCLUDE_DOMAINS, []),
+                    ): selector.TextSelector(selector.TextSelectorConfig(multiple=True)),
+                    vol.Optional(
+                        CONF_INCLUDE_ENTITIES,
+                        default=self.config_entry.options.get(CONF_INCLUDE_ENTITIES, []),
+                    ): selector.EntitySelector(selector.EntitySelectorConfig(multiple=True)),
+                    vol.Optional(
+                        CONF_EXCLUDE_DOMAINS,
+                        default=self.config_entry.options.get(CONF_EXCLUDE_DOMAINS, []),
+                    ): selector.TextSelector(selector.TextSelectorConfig(multiple=True)),
+                    vol.Optional(
+                        CONF_EXCLUDE_ENTITIES,
+                        default=self.config_entry.options.get(CONF_EXCLUDE_ENTITIES, []),
+                    ): selector.EntitySelector(selector.EntitySelectorConfig(multiple=True)),
                 }
             ),
         )

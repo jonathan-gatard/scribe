@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, Event
 from homeassistant.const import EVENT_STATE_CHANGED, EVENT_HOMEASSISTANT_STOP
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers.entityfilter import generate_filter
 
 from .const import (
     DOMAIN,
@@ -18,6 +19,10 @@ from .const import (
     CONF_TABLE_NAME,
     CONF_CHUNK_TIME_INTERVAL,
     CONF_COMPRESS_AFTER,
+    CONF_INCLUDE_DOMAINS,
+    CONF_INCLUDE_ENTITIES,
+    CONF_EXCLUDE_DOMAINS,
+    CONF_EXCLUDE_ENTITIES,
     DEFAULT_TABLE_NAME,
     DEFAULT_CHUNK_TIME_INTERVAL,
     DEFAULT_COMPRESS_AFTER,
@@ -42,7 +47,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     chunk_interval = options.get(CONF_CHUNK_TIME_INTERVAL, config.get(CONF_CHUNK_TIME_INTERVAL, DEFAULT_CHUNK_TIME_INTERVAL))
     compress_after = options.get(CONF_COMPRESS_AFTER, config.get(CONF_COMPRESS_AFTER, DEFAULT_COMPRESS_AFTER))
 
-    handler = ChronicleHandler(hass, db_url, table_name, chunk_interval, compress_after)
+    # Entity Filter
+    include_domains = options.get(CONF_INCLUDE_DOMAINS, [])
+    include_entities = options.get(CONF_INCLUDE_ENTITIES, [])
+    exclude_domains = options.get(CONF_EXCLUDE_DOMAINS, [])
+    exclude_entities = options.get(CONF_EXCLUDE_ENTITIES, [])
+    
+    entity_filter = generate_filter(
+        include_domains,
+        include_entities,
+        exclude_domains,
+        exclude_entities,
+    )
+
+    handler = ChronicleHandler(hass, db_url, table_name, chunk_interval, compress_after, entity_filter)
     
     # Initialize DB (async)
     await hass.async_add_executor_job(handler.init_db)
@@ -60,8 +78,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(
         hass.bus.async_listen(EVENT_HOMEASSISTANT_STOP, handler.shutdown)
     )
+    
+    # Reload entry when options change
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     return True
+
+async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload config entry."""
+    await async_unload_entry(hass, entry)
+    await async_setup_entry(hass, entry)
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
@@ -72,7 +98,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 class ChronicleHandler(threading.Thread):
     """Handle database connections and writing."""
 
-    def __init__(self, hass, db_url, table_name, chunk_interval, compress_after):
+    def __init__(self, hass, db_url, table_name, chunk_interval, compress_after, entity_filter):
         """Initialize the handler."""
         threading.Thread.__init__(self)
         self.hass = hass
@@ -80,6 +106,7 @@ class ChronicleHandler(threading.Thread):
         self.table_name = table_name
         self.chunk_interval = chunk_interval
         self.compress_after = compress_after
+        self.entity_filter = entity_filter
         
         self.queue = []
         self.lock = threading.Lock()
@@ -104,8 +131,8 @@ class ChronicleHandler(threading.Thread):
         if new_state is None:
             return
 
-        # Simple filter for now (can be enhanced with options)
-        # if not self.entity_filter(entity_id): return
+        if not self.entity_filter(entity_id):
+            return
 
         try:
             state_val = float(new_state.state)

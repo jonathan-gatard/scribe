@@ -25,7 +25,11 @@
                 "title": "Chronicle Options",
                 "data": {
                     "chunk_time_interval": "Chunk Time Interval",
-                    "compress_after": "Compress After"
+                    "compress_after": "Compress After",
+                    "include_domains": "Include Domains",
+                    "include_entities": "Include Entities",
+                    "exclude_domains": "Exclude Domains",
+                    "exclude_entities": "Exclude Entities"
                 }
             }
         }
