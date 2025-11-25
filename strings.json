@@ -14,7 +14,8 @@
             }
         },
         "error": {
-            "cannot_connect": "Failed to connect to the database. Check your URL."
+            "cannot_connect": "Failed to connect to the database. Check your URL.",
+            "must_record_something": "You must select at least one recording option (States or Events)."
         },
         "abort": {
             "already_configured": "Scribe is already configured."

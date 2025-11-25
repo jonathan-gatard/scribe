@@ -8,7 +8,6 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from psycopg2.extras import execute_values
 
-from .models import Base, State, Event
 from .const import (
     DEFAULT_CHUNK_TIME_INTERVAL,
     DEFAULT_COMPRESS_AFTER,
@@ -22,7 +21,7 @@ FLUSH_INTERVAL = 5
 class ScribeWriter(threading.Thread):
     """Handle database connections and writing."""
 
-    def __init__(self, hass, db_url, chunk_interval, compress_after, record_states, record_events, batch_size, flush_interval):
+    def __init__(self, hass, db_url, chunk_interval, compress_after, record_states, record_events, batch_size, flush_interval, table_name_states, table_name_events):
         """Initialize the writer."""
         threading.Thread.__init__(self)
         self.hass = hass
@@ -33,6 +32,8 @@ class ScribeWriter(threading.Thread):
         self.record_events = record_events
         self.batch_size = batch_size
         self.flush_interval = flush_interval
+        self.table_name_states = table_name_states
+        self.table_name_events = table_name_events
         
         self.queue = []
         self.lock = threading.Lock()
@@ -40,7 +41,6 @@ class ScribeWriter(threading.Thread):
         self.daemon = True
         
         self._engine = None
-        self._session = None
 
     def run(self):
         """Thread main loop."""
@@ -72,17 +72,50 @@ class ScribeWriter(threading.Thread):
         if not self._engine:
             return
 
-        # Create tables
-        Base.metadata.create_all(self._engine)
-
         with self._engine.connect() as conn:
             # States Table
             if self.record_states:
-                self._init_hypertable(conn, "states", "entity_id")
+                try:
+                    conn.execute(text(f"""
+                        CREATE TABLE IF NOT EXISTS {self.table_name_states} (
+                            time TIMESTAMPTZ NOT NULL,
+                            entity_id TEXT NOT NULL,
+                            state TEXT,
+                            value DOUBLE PRECISION,
+                            attributes JSONB
+                        );
+                    """))
+                    conn.execute(text(f"""
+                        CREATE INDEX IF NOT EXISTS {self.table_name_states}_entity_time_idx 
+                        ON {self.table_name_states} (entity_id, time DESC);
+                    """))
+                    self._init_hypertable(conn, self.table_name_states, "entity_id")
+                except Exception as e:
+                    _LOGGER.error(f"Error creating states table: {e}")
 
             # Events Table
             if self.record_events:
-                self._init_hypertable(conn, "events", "event_type")
+                try:
+                    conn.execute(text(f"""
+                        CREATE TABLE IF NOT EXISTS {self.table_name_events} (
+                            time TIMESTAMPTZ NOT NULL,
+                            event_type TEXT NOT NULL,
+                            event_data JSONB,
+                            origin TEXT,
+                            context_id TEXT,
+                            context_user_id TEXT,
+                            context_parent_id TEXT
+                        );
+                    """))
+                    conn.execute(text(f"""
+                        CREATE INDEX IF NOT EXISTS {self.table_name_events}_type_time_idx 
+                        ON {self.table_name_events} (event_type, time DESC);
+                    """))
+                    self._init_hypertable(conn, self.table_name_events, "event_type")
+                except Exception as e:
+                    _LOGGER.error(f"Error creating events table: {e}")
+            
+            conn.commit()
 
     def _init_hypertable(self, conn, table_name, segment_by):
         """Initialize hypertable and compression for a table."""
@@ -139,8 +172,8 @@ class ScribeWriter(threading.Thread):
                     
                     # Insert States
                     if states_data:
-                        sql = """
-                            INSERT INTO states (time, entity_id, state, value, attributes)
+                        sql = f"""
+                            INSERT INTO {self.table_name_states} (time, entity_id, state, value, attributes)
                             VALUES %s
                         """
                         values = [
@@ -151,8 +184,8 @@ class ScribeWriter(threading.Thread):
 
                     # Insert Events
                     if events_data:
-                        sql = """
-                            INSERT INTO events (time, event_type, event_data, origin, context_id, context_user_id, context_parent_id)
+                        sql = f"""
+                            INSERT INTO {self.table_name_events} (time, event_type, event_data, origin, context_id, context_user_id, context_parent_id)
                             VALUES %s
                         """
                         values = [

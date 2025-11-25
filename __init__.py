@@ -26,12 +26,16 @@ from .const import (
     CONF_RECORD_EVENTS,
     CONF_BATCH_SIZE,
     CONF_FLUSH_INTERVAL,
+    CONF_TABLE_NAME_STATES,
+    CONF_TABLE_NAME_EVENTS,
     DEFAULT_CHUNK_TIME_INTERVAL,
     DEFAULT_COMPRESS_AFTER,
     DEFAULT_RECORD_STATES,
     DEFAULT_RECORD_EVENTS,
     DEFAULT_BATCH_SIZE,
     DEFAULT_FLUSH_INTERVAL,
+    DEFAULT_TABLE_NAME_STATES,
+    DEFAULT_TABLE_NAME_EVENTS,
 )
 from .writer import ScribeWriter
 
@@ -51,6 +55,8 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(CONF_RECORD_EVENTS, default=DEFAULT_RECORD_EVENTS): cv.boolean,
                 vol.Optional(CONF_BATCH_SIZE, default=DEFAULT_BATCH_SIZE): cv.positive_int,
                 vol.Optional(CONF_FLUSH_INTERVAL, default=DEFAULT_FLUSH_INTERVAL): cv.positive_int,
+                vol.Optional(CONF_TABLE_NAME_STATES, default=DEFAULT_TABLE_NAME_STATES): cv.string,
+                vol.Optional(CONF_TABLE_NAME_EVENTS, default=DEFAULT_TABLE_NAME_EVENTS): cv.string,
                 vol.Optional(CONF_INCLUDE_DOMAINS, default=[]): vol.All(cv.ensure_list, [cv.string]),
                 vol.Optional(CONF_INCLUDE_ENTITIES, default=[]): vol.All(cv.ensure_list, [cv.entity_id]),
                 vol.Optional(CONF_EXCLUDE_DOMAINS, default=[]): vol.All(cv.ensure_list, [cv.string]),
@@ -88,6 +94,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Advanced Config
     batch_size = options.get(CONF_BATCH_SIZE, config.get(CONF_BATCH_SIZE, DEFAULT_BATCH_SIZE))
     flush_interval = options.get(CONF_FLUSH_INTERVAL, config.get(CONF_FLUSH_INTERVAL, DEFAULT_FLUSH_INTERVAL))
+    table_name_states = yaml_config.get(CONF_TABLE_NAME_STATES, DEFAULT_TABLE_NAME_STATES)
+    table_name_events = yaml_config.get(CONF_TABLE_NAME_EVENTS, DEFAULT_TABLE_NAME_EVENTS)
 
     # Entity Filter
     include_domains = options.get(CONF_INCLUDE_DOMAINS, [])
@@ -102,7 +110,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         exclude_entities,
     )
 
-    writer = ScribeWriter(hass, db_url, chunk_interval, compress_after, record_states, record_events, batch_size, flush_interval)
+    writer = ScribeWriter(hass, db_url, chunk_interval, compress_after, record_states, record_events, batch_size, flush_interval, table_name_states, table_name_events)
     
     # Initialize DB (async)
     await hass.async_add_executor_job(writer.init_db)
