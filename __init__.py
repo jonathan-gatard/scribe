@@ -24,29 +24,40 @@ from .const import (
     CONF_EXCLUDE_ENTITIES,
     CONF_RECORD_STATES,
     CONF_RECORD_EVENTS,
+    CONF_BATCH_SIZE,
+    CONF_FLUSH_INTERVAL,
     DEFAULT_CHUNK_TIME_INTERVAL,
     DEFAULT_COMPRESS_AFTER,
     DEFAULT_RECORD_STATES,
     DEFAULT_RECORD_EVENTS,
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_FLUSH_INTERVAL,
 )
 from .writer import ScribeWriter
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the Scribe component from YAML (not supported)."""
+    """Set up the Scribe component from YAML."""
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN]["yaml_config"] = config.get(DOMAIN, {})
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Scribe from a config entry."""
     config = entry.data
     options = entry.options
+    yaml_config = hass.data.get(DOMAIN, {}).get("yaml_config", {})
 
     db_url = config[CONF_DB_URL]
     chunk_interval = options.get(CONF_CHUNK_TIME_INTERVAL, config.get(CONF_CHUNK_TIME_INTERVAL, DEFAULT_CHUNK_TIME_INTERVAL))
     compress_after = options.get(CONF_COMPRESS_AFTER, config.get(CONF_COMPRESS_AFTER, DEFAULT_COMPRESS_AFTER))
     record_states = options.get(CONF_RECORD_STATES, config.get(CONF_RECORD_STATES, DEFAULT_RECORD_STATES))
     record_events = options.get(CONF_RECORD_EVENTS, config.get(CONF_RECORD_EVENTS, DEFAULT_RECORD_EVENTS))
+    
+    # Advanced Config (YAML only)
+    batch_size = yaml_config.get(CONF_BATCH_SIZE, DEFAULT_BATCH_SIZE)
+    flush_interval = yaml_config.get(CONF_FLUSH_INTERVAL, DEFAULT_FLUSH_INTERVAL)
 
     # Entity Filter
     include_domains = options.get(CONF_INCLUDE_DOMAINS, [])
@@ -61,7 +72,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         exclude_entities,
     )
 
-    writer = ScribeWriter(hass, db_url, chunk_interval, compress_after, record_states, record_events)
+    writer = ScribeWriter(hass, db_url, chunk_interval, compress_after, record_states, record_events, batch_size, flush_interval)
     
     # Initialize DB (async)
     await hass.async_add_executor_job(writer.init_db)

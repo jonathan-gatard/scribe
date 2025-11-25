@@ -1,5 +1,9 @@
 # Scribe
 
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/jonathan-gatard/scribe?style=for-the-badge)](https://github.com/jonathan-gatard/scribe/releases)
+[![License](https://img.shields.io/github/license/jonathan-gatard/scribe?style=for-the-badge)](LICENSE)
+
 **Scribe** is a high-performance custom component for Home Assistant that records your history and long-term statistics directly into **TimescaleDB** (PostgreSQL).
 
 It is designed as a lightweight, "set-and-forget" alternative to the built-in Recorder, optimized for long-term data retention and analysis in Grafana.
@@ -27,6 +31,7 @@ It is designed as a lightweight, "set-and-forget" alternative to the built-in Re
 
 ## ⚙️ Configuration
 
+### Basic Configuration (UI)
 1.  Go to **Settings > Devices & Services**.
 2.  Click **Add Integration**.
 3.  Search for **Scribe**.
@@ -37,11 +42,14 @@ It is designed as a lightweight, "set-and-forget" alternative to the built-in Re
     - **Record States**: Enable to record sensor history (default: True).
     - **Record Events**: Enable to record automation triggers, service calls, etc. (default: False).
 
-### Advanced Options
-Click "Configure" on the integration card to change settings later:
-- **Include/Exclude Domains**: Filter by domain (e.g., `sensor`, `switch`).
-- **Include/Exclude Entities**: Filter specific entities.
-- **Compression Settings**: Adjust chunk intervals and compression policies.
+### Advanced Configuration (YAML)
+For advanced tuning (optional), you can add the following to your `configuration.yaml`:
+
+```yaml
+scribe:
+  batch_size: 100        # Number of events to buffer before writing (default: 100)
+  flush_interval: 5      # Seconds to wait before flushing buffer (default: 5)
+```
 
 ## 📊 Database Schema
 
@@ -98,15 +106,6 @@ WHERE
 ORDER BY time
 ```
 
-### Count Automations Triggered
-```sql
-SELECT
-  time_bucket('1 hour', time) AS "time",
-  count(*) as triggers
-FROM events
-WHERE
-  event_type = 'automation_triggered'
-  AND $__timeFilter(time)
-GROUP BY 1
-ORDER BY 1
-```
+## 📄 License
+
+MIT License. See [LICENSE](LICENSE) for details.

@@ -22,7 +22,7 @@ FLUSH_INTERVAL = 5
 class ScribeWriter(threading.Thread):
     """Handle database connections and writing."""
 
-    def __init__(self, hass, db_url, chunk_interval, compress_after, record_states, record_events):
+    def __init__(self, hass, db_url, chunk_interval, compress_after, record_states, record_events, batch_size, flush_interval):
         """Initialize the writer."""
         threading.Thread.__init__(self)
         self.hass = hass
@@ -31,6 +31,8 @@ class ScribeWriter(threading.Thread):
         self.compress_after = compress_after
         self.record_states = record_states
         self.record_events = record_events
+        self.batch_size = batch_size
+        self.flush_interval = flush_interval
         
         self.queue = []
         self.lock = threading.Lock()
@@ -45,7 +47,7 @@ class ScribeWriter(threading.Thread):
         self._connect()
         
         while self.running:
-            time.sleep(FLUSH_INTERVAL)
+            time.sleep(self.flush_interval)
             self._flush()
 
     def enqueue(self, data):
@@ -53,7 +55,7 @@ class ScribeWriter(threading.Thread):
         with self.lock:
             self.queue.append(data)
             
-        if len(self.queue) >= BATCH_SIZE:
+        if len(self.queue) >= self.batch_size:
             self._flush()
 
     def _connect(self):
