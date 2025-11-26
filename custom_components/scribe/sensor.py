@@ -45,7 +45,8 @@ async def async_setup_entry(
     # These sensors rely on the DataUpdateCoordinator to fetch data periodically
     if entry.options.get(CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS) and coordinator:
         entities.extend([
-            ScribeDatabaseSizeSensor(coordinator, entry, "db_size", "Database Size"),
+            ScribeStatesTableSizeSensor(coordinator, entry, "database_states_size", "States Table Size"),
+            ScribeEventsTableSizeSensor(coordinator, entry, "database_events_size", "Events Table Size"),
             ScribeCompressionRatioSensor(coordinator, entry, "states_compression", "States Compression Ratio"),
             ScribeCompressedSizeSensor(coordinator, entry, "states_compressed_bytes", "States Compressed Size"),
         ])
@@ -98,8 +99,8 @@ class ScribeCoordinatorSensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "Jonathan Gatard",
         }
 
-class ScribeDatabaseSizeSensor(ScribeCoordinatorSensor):
-    """Sensor for DB size."""
+class ScribeStatesTableSizeSensor(ScribeCoordinatorSensor):
+    """Sensor for States Table size."""
     
     _attr_native_unit_of_measurement = "B"
     _attr_device_class = "data_size"
@@ -108,9 +109,19 @@ class ScribeDatabaseSizeSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        states_size = self.coordinator.data.get("states_size_bytes", 0) or 0
-        events_size = self.coordinator.data.get("events_size_bytes", 0) or 0
-        return states_size + events_size
+        return self.coordinator.data.get("states_size_bytes", 0)
+
+class ScribeEventsTableSizeSensor(ScribeCoordinatorSensor):
+    """Sensor for Events Table size."""
+    
+    _attr_native_unit_of_measurement = "B"
+    _attr_device_class = "data_size"
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_icon = "mdi:database"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("events_size_bytes", 0)
 
 class ScribeCompressedSizeSensor(ScribeCoordinatorSensor):
     """Sensor for Compressed DB size."""
