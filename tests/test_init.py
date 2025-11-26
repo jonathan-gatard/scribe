@@ -10,6 +10,7 @@ from custom_components.scribe.const import (
     CONF_DB_NAME,
 )
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+import pytest
 
 async def test_setup_unload_entry(hass):
     """Test setting up and unloading a config entry."""

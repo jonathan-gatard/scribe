@@ -97,8 +97,23 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     
     if DOMAIN in config:
         _LOGGER.info("Scribe configuration found in YAML. Verifying setup...")
-        _LOGGER.debug("Found scribe configuration in YAML, triggering import flow")
         hass.data[DOMAIN]["yaml_config"] = config[DOMAIN]
+        
+        # Check if an entry already exists
+        current_entries = hass.config_entries.async_entries(DOMAIN)
+        if current_entries:
+            # Update the existing entry directly to avoid UnknownFlow race condition
+            entry = current_entries[0]
+            _LOGGER.debug(f"Updating existing Scribe entry {entry.entry_id} from YAML")
+            hass.config_entries.async_update_entry(entry, data=config[DOMAIN])
+            # Reload to apply changes if needed (optional, but good practice if options changed)
+            # await hass.config_entries.async_reload(entry.entry_id) 
+            # Note: async_update_entry might trigger reload listeners if configured, 
+            # but usually we rely on the entry setup to pick up changes or a reload.
+            # Since we are in async_setup, the entry might not be loaded yet or is about to be loaded.
+            return True
+
+        _LOGGER.debug("Found scribe configuration in YAML, triggering import flow")
         hass.async_create_task(
             hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=config[DOMAIN]
