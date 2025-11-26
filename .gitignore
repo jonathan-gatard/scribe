@@ -1,5 +1,5 @@
 venv/
-custom_components/
+
 __pycache__/
 .pytest_cache/
 *.pyc

@@ -1,0 +1,43 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Configureer Scribe",
+                "description": "Scribe slaat uw Home Assistant-geschiedenis op in TimescaleDB.\n\nVoor meer informatie, zie de [TimescaleDB Documentatie](https://docs.timescale.com/).",
+                "data": {
+                    "db_url": "Database URL (postgresql://user:pass@host:5432/db)",
+                    "chunk_time_interval": "Chunk Tijdsinterval (bijv. 30 days)",
+                    "compress_after": "Comprimeren Na (bijv. 7 days)",
+                    "record_states": "Staten Opnemen (Sensorgeschiedenis)",
+                    "record_events": "Gebeurtenissen Opnemen (Automatiseringstriggers, enz.)"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Kan geen verbinding maken met de database. Controleer uw URL.",
+            "must_record_something": "U moet ten minste één opnameoptie selecteren (Staten of Gebeurtenissen)."
+        },
+        "abort": {
+            "already_configured": "Scribe is al geconfigureerd."
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Scribe Opties",
+                "data": {
+                    "chunk_time_interval": "Chunk Tijdsinterval",
+                    "compress_after": "Comprimeren Na",
+                    "batch_size": "Batchgrootte (Gebeurtenissen)",
+                    "flush_interval": "Flush Interval (Seconden)",
+                    "record_states": "Staten Opnemen",
+                    "record_events": "Gebeurtenissen Opnemen",
+                    "include_domains": "Domeinen Insluiten",
+                    "include_entities": "Entiteiten Insluiten",
+                    "exclude_domains": "Domeinen Uitsluiten",
+                    "exclude_entities": "Entiteiten Uitsluiten"
+                }
+            }
+        }
+    }
+}
