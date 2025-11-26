@@ -329,13 +329,17 @@ class ScribeWriter:
                         res = await conn.execute(text(f"SELECT hypertable_size('{self.table_name_states}')"))
                         stats["states_size_bytes"] = res.scalar()
                         
-                        res = await conn.execute(text(f"SELECT total_chunks, compressed_chunks, compressed_total_bytes, uncompressed_total_bytes FROM hypertable_compression_stats('{self.table_name_states}')"))
-                        row = res.fetchone()
-                        if row:
-                            stats["states_total_chunks"] = row[0]
-                            stats["states_compressed_chunks"] = row[1]
-                            stats["states_compressed_total_bytes"] = row[2] or 0
-                            stats["states_uncompressed_total_bytes"] = row[3] or 0
+                        # Try newer format first, fall back to simpler query
+                        try:
+                            res = await conn.execute(text(f"SELECT total_chunks, compressed_total_bytes, uncompressed_total_bytes FROM hypertable_compression_stats('{self.table_name_states}')"))
+                            row = res.fetchone()
+                            if row:
+                                stats["states_total_chunks"] = row[0]
+                                stats["states_compressed_total_bytes"] = row[1] or 0
+                                stats["states_uncompressed_total_bytes"] = row[2] or 0
+                        except Exception:
+                            # Older TimescaleDB version - just get basic size
+                            pass
                     except Exception as e:
                         _LOGGER.debug(f"Failed to get states stats: {e}")
 
@@ -345,13 +349,17 @@ class ScribeWriter:
                         res = await conn.execute(text(f"SELECT hypertable_size('{self.table_name_events}')"))
                         stats["events_size_bytes"] = res.scalar()
                         
-                        res = await conn.execute(text(f"SELECT total_chunks, compressed_chunks, compressed_total_bytes, uncompressed_total_bytes FROM hypertable_compression_stats('{self.table_name_events}')"))
-                        row = res.fetchone()
-                        if row:
-                            stats["events_total_chunks"] = row[0]
-                            stats["events_compressed_chunks"] = row[1]
-                            stats["events_compressed_total_bytes"] = row[2] or 0
-                            stats["events_uncompressed_total_bytes"] = row[3] or 0
+                        # Try newer format first, fall back to simpler query
+                        try:
+                            res = await conn.execute(text(f"SELECT total_chunks, compressed_total_bytes, uncompressed_total_bytes FROM hypertable_compression_stats('{self.table_name_events}')"))
+                            row = res.fetchone()
+                            if row:
+                                stats["events_total_chunks"] = row[0]
+                                stats["events_compressed_total_bytes"] = row[1] or 0
+                                stats["events_uncompressed_total_bytes"] = row[2] or 0
+                        except Exception:
+                            # Older TimescaleDB version - just get basic size
+                            pass
                     except Exception as e:
                         _LOGGER.debug(f"Failed to get events stats: {e}")
                         

@@ -1,0 +1,7 @@
+Looking in indexes: https://pypi.org/simple, https://wheels.home-assistant.io/musllinux-index/
+Collecting asyncpg
+  Downloading asyncpg-0.31.0-cp313-cp313-musllinux_1_2_x86_64.whl.metadata (4.4 kB)
+Downloading asyncpg-0.31.0-cp313-cp313-musllinux_1_2_x86_64.whl (3.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.5/3.5 MB 33.6 MB/s  0:00:00
+Installing collected packages: asyncpg
+Successfully installed asyncpg-0.31.0
