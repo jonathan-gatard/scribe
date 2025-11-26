@@ -4,7 +4,7 @@ set -e
 
 PGUSER=${1:-postgres}
 PGHOST=${2:-localhost}
-DB_NAME=${3:-homeassistant}
+DB_NAME=${3:-scribe}
 DB_USER=${4:-scribe}
 DB_PASS=${5:-scribe}
 
