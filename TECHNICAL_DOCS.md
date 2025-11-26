@@ -45,8 +45,10 @@ Scribe is a custom Home Assistant integration designed to offload historical dat
     *   Exposes internal metrics:
         *   `scribe_states_written`: Total state changes written.
         *   `scribe_events_written`: Total events written.
-        *   `scribe_database_states_size`: Size of states table.
-        *   `scribe_database_events_size`: Size of events table.
+        *   `scribe_states_size_before_compression`: Estimated uncompressed size of states table.
+        *   `scribe_states_size_after_compression`: Actual disk size of states table.
+        *   `scribe_events_size_before_compression`: Estimated uncompressed size of events table.
+        *   `scribe_events_size_after_compression`: Actual disk size of events table.
         *   `scribe_buffer_size`: Current queue size.
         *   `scribe_write_duration`: Time taken for last DB write.
         *   `scribe_states_compression_ratio`: Compression efficiency.

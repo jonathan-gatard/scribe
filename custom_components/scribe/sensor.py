@@ -45,10 +45,11 @@ async def async_setup_entry(
     # These sensors rely on the DataUpdateCoordinator to fetch data periodically
     if entry.options.get(CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS) and coordinator:
         entities.extend([
-            ScribeStatesTableSizeSensor(coordinator, entry, "database_states_size", "States Table Size"),
-            ScribeEventsTableSizeSensor(coordinator, entry, "database_events_size", "Events Table Size"),
+            ScribeStatesSizeBeforeCompressionSensor(coordinator, entry, "states_size_before_compression", "States Size (Before Compression)"),
+            ScribeStatesSizeAfterCompressionSensor(coordinator, entry, "states_size_after_compression", "States Size (After Compression)"),
+            ScribeEventsSizeBeforeCompressionSensor(coordinator, entry, "events_size_before_compression", "Events Size (Before Compression)"),
+            ScribeEventsSizeAfterCompressionSensor(coordinator, entry, "events_size_after_compression", "Events Size (After Compression)"),
             ScribeCompressionRatioSensor(coordinator, entry, "states_compression", "States Compression Ratio"),
-            ScribeCompressedSizeSensor(coordinator, entry, "states_compressed_bytes", "States Compressed Size"),
         ])
     
     async_add_entities(entities, True)
@@ -99,8 +100,29 @@ class ScribeCoordinatorSensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "Jonathan Gatard",
         }
 
-class ScribeStatesTableSizeSensor(ScribeCoordinatorSensor):
-    """Sensor for States Table size."""
+class ScribeStatesSizeBeforeCompressionSensor(ScribeCoordinatorSensor):
+    """Sensor for States Table size (Before Compression)."""
+    
+    _attr_native_unit_of_measurement = "B"
+    _attr_device_class = "data_size"
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_icon = "mdi:database-outline"
+
+    @property
+    def native_value(self):
+        # Formula: (Total Size - Compressed Bytes) + Uncompressed Bytes
+        total_size = self.coordinator.data.get("states_size_bytes", 0) or 0
+        compressed_bytes = self.coordinator.data.get("states_compressed_total_bytes", 0) or 0
+        uncompressed_bytes = self.coordinator.data.get("states_uncompressed_total_bytes", 0) or 0
+        
+        # If no compression, total_size is the uncompressed size
+        if compressed_bytes == 0:
+            return total_size
+            
+        return (total_size - compressed_bytes) + uncompressed_bytes
+
+class ScribeStatesSizeAfterCompressionSensor(ScribeCoordinatorSensor):
+    """Sensor for States Table size (After Compression)."""
     
     _attr_native_unit_of_measurement = "B"
     _attr_device_class = "data_size"
@@ -111,8 +133,29 @@ class ScribeStatesTableSizeSensor(ScribeCoordinatorSensor):
     def native_value(self):
         return self.coordinator.data.get("states_size_bytes", 0)
 
-class ScribeEventsTableSizeSensor(ScribeCoordinatorSensor):
-    """Sensor for Events Table size."""
+class ScribeEventsSizeBeforeCompressionSensor(ScribeCoordinatorSensor):
+    """Sensor for Events Table size (Before Compression)."""
+    
+    _attr_native_unit_of_measurement = "B"
+    _attr_device_class = "data_size"
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_icon = "mdi:database-outline"
+
+    @property
+    def native_value(self):
+        # Formula: (Total Size - Compressed Bytes) + Uncompressed Bytes
+        total_size = self.coordinator.data.get("events_size_bytes", 0) or 0
+        compressed_bytes = self.coordinator.data.get("events_compressed_total_bytes", 0) or 0
+        uncompressed_bytes = self.coordinator.data.get("events_uncompressed_total_bytes", 0) or 0
+        
+        # If no compression, total_size is the uncompressed size
+        if compressed_bytes == 0:
+            return total_size
+            
+        return (total_size - compressed_bytes) + uncompressed_bytes
+
+class ScribeEventsSizeAfterCompressionSensor(ScribeCoordinatorSensor):
+    """Sensor for Events Table size (After Compression)."""
     
     _attr_native_unit_of_measurement = "B"
     _attr_device_class = "data_size"
@@ -123,17 +166,7 @@ class ScribeEventsTableSizeSensor(ScribeCoordinatorSensor):
     def native_value(self):
         return self.coordinator.data.get("events_size_bytes", 0)
 
-class ScribeCompressedSizeSensor(ScribeCoordinatorSensor):
-    """Sensor for Compressed DB size."""
-    
-    _attr_native_unit_of_measurement = "B"
-    _attr_device_class = "data_size"
-    _attr_state_class = SensorStateClass.TOTAL
-    _attr_icon = "mdi:zip-box"
 
-    @property
-    def native_value(self):
-        return self.coordinator.data.get(self._key)
 
 class ScribeCompressionRatioSensor(ScribeCoordinatorSensor):
     """Sensor for Compression Ratio."""
@@ -145,8 +178,8 @@ class ScribeCompressionRatioSensor(ScribeCoordinatorSensor):
     @property
     def native_value(self):
         data = self.coordinator.data
-        uncompressed = data.get("states_uncompressed_bytes", 0)
-        compressed = data.get("states_compressed_bytes", 0)
+        uncompressed = data.get("states_uncompressed_total_bytes", 0)
+        compressed = data.get("states_compressed_total_bytes", 0)
         
         if not uncompressed or not compressed:
             return None

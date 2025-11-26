@@ -26,9 +26,9 @@ It is designed as a lightweight, "set-and-forget" alternative to the built-in Re
 | **Storage Engine** | Standard SQL Tables | **Hypertables** (Partitioned by time) |
 | **Compression** | None (Row-based) | **Columnar Compression** (90%+ savings) |
 | **Performance** | Good for recent history | Excellent for aggregations & large datasets |
-| **Integration** | Native UI (Logbook, History) | External Tools (Grafana, pgAdmin) |
+| **Integration** | Native UI (Logbook, History) | External Tools (pgAdmin, etc.) |
 
-**Recommendation**: Run Scribe **in parallel** with the native Recorder. Keep the native recorder retention short (e.g., 7 days) for fast UI performance, and use Scribe for long-term storage and visualization in Grafana.
+**Recommendation**: Run Scribe **in parallel** with the native Recorder. Keep the native recorder retention short (e.g., 7 days) for fast UI performance, and use Scribe for long-term storage.
 
 ## 📦 Installation
 
@@ -149,35 +149,21 @@ Stores system events (automation triggers, service calls, etc.).
 | `context_id`      | `TEXT`           | Context ID for tracing                           |
 | `context_user_id` | `TEXT`           | User ID who triggered the event                  |
 
-## 📈 Grafana Examples
+## 🔍 Available Sensors
 
-A sample dashboard is included in the repository: [`grafana_dashboard.json`](grafana_dashboard.json).
+Scribe provides several sensors to monitor its performance and storage usage (if `enable_statistics` is true):
 
-### Plot a Sensor Value
-```sql
-SELECT
-  time AS "time",
-  value
-FROM states
-WHERE
-  entity_id = 'sensor.temperature'
-  AND $__timeFilter(time)
-ORDER BY time
-```
+*   **States Written**: Total number of state changes recorded.
+*   **Events Written**: Total number of events recorded.
+*   **States Size (Before Compression)**: Estimated size of the states table if it were uncompressed.
+*   **States Size (After Compression)**: Actual size of the states table on disk.
+*   **Events Size (Before Compression)**: Estimated size of the events table if it were uncompressed.
+*   **Events Size (After Compression)**: Actual size of the events table on disk.
+*   **States Compression Ratio**: Percentage of space saved by compression.
+*   **Buffer Size**: Number of events currently in the memory buffer.
+*   **Last Write Duration**: Time taken to perform the last database write.
 
-### Query Attributes (JSONB)
-Extract specific attributes like battery level:
-```sql
-SELECT
-  time AS "time",
-  (attributes->>'battery_level')::float as battery
-FROM states
-WHERE
-  entity_id = 'sensor.motion_sensor'
-  AND attributes->>'battery_level' IS NOT NULL
-  AND $__timeFilter(time)
-ORDER BY time
-```
+
 
 ## ❓ Troubleshooting
 

@@ -91,6 +91,8 @@ class ScribeWriter(threading.Thread):
                 return
             
             self._queue.append(data)
+            if len(self._queue) % 10 == 0:
+                _LOGGER.debug(f"Enqueued item. Queue size: {len(self._queue)}")
             
         if len(self._queue) >= self.batch_size:
             self._flush()
@@ -291,7 +293,7 @@ class ScribeWriter(threading.Thread):
                 # States Table Stats
                 if self.record_states:
                     try:
-                        # Size
+                        # Total Size (Disk Usage)
                         res = conn.execute(text(f"SELECT hypertable_size('{self.table_name_states}')")).scalar()
                         stats["states_size_bytes"] = res
                         
@@ -300,16 +302,25 @@ class ScribeWriter(threading.Thread):
                         if res:
                             stats["states_total_chunks"] = res[0]
                             stats["states_compressed_chunks"] = res[1]
-                            stats["states_compressed_bytes"] = res[2]
-                            stats["states_uncompressed_bytes"] = res[3]
+                            stats["states_compressed_total_bytes"] = res[2] or 0
+                            stats["states_uncompressed_total_bytes"] = res[3] or 0
                     except Exception:
                         pass # Likely not a hypertable or no compression yet
 
                 # Events Table Stats
                 if self.record_events:
                     try:
+                        # Total Size (Disk Usage)
                         res = conn.execute(text(f"SELECT hypertable_size('{self.table_name_events}')")).scalar()
                         stats["events_size_bytes"] = res
+                        
+                        # Compression Stats
+                        res = conn.execute(text(f"SELECT total_chunks, compressed_chunks, compressed_total_bytes, uncompressed_total_bytes FROM hypertable_compression_stats('{self.table_name_events}')")).fetchone()
+                        if res:
+                            stats["events_total_chunks"] = res[0]
+                            stats["events_compressed_chunks"] = res[1]
+                            stats["events_compressed_total_bytes"] = res[2] or 0
+                            stats["events_uncompressed_total_bytes"] = res[3] or 0
                     except Exception:
                         pass
 
