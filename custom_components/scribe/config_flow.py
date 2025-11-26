@@ -60,8 +60,8 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         _LOGGER.debug("Starting async_step_user")
         # Only allow one instance of Scribe
-        if self._async_current_entries():
-            return self.async_abort(reason="single_instance_allowed")
+        await self.async_set_unique_id(DOMAIN)
+        self._abort_if_unique_id_configured()
         
         errors = {}
 
@@ -106,6 +106,11 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         If an instance already exists, we update it with the YAML config (YAML takes precedence).
         """
         # Check if an instance already exists
+        await self.async_set_unique_id(DOMAIN)
+        self._abort_if_unique_id_configured(updates=user_input)
+        
+        # If we get here, it means no entry exists with this unique_id
+        # But we might still want to check existing entries just in case unique_id wasn't set on old ones
         existing_entries = self._async_current_entries()
         if existing_entries:
             # Update the existing entry with YAML config

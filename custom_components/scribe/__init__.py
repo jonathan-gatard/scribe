@@ -95,6 +95,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.data.setdefault(DOMAIN, {})
     
     if DOMAIN in config:
+        _LOGGER.info("Scribe configuration found in YAML. Verifying setup...")
         _LOGGER.debug("Found scribe configuration in YAML, triggering import flow")
         hass.data[DOMAIN]["yaml_config"] = config[DOMAIN]
         hass.async_create_task(
