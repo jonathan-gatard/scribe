@@ -159,13 +159,13 @@ class ScribeStatesWrittenSensor(ScribeSensor):
     """Sensor for total states written."""
 
     def __init__(self, writer, entry):
-        super().__init__(writer, entry)
         self.entity_description = SensorEntityDescription(
             key="states_written",
             name="States Written",
             icon="mdi:database-plus",
             state_class=SensorStateClass.TOTAL_INCREASING,
         )
+        super().__init__(writer, entry)
 
     @property
     def native_value(self):
@@ -176,13 +176,13 @@ class ScribeEventsWrittenSensor(ScribeSensor):
     """Sensor for total events written."""
 
     def __init__(self, writer, entry):
-        super().__init__(writer, entry)
         self.entity_description = SensorEntityDescription(
             key="events_written",
             name="Events Written",
             icon="mdi:database-plus",
             state_class=SensorStateClass.TOTAL_INCREASING,
         )
+        super().__init__(writer, entry)
 
     @property
     def native_value(self):
@@ -193,13 +193,13 @@ class ScribeBufferSizeSensor(ScribeSensor):
     """Sensor for current buffer size."""
 
     def __init__(self, writer, entry):
-        super().__init__(writer, entry)
         self.entity_description = SensorEntityDescription(
             key="buffer_size",
             name="Buffer Size",
             icon="mdi:buffer",
             state_class=SensorStateClass.MEASUREMENT,
         )
+        super().__init__(writer, entry)
 
     @property
     def native_value(self):
@@ -214,7 +214,6 @@ class ScribeWriteDurationSensor(ScribeSensor):
     """Sensor for last write duration."""
 
     def __init__(self, writer, entry):
-        super().__init__(writer, entry)
         self.entity_description = SensorEntityDescription(
             key="write_duration",
             name="Last Write Duration",
@@ -222,6 +221,7 @@ class ScribeWriteDurationSensor(ScribeSensor):
             state_class=SensorStateClass.MEASUREMENT,
             native_unit_of_measurement="s",
         )
+        super().__init__(writer, entry)
 
     @property
     def native_value(self):
