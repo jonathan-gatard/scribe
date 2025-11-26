@@ -50,18 +50,19 @@ It is designed as a lightweight, "set-and-forget" alternative to the built-in Re
 2.  Click **Add Integration**.
 3.  Search for **Scribe**.
 4.  Enter your PostgreSQL / TimescaleDB connection details:
-    - **Database URL**: `postgresql://user:password@host:5432/dbname`
+    - **Database URL**: `postgresql://scribe:password@host:5432/scribe`
     - **Chunk Interval**: `7 days` (default)
     - **Compress After**: `60 days` (default)
     - **Record States**: Enable to record sensor history (default: True).
     - **Record Events**: Enable to record automation triggers, service calls, etc. (default: False).
+    - **Buffer on Failure**: Enable to buffer events when DB is down (default: False).
+    - **Max Queue Size**: Max events to buffer (default: 10000).
 
 ### Advanced Configuration (YAML Only)
 Some advanced settings are only available via `configuration.yaml`:
 
-```yaml
 scribe:
-  db_url: postgresql://user:password@host:5432/dbname
+  db_url: postgresql://scribe:password@host:5432/scribe
   chunk_time_interval: 7 days # Optional, default: 7 days
   compress_after: 60 days # Optional, default: 60 days
   record_states: true # Optional, default: true
@@ -69,6 +70,7 @@ scribe:
   batch_size: 100        # Number of events to buffer before writing
   flush_interval: 5      # Seconds to wait before flushing buffer
   max_queue_size: 10000  # Max events to buffer if DB is down
+  buffer_on_failure: false # Buffer events if DB is down (default: false)
   table_name_states: states   # Custom table name for states
   table_name_events: events   # Custom table name for events
   debug: true                 # Enable debug logging (default: false)
@@ -82,7 +84,25 @@ scribe:
     - icon
 ```
 
+### Database Management Scripts
+The `scripts/` directory contains helper scripts for managing the database:
+- `setup_scribe_db.sh`: Creates the `scribe` database and user.
+- `drop_ha_db.sh`: Drops the `homeassistant` database (use with caution!).
+
 **Note**: If you configure Scribe via YAML, the settings will be imported into the UI config entry. You can still modify them later via the UI "Configure" button.
+
+## 🛠 Services
+
+### `scribe.query`
+Execute read-only SQL queries against the TimescaleDB database directly from Home Assistant.
+
+**Example:**
+```yaml
+service: scribe.query
+data:
+  sql: "SELECT count(*) FROM states WHERE time > NOW() - INTERVAL '1 day'"
+```
+Returns: `{"result": [{"count": 12345}]}`
 
 ## 📊 Database Schema
 

@@ -34,13 +34,22 @@ Scribe is a custom Home Assistant integration designed to offload historical dat
     *   **Queue System**: Events are added to a thread-safe list (`self._queue`) protected by a `threading.Lock`.
     *   **Batch Processing**: Data is flushed to the database in batches (default: 100 items) or periodically (default: 5 seconds).
     *   **Database Management**: Automatically handles table creation, hypertable conversion, and compression policy application on startup.
-    *   **Retry Logic**: If the database is unreachable, the batch is put back into the queue (prepended) to prevent data loss. A `max_queue_size` (default: 10,000) prevents memory exhaustion.
+    *   **Retry Logic**: If the database is unreachable:
+        *   If `buffer_on_failure` is **True**: The batch is put back into the queue (prepended). A `max_queue_size` (default: 10,000) prevents memory exhaustion.
+        *   If `buffer_on_failure` is **False** (default): The batch is dropped to prevent memory buildup.
 3.  **`config_flow.py`**: Handles UI configuration.
     *   Supports standard user flow and import from YAML.
     *   Validates database connections.
     *   **Auto-Creation**: Can automatically create the target database if it doesn't exist (requires `postgres` user privileges).
 4.  **`sensor.py` & `binary_sensor.py`**: Monitoring.
-    *   Exposes internal metrics: Events written, buffer size, write duration, database size, compression ratio.
+    *   Exposes internal metrics:
+        *   `scribe_states_written`: Total state changes written.
+        *   `scribe_events_written`: Total events written.
+        *   `scribe_database_states_size`: Size of states table.
+        *   `scribe_database_events_size`: Size of events table.
+        *   `scribe_buffer_size`: Current queue size.
+        *   `scribe_write_duration`: Time taken for last DB write.
+        *   `scribe_states_compression_ratio`: Compression efficiency.
     *   `binary_sensor` indicates connection status.
 
 ### Data Flow
@@ -160,7 +169,7 @@ We use `pytest` with `pytest-homeassistant-custom-component`.
 ### Continuous Integration (GitHub Actions)
 Located in `.github/workflows/tests.yaml`.
 *   Runs on every `push` and `pull_request`.
-*   **Matrix**: Tests against Python 3.12 and 3.13.
+*   **Matrix**: Tests against Python 3.12, 3.13, and 3.14.
 *   **Steps**:
     1.  Checkout code.
     2.  Install dependencies (`pytest`, `sqlalchemy`, `psycopg2-binary`).
@@ -171,7 +180,7 @@ Located in `.github/workflows/tests.yaml`.
 
 ### `deploy.sh`
 A helper script for local development.
-1.  **Sync**: Copies source files (`*.py`, `translations/`, `manifest.json`) to the Home Assistant `custom_components` directory.
+1.  **Sync**: Copies `custom_components/scribe` to the Home Assistant `custom_components` directory.
 2.  **Clean**: Removes unnecessary dev files (tests, cache) from the target.
 3.  **Restart**: Restarts the Home Assistant container to apply changes.
 
