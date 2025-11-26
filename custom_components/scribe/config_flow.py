@@ -109,12 +109,20 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         If an instance already exists, we update it with the YAML config (YAML takes precedence).
         """
         # Check if an instance already exists
-        if self._async_current_entries():
-            return self.async_abort(reason="already_configured")
-
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured(updates=user_input)
 
+        # Fallback: Check for any existing entry (legacy support)
+        existing_entries = self._async_current_entries()
+        if existing_entries:
+            existing_entry = existing_entries[0]
+            _LOGGER.info("Scribe config entry already exists, updating with YAML config")
+            self.hass.config_entries.async_update_entry(
+                existing_entry,
+                data=user_input
+            )
+            await self.hass.config_entries.async_reload(existing_entry.entry_id)
+            return self.async_abort(reason="already_configured")
         
         _LOGGER.debug("Importing Scribe config from YAML")
         return await self.async_step_user(user_input)
