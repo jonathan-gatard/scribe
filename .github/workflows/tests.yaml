@@ -26,11 +26,7 @@ jobs:
         pip install -r requirements_test.txt || true
         # Install integration dependencies
         pip install psycopg2-binary sqlalchemy
-    - name: Set up custom_components
-      run: |
-        mkdir -p custom_components/scribe
-        cp *.py *.json *.yaml custom_components/scribe/
-        cp -r translations custom_components/scribe/
+
     - name: Run tests
       run: |
         pytest tests
