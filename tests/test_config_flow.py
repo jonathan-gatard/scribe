@@ -85,9 +85,8 @@ async def test_flow_import(hass):
 async def test_flow_abort_if_configured(hass):
     """Test abort if already configured."""
     # Create an existing entry
-    mock_entry = config_entries.ConfigEntry(
-        version=1,
-        minor_version=1,
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    mock_entry = MockConfigEntry(
         domain=DOMAIN,
         title="Scribe",
         data={},
@@ -95,7 +94,7 @@ async def test_flow_abort_if_configured(hass):
         unique_id=DOMAIN,
         entry_id="existing_entry"
     )
-    hass.config_entries._entries[mock_entry.entry_id] = mock_entry
+    mock_entry.add_to_hass(hass)
 
     # Try to create another one via user flow
     result = await hass.config_entries.flow.async_init(

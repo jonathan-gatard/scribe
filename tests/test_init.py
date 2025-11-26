@@ -16,6 +16,7 @@ def mock_config_entry():
     entry.entry_id = "test_entry"
     entry.unique_id = DOMAIN
     entry.title = "Scribe"
+    entry.setup_lock = None
     return entry
 
 @pytest.mark.asyncio

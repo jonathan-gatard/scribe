@@ -67,3 +67,5 @@ def mock_config_entry():
         },
         entry_id="test_entry_id"
     )
+    entry.setup_lock = None
+    return entry
