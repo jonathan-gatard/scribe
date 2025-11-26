@@ -6,7 +6,7 @@ CONF_DB_PORT = "db_port"
 CONF_DB_USER = "db_user"
 CONF_DB_PASSWORD = "db_password"
 CONF_DB_NAME = "db_name"
-CONF_DB_URL = "db_url" # Kept for backward compatibility if needed, or internal use
+CONF_DB_URL = "db_url"
 CONF_CHUNK_TIME_INTERVAL = "chunk_time_interval"
 CONF_COMPRESS_AFTER = "compress_after"
 CONF_INCLUDE_DOMAINS = "include_domains"
@@ -21,7 +21,7 @@ CONF_FLUSH_INTERVAL = "flush_interval"
 CONF_MAX_QUEUE_SIZE = "max_queue_size"
 CONF_TABLE_NAME_STATES = "table_name_states"
 CONF_TABLE_NAME_EVENTS = "table_name_events"
-CONF_DEBUG = "debug"
+
 CONF_ENABLE_STATISTICS = "enable_statistics"
 CONF_BUFFER_ON_FAILURE = "buffer_on_failure"
 
@@ -37,6 +37,6 @@ DEFAULT_FLUSH_INTERVAL = 5
 DEFAULT_MAX_QUEUE_SIZE = 10000
 DEFAULT_TABLE_NAME_STATES = "states"
 DEFAULT_TABLE_NAME_EVENTS = "events"
-DEFAULT_DEBUG = False
+
 DEFAULT_ENABLE_STATISTICS = False
-DEFAULT_BUFFER_ON_FAILURE = False
+DEFAULT_BUFFER_ON_FAILURE = True

@@ -1,13 +1,14 @@
 """Scribe: A custom component to store Home Assistant history in TimescaleDB.
 
 This component intercepts all state changes and events in Home Assistant and asynchronously
-writes them to a TimescaleDB (PostgreSQL) database. It uses a dedicated writer thread
+writes them to a TimescaleDB (PostgreSQL) database. It uses a dedicated writer task
 to ensure that database operations do not block the main Home Assistant event loop.
 """
 import logging
 import json
 import voluptuous as vol
 
+from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, Event, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.const import (
@@ -20,11 +21,6 @@ from homeassistant.helpers.entityfilter import generate_filter
 
 from .const import (
     DOMAIN,
-    CONF_DB_HOST,
-    CONF_DB_PORT,
-    CONF_DB_USER,
-    CONF_DB_PASSWORD,
-    CONF_DB_NAME,
     CONF_DB_URL,
     CONF_CHUNK_TIME_INTERVAL,
     CONF_COMPRESS_AFTER,
@@ -40,7 +36,6 @@ from .const import (
     CONF_MAX_QUEUE_SIZE,
     CONF_TABLE_NAME_STATES,
     CONF_TABLE_NAME_EVENTS,
-    CONF_DEBUG,
     CONF_ENABLE_STATISTICS,
     DEFAULT_CHUNK_TIME_INTERVAL,
     DEFAULT_COMPRESS_AFTER,
@@ -51,7 +46,6 @@ from .const import (
     DEFAULT_MAX_QUEUE_SIZE,
     DEFAULT_TABLE_NAME_STATES,
     DEFAULT_TABLE_NAME_EVENTS,
-    DEFAULT_DEBUG,
     DEFAULT_ENABLE_STATISTICS,
     CONF_BUFFER_ON_FAILURE,
     DEFAULT_BUFFER_ON_FAILURE,
@@ -79,7 +73,6 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(CONF_MAX_QUEUE_SIZE, default=DEFAULT_MAX_QUEUE_SIZE): cv.positive_int,
                 vol.Optional(CONF_TABLE_NAME_STATES, default=DEFAULT_TABLE_NAME_STATES): cv.string,
                 vol.Optional(CONF_TABLE_NAME_EVENTS, default=DEFAULT_TABLE_NAME_EVENTS): cv.string,
-                vol.Optional(CONF_DEBUG, default=DEFAULT_DEBUG): cv.boolean,
                 vol.Optional(CONF_BUFFER_ON_FAILURE, default=DEFAULT_BUFFER_ON_FAILURE): cv.boolean,
                 vol.Optional(CONF_ENABLE_STATISTICS, default=DEFAULT_ENABLE_STATISTICS): cv.boolean,
                 vol.Optional(CONF_INCLUDE_DOMAINS, default=[]): vol.All(cv.ensure_list, [cv.string]),
@@ -127,23 +120,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     compress_after = yaml_config.get(CONF_COMPRESS_AFTER, DEFAULT_COMPRESS_AFTER)
     
     # Get DB Config
-    # Supports both legacy single URL and new individual fields
+    # Supports both legacy single URL and new individual fields (legacy support removed for simplicity in internal logic)
     if CONF_DB_URL in config:
-        # Legacy or manual YAML config
         db_url = config[CONF_DB_URL]
     else:
-        # Constructed URL from individual fields
-        db_url = f"postgresql://{config[CONF_DB_USER]}:{config[CONF_DB_PASSWORD]}@{config[CONF_DB_HOST]}:{config[CONF_DB_PORT]}/{config[CONF_DB_NAME]}"
+        # Fallback for old configs that might still have individual fields
+        # We construct the URL here
+        db_user = config.get("db_user")
+        db_pass = config.get("db_password")
+        db_host = config.get("db_host")
+        db_port = config.get("db_port")
+        db_name = config.get("db_name")
+        if db_user and db_host:
+             db_url = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+        else:
+            _LOGGER.error("Invalid configuration: Missing DB URL or connection details")
+            return False
 
     # YAML Only Settings
     table_name_states = yaml_config.get(CONF_TABLE_NAME_STATES, DEFAULT_TABLE_NAME_STATES)
     table_name_events = yaml_config.get(CONF_TABLE_NAME_EVENTS, DEFAULT_TABLE_NAME_EVENTS)
-    debug_mode = yaml_config.get(CONF_DEBUG, DEFAULT_DEBUG)
     max_queue_size = yaml_config.get(CONF_MAX_QUEUE_SIZE, DEFAULT_MAX_QUEUE_SIZE)
-
-    if debug_mode:
-        _LOGGER.setLevel(logging.DEBUG)
-        _LOGGER.debug("Debug mode enabled")
 
     # Entity Filter
     # Sets up the include/exclude logic for domains and entities
@@ -186,17 +183,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         table_name_events=table_name_events
     )
     
-    # Initialize database tables in the executor to avoid blocking the loop
-    await hass.async_add_executor_job(writer.init_db)
-    
-    # Start the writer thread
-    writer.start()
+    # Start the writer task (async)
+    await writer.start()
     
     # Setup Data Update Coordinator for statistics
     from .coordinator import ScribeDataUpdateCoordinator
     
     coordinator = None
-    if options.get(CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS):
+    enable_statistics = options.get(CONF_ENABLE_STATISTICS, config.get(CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS))
+    if enable_statistics:
         coordinator = ScribeDataUpdateCoordinator(hass, writer)
         await coordinator.async_config_entry_first_refresh()
 
@@ -278,8 +273,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     
     # Register shutdown handler
+    async def async_stop_scribe(event):
+        await writer.stop()
+
     entry.async_on_unload(
-        hass.bus.async_listen(EVENT_HOMEASSISTANT_STOP, writer.shutdown)
+        hass.bus.async_listen(EVENT_HOMEASSISTANT_STOP, async_stop_scribe)
     )
     
     # Register Services
@@ -288,48 +286,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         Allows users to manually trigger a database flush via automation or UI.
         """
-        await hass.async_add_executor_job(writer._flush)
+        await writer._flush()
         
     hass.services.async_register(DOMAIN, "flush", handle_flush)
-
-    async def handle_query(call: ServiceCall) -> ServiceResponse:
-        """Handle query service call.
-        
-        Allows executing read-only SQL queries against the database.
-        Returns the result as a dictionary.
-        """
-        sql = call.data.get("sql")
-        if not sql:
-            raise ValueError("No SQL query provided")
-            
-        # Basic safety check (very primitive, rely on DB user permissions for real security)
-        if "DROP" in sql.upper() or "DELETE" in sql.upper() or "TRUNCATE" in sql.upper() or "INSERT" in sql.upper() or "UPDATE" in sql.upper():
-             _LOGGER.warning(f"Potentially unsafe query blocked: {sql}")
-             # We don't block strictly here because sometimes these words appear in strings, 
-             # but it's a good first line of defense. 
-             # Ideally, the DB user should have read-only access if this is exposed.
-             # For now, we just log a warning but let it pass if the user knows what they are doing,
-             # or maybe we should enforce read-only connection?
-             # Let's just execute it. The user is admin.
-        
-        def _execute_query():
-            if not writer._engine:
-                writer._connect()
-            if not writer._engine:
-                raise ConnectionError("Database not connected")
-                
-            with writer._engine.connect() as conn:
-                result = conn.execute(text(sql))
-                # Convert result to list of dicts
-                rows = [dict(row._mapping) for row in result]
-                return {"result": rows}
-
-        try:
-            return await hass.async_add_executor_job(_execute_query)
-        except Exception as e:
-            raise HomeAssistantError(f"Query failed: {e}")
-
-    hass.services.async_register(DOMAIN, "query", handle_query, supports_response=SupportsResponse.ONLY)
 
     # Reload entry when options change (e.g. via Options Flow)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
@@ -355,5 +314,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data = hass.data[DOMAIN].pop(entry.entry_id)
         writer = data["writer"]
         # Ensure writer flushes remaining data before stopping
-        await hass.async_add_executor_job(writer.shutdown, None)
+        await writer.stop()
     return unload_ok

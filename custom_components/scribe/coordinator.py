@@ -31,6 +31,7 @@ class ScribeDataUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         """Fetch data from API endpoint."""
         try:
-            return await self.hass.async_add_executor_job(self.writer.get_db_stats)
+            # Writer is now async, so we await it directly
+            return await self.writer.get_db_stats()
         except Exception as err:
             raise UpdateFailed(f"Error communicating with database: {err}")

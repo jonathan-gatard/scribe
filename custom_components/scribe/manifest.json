@@ -12,7 +12,8 @@
     "issue_tracker": "https://github.com/jonathan-gatard/scribe/issues",
     "requirements": [
         "psycopg2-binary>=2.9.0",
-        "sqlalchemy>=2.0.0"
+        "sqlalchemy>=2.0.0",
+        "asyncpg>=0.28.0"
     ],
     "version": "1.10.0"
 }

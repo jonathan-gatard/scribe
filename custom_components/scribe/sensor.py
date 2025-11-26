@@ -238,10 +238,9 @@ class ScribeBufferSizeSensor(ScribeSensor):
     def native_value(self):
         """Return the state of the sensor.
         
-        Acquires the lock to ensure thread-safe access to the queue length.
+        No lock needed as we are running in the same thread (asyncio).
         """
-        with self._writer._lock:
-            return len(self._writer._queue)
+        return len(self._writer._queue)
 
 class ScribeWriteDurationSensor(ScribeSensor):
     """Sensor for last write duration."""

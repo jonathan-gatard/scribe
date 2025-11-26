@@ -16,11 +16,7 @@ from homeassistant.helpers import selector
 
 from .const import (
     DOMAIN,
-    CONF_DB_HOST,
-    CONF_DB_PORT,
-    CONF_DB_USER,
-    CONF_DB_PASSWORD,
-    CONF_DB_NAME,
+    CONF_DB_URL,
     CONF_CHUNK_TIME_INTERVAL,
     CONF_COMPRESS_AFTER,
     CONF_INCLUDE_DOMAINS,
@@ -44,9 +40,6 @@ from .const import (
     DEFAULT_MAX_QUEUE_SIZE,
     DEFAULT_ENABLE_STATISTICS,
     DEFAULT_BUFFER_ON_FAILURE,
-    DEFAULT_DB_PORT,
-    DEFAULT_DB_USER,
-    DEFAULT_DB_NAME,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,7 +48,7 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Scribe.
     
     The config flow is responsible for creating the ConfigEntry.
-    It validates the database connection and can even create the database if it doesn't exist.
+    It validates the database connection.
     """
 
     VERSION = 1
@@ -65,6 +58,10 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         
         Displays the form to the user and processes the input.
         """
+        # Only allow one instance of Scribe
+        if self._async_current_entries():
+            return self.async_abort(reason="single_instance_allowed")
+        
         errors = {}
 
         if user_input is not None:
@@ -86,11 +83,7 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema = vol.Schema(
             {
-                vol.Required(CONF_DB_HOST): str,
-                vol.Required(CONF_DB_PORT, default=DEFAULT_DB_PORT): int,
-                vol.Required(CONF_DB_USER, default=DEFAULT_DB_USER): str,
-                vol.Required(CONF_DB_PASSWORD): str,
-                vol.Required(CONF_DB_NAME, default=DEFAULT_DB_NAME): str,
+                vol.Required(CONF_DB_URL): str,
                 vol.Optional(
                     CONF_RECORD_STATES, default=DEFAULT_RECORD_STATES
                 ): bool,
@@ -109,7 +102,22 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle import from YAML.
         
         Triggered by async_setup in __init__.py if configuration.yaml contains 'scribe:'.
+        If an instance already exists, we update it with the YAML config (YAML takes precedence).
         """
+        # Check if an instance already exists
+        existing_entries = self._async_current_entries()
+        if existing_entries:
+            # Update the existing entry with YAML config
+            existing_entry = existing_entries[0]
+            _LOGGER.info("Scribe config entry already exists, updating with YAML config")
+            self.hass.config_entries.async_update_entry(
+                existing_entry,
+                data=user_input
+            )
+            # Reload the entry to apply new config
+            await self.hass.config_entries.async_reload(existing_entry.entry_id)
+            return self.async_abort(reason="already_configured")
+        
         return await self.async_step_user(user_input)
 
     @staticmethod
@@ -117,34 +125,32 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Validate the user input allows us to connect.
         
         This method attempts to connect to the target database.
-        If the database does not exist, it attempts to connect to 'postgres'
-        and create the target database (requires sufficient privileges).
         """
-        db_url = f"postgresql://{data[CONF_DB_USER]}:{data[CONF_DB_PASSWORD]}@{data[CONF_DB_HOST]}:{data[CONF_DB_PORT]}/{data[CONF_DB_NAME]}"
+        from .const import CONF_DB_URL
+        
+        db_url = data[CONF_DB_URL]
+        
+        # Replace postgresql:// with postgresql+asyncpg:// for validation if needed, 
+        # but for simple validation we can stick to sync engine or just check if it's a valid string.
+        # However, since we are moving to asyncpg, the actual runtime will use asyncpg.
+        # For validation here, we can still use sync psycopg2 if installed, or just try to connect.
+        # Given requirements, we should probably stick to sync validation for simplicity here 
+        # OR switch to async validation. Let's stick to sync validation for now as it runs in executor.
         
         try:
-            engine = create_engine(db_url)
+            # We might need to ensure the URL is compatible with the sync driver for this check
+            # If the user provides postgresql+asyncpg://, create_engine might fail if asyncpg is not installed in the sync context?
+            # Actually, we added asyncpg to requirements.
+            # But create_engine (sync) won't work with asyncpg driver.
+            # So we should strip +asyncpg if present for this check, or ensure we use a sync driver.
+            
+            sync_url = db_url.replace("+asyncpg", "")
+            engine = create_engine(sync_url)
             with engine.connect() as conn:
                 pass
-        except Exception:
-            # Try to connect to postgres db to create the target db
-            postgres_url = f"postgresql://{data[CONF_DB_USER]}:{data[CONF_DB_PASSWORD]}@{data[CONF_DB_HOST]}:{data[CONF_DB_PORT]}/postgres"
-            try:
-                engine = create_engine(postgres_url, isolation_level="AUTOCOMMIT")
-                with engine.connect() as conn:
-                    # Check if db exists
-                    res = conn.execute(text(f"SELECT 1 FROM pg_database WHERE datname = '{data[CONF_DB_NAME]}'"))
-                    if not res.fetchone():
-                        conn.execute(text(f"CREATE DATABASE {data[CONF_DB_NAME]}"))
-                
-                # Verify connection to new db
-                engine = create_engine(db_url)
-                with engine.connect() as conn:
-                    pass
-                    
-            except Exception as e:
-                _LOGGER.error(f"Database connection failed: {e}")
-                raise InvalidAuth
+        except Exception as e:
+            _LOGGER.error(f"Database connection failed: {e}")
+            raise Exception(f"Cannot connect to database: {e}")
 
         return {"title": "Scribe"}
 

@@ -21,7 +21,8 @@
             "must_record_something": "Vous devez sélectionner au moins une option d'enregistrement (États ou Événements)."
         },
         "abort": {
-            "already_configured": "Scribe est déjà configuré."
+            "already_configured": "Scribe est déjà configuré.",
+            "single_instance_allowed": "Une seule instance de Scribe est autorisée. Veuillez d'abord supprimer l'instance existante si vous souhaitez reconfigurer."
         }
     },
     "options": {
