@@ -36,3 +36,7 @@ def test_writer_enqueue_flush():
 
     # Verify DB calls
     assert mock_conn.execute.call_count >= 1
+    
+    # Verify stats
+    assert writer._states_written == 1
+    assert writer._events_written == 1

@@ -47,6 +47,7 @@ class ScribeWriter(threading.Thread):
         self.table_name_events = table_name_events
         
         # Stats for sensors
+        self._states_written = 0
         self._events_written = 0
         self._last_write_duration = 0.0
         self._connected = False
@@ -241,7 +242,8 @@ class ScribeWriter(threading.Thread):
             
             # Update stats
             with self._lock:
-                self._events_written += len(batch)
+                self._states_written += len(states_data)
+                self._events_written += len(events_data)
                 self._last_write_duration = duration
                 self._connected = True
                 self._last_error = None

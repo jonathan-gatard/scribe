@@ -35,6 +35,7 @@ async def async_setup_entry(
     coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
     
     entities = [
+        ScribeStatesWrittenSensor(writer, entry),
         ScribeEventsWrittenSensor(writer, entry),
         ScribeBufferSizeSensor(writer, entry),
         ScribeWriteDurationSensor(writer, entry),
@@ -44,7 +45,7 @@ async def async_setup_entry(
     # These sensors rely on the DataUpdateCoordinator to fetch data periodically
     if entry.options.get(CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS) and coordinator:
         entities.extend([
-            ScribeDatabaseSizeSensor(coordinator, entry, "states_size_bytes", "States Table Size"),
+            ScribeDatabaseSizeSensor(coordinator, entry, "db_size", "Database Size"),
             ScribeCompressionRatioSensor(coordinator, entry, "states_compression", "States Compression Ratio"),
             ScribeCompressedSizeSensor(coordinator, entry, "states_compressed_bytes", "States Compressed Size"),
         ])
@@ -107,7 +108,9 @@ class ScribeDatabaseSizeSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get(self._key)
+        states_size = self.coordinator.data.get("states_size_bytes", 0) or 0
+        events_size = self.coordinator.data.get("events_size_bytes", 0) or 0
+        return states_size + events_size
 
 class ScribeCompressedSizeSensor(ScribeCoordinatorSensor):
     """Sensor for Compressed DB size."""
@@ -140,6 +143,23 @@ class ScribeCompressionRatioSensor(ScribeCoordinatorSensor):
         # Calculate percentage saved
         return round((1 - (compressed / uncompressed)) * 100, 1)
 
+
+class ScribeStatesWrittenSensor(ScribeSensor):
+    """Sensor for total states written."""
+
+    def __init__(self, writer, entry):
+        super().__init__(writer, entry)
+        self.entity_description = SensorEntityDescription(
+            key="states_written",
+            name="States Written",
+            icon="mdi:database-plus",
+            state_class=SensorStateClass.TOTAL_INCREASING,
+        )
+
+    @property
+    def native_value(self):
+        """Return the state of the sensor."""
+        return self._writer._states_written
 
 class ScribeEventsWrittenSensor(ScribeSensor):
     """Sensor for total events written."""
