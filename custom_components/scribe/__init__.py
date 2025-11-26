@@ -99,39 +99,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         _LOGGER.info("Scribe configuration found in YAML. Verifying setup...")
         hass.data[DOMAIN]["yaml_config"] = config[DOMAIN]
         
-        # Check for existing entries
-        current_entries = hass.config_entries.async_entries(DOMAIN)
-        _LOGGER.debug(f"Scribe async_setup found {len(current_entries)} entries: {[e.entry_id for e in current_entries]}")
-        
-        if len(current_entries) > 1:
-            _LOGGER.warning(f"Found multiple Scribe entries ({len(current_entries)}). Cleaning up duplicates...")
-            # Keep the one with unique_id=DOMAIN, or the first one if none match
-            keep_entry = None
-            for entry in current_entries:
-                if entry.unique_id == DOMAIN:
-                    keep_entry = entry
-                    break
-            
-            if not keep_entry:
-                keep_entry = current_entries[0]
-                _LOGGER.info(f"No entry with unique_id='{DOMAIN}' found. Keeping first entry: {keep_entry.entry_id}")
-
-            for entry in current_entries:
-                if entry.entry_id != keep_entry.entry_id:
-                    _LOGGER.warning(f"Removing duplicate Scribe entry: {entry.entry_id} (unique_id={entry.unique_id})")
-                    await hass.config_entries.async_remove(entry.entry_id)
-            
-            # Refresh list after cleanup
-            current_entries = [keep_entry]
-
-        if current_entries:
-            # Update the existing entry directly to avoid UnknownFlow race condition
-            entry = current_entries[0]
-            _LOGGER.debug(f"Updating existing Scribe entry {entry.entry_id} from YAML")
-            hass.config_entries.async_update_entry(entry, data=config[DOMAIN])
-            return True
-
-        _LOGGER.debug("Found scribe configuration in YAML, triggering import flow")
         hass.async_create_task(
             hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=config[DOMAIN]
@@ -149,14 +116,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug(f"Setting up Scribe entry: {entry.entry_id}")
     config = entry.data
     hass.data.setdefault(DOMAIN, {})
-
-    # SINGLETON CHECK: Prevent multiple Scribe instances from running
-    # If we already have a running writer in hass.data[DOMAIN], abort this setup.
-    # We filter out 'yaml_config' which is just data, not a running instance.
-    running_instances = [k for k in hass.data[DOMAIN].keys() if k != "yaml_config"]
-    if running_instances:
-        _LOGGER.warning(f"Scribe is already running (Entry ID: {running_instances[0]}). Aborting setup for duplicate entry {entry.entry_id}.")
-        return False
 
     options = entry.options
 
