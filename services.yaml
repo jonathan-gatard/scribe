@@ -1,4 +1,0 @@
-flush:
-  name: Flush Buffer
-  description: Manually flush the event buffer to the database.
-  icon: mdi:database-arrow-right

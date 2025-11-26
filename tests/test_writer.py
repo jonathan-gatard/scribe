@@ -15,6 +15,7 @@ def test_writer_enqueue_flush():
         record_events=True,
         batch_size=2,
         flush_interval=5,
+        max_queue_size=10000,
         table_name_states="states",
         table_name_events="events"
     )
