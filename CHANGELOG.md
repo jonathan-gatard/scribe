@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.1] - 2025-11-27
+
+### Fixed
+- **Users Sync**: Fixed `AttributeError` when syncing users. Now correctly uses `async_get_users()` to fetch user data.
+
 ## [2.3.0] - 2025-11-27
 
 ### Added

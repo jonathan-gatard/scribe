@@ -219,8 +219,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Sync Users
     try:
+        users_list = await hass.auth.async_get_users()
+        _LOGGER.debug(f"Syncing users. Total users in hass.auth: {len(users_list)}")
         users = []
-        for user in hass.auth.users:
+        for user in users_list:
             users.append({
                 "user_id": user.id,
                 "name": user.name,
@@ -229,10 +231,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "system_generated": user.system_generated,
                 "group_ids": json.dumps([g.id for g in user.groups], default=str)
             })
+        
         if users:
+            _LOGGER.debug(f"Calling writer.write_users with {len(users)} users")
             await writer.write_users(users)
+        else:
+            _LOGGER.warning("No users found to sync!")
+            
     except Exception as e:
-        _LOGGER.error(f"Error syncing users: {e}")
+        _LOGGER.error(f"Error syncing users: {e}", exc_info=True)
     
     # Setup Data Update Coordinators for statistics
     from .coordinator import ScribeDataUpdateCoordinator

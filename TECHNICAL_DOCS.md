@@ -102,6 +102,17 @@ Stores generic Home Assistant events.
 *   Order by: `time DESC`
 *   Policy: Default 60 days.
 
+### 3. `users`
+Stores Home Assistant user metadata to provide context for events.
+*   `user_id` (TEXT): Primary Key. Matches `context_user_id` in `events` table.
+*   `name` (TEXT): User's display name.
+*   `is_owner` (BOOLEAN): Whether the user is an owner.
+*   `is_active` (BOOLEAN): Whether the user is active.
+*   `system_generated` (BOOLEAN): Whether the user is system-generated.
+*   `group_ids` (JSONB): List of group IDs the user belongs to.
+
+**Syncing**: This table is automatically synchronized with Home Assistant's user registry on startup.
+
 ## Migration from Recorder
 
 Scribe does not automatically import data from the native Recorder database. However, you can migrate data manually using SQL if both databases are accessible.

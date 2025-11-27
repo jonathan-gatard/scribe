@@ -11,6 +11,7 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 - 📦 **TimescaleDB Native**: Automatically manages Hypertables and Compression Policies.
 - 📊 **Granular Statistics**: Optional sensors for monitoring chunk counts, compression ratios, and I/O performance.
 - 🔒 **Secure**: Full SSL/TLS support.
+- 👥 **User Context**: Automatically syncs Home Assistant users to the database for rich context.
 - 🎯 **Smart Filtering**: Include/exclude by domain, entity, or attribute.
 - ✅ **100% Test Coverage**: Robust and reliable.
 
