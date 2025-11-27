@@ -594,6 +594,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
     hass.services.async_register(DOMAIN, "flush", handle_flush)
 
+    async def handle_query(call):
+        """Handle query service call."""
+        sql = call.data.get("sql")
+        if not sql:
+            raise ValueError("SQL query is required")
+            
+        try:
+            result = await writer.query(sql)
+            return {"result": result}
+        except Exception as e:
+            raise ValueError(f"Query failed: {e}")
+
+    hass.services.async_register(
+        DOMAIN, 
+        "query", 
+        handle_query, 
+        schema=vol.Schema({vol.Required("sql"): cv.string}),
+        supports_response=True
+    )
+
     # Reload entry when options change (e.g. via Options Flow)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 

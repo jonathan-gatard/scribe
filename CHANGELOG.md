@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.7.0] - 2025-11-27
+
+### Added
+- **Query Service**: Added `scribe.query` service to execute read-only SQL queries (`SELECT` only) directly from Home Assistant.
+  - Useful for debugging and creating advanced sensors via automation.
+  - Returns results as a list of dictionaries.
+
 ## [2.6.1] - 2025-11-27
 
 ### Added

@@ -555,7 +555,6 @@ class ScribeWriter:
         batch = list(self._queue)
         self._queue.clear()
         
-        _LOGGER.debug(f"Flushing {len(batch)} items...")
         start_time = time.time()
         
         try:
@@ -564,13 +563,11 @@ class ScribeWriter:
             
             async with self._engine.begin() as conn:
                 if states_data:
-                    _LOGGER.debug(f"Inserting {len(states_data)} states...")
                     await conn.execute(
                         text(f"INSERT INTO {self.table_name_states} (time, entity_id, state, value, attributes) VALUES (:time, :entity_id, :state, :value, :attributes)"),
                         states_data
                     )
                 if events_data:
-                    _LOGGER.debug(f"Inserting {len(events_data)} events...")
                     await conn.execute(
                         text(f"INSERT INTO {self.table_name_events} (time, event_type, event_data, origin, context_id, context_user_id, context_parent_id) VALUES (:time, :event_type, :event_data, :origin, :context_id, :context_user_id, :context_parent_id)"),
                         events_data
@@ -582,7 +579,6 @@ class ScribeWriter:
             self._last_write_duration = duration
             self._connected = True
             self._last_error = None
-            _LOGGER.debug(f"Flush complete in {duration:.3f}s")
 
         except Exception as e:
             _LOGGER.error(f"Error flushing batch: {e}", exc_info=True)
@@ -611,6 +607,25 @@ class ScribeWriter:
             else:
                 self._dropped_events += len(batch)
                 _LOGGER.warning(f"Dropped {len(batch)} items (buffering disabled)")
+
+    async def query(self, sql: str) -> list[dict]:
+        """Execute a read-only SQL query."""
+        if not self._engine:
+            raise RuntimeError("Database not connected")
+
+        # Security Check: Only allow SELECT queries
+        if not sql.strip().upper().startswith("SELECT"):
+            raise ValueError("Only SELECT queries are allowed.")
+
+        _LOGGER.debug(f"Executing query: {sql}")
+        try:
+            async with self._engine.connect() as conn:
+                result = await conn.execute(text(sql))
+                # Convert rows to list of dicts
+                return [dict(row._mapping) for row in result]
+        except Exception as e:
+            _LOGGER.error(f"Error executing query: {e}")
+            raise e
 
     async def get_db_stats(self, stats_type: str = "all"):
         """Fetch database statistics using TimescaleDB chunks view.
