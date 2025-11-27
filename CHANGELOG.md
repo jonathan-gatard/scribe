@@ -2,7 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.5.0] - 2025-11-27
+## [2.6.0] - 2025-11-26
+
+### Added
+- **Metadata Synchronization**: Scribe now syncs `areas`, `devices`, and `integrations` (config entries) to the database on startup.
+  - **Areas Table**: Stores area ID, name, and picture.
+  - **Devices Table**: Stores device ID, name, model, manufacturer, software version, area ID, and primary config entry.
+  - **Integrations Table**: Stores config entry ID, domain, title, state, and source.
+- **Comprehensive Metadata**: With `users` and `entities` already synced, Scribe now provides a full picture of the Home Assistant environment in TimescaleDB.
+
+### Fixed
+- **Test Suite**: Added comprehensive tests for metadata synchronization logic.
+
+## [2.5.0] - 2025-11-267
 
 ### Added
 - **Entities Table**: Added `entities` table and automatic syncing of Home Assistant entities (including scripts and automations) to the database. This allows joining `entity_id` with friendly names and other metadata.

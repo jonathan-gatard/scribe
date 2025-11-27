@@ -19,6 +19,8 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.entityfilter import generate_filter
 from homeassistant.helpers.json import JSONEncoder
 from homeassistant.loader import bind_hass
@@ -264,6 +266,63 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await writer.write_entities(entities)
     except Exception as e:
         _LOGGER.error(f"Error syncing entities: {e}", exc_info=True)
+
+    # Sync Areas
+    try:
+        area_reg = ar.async_get(hass)
+        areas = []
+        for area in area_reg.areas.values():
+            areas.append({
+                "area_id": area.id,
+                "name": area.name,
+                "picture": area.picture
+            })
+        if areas:
+            _LOGGER.debug(f"Syncing {len(areas)} areas to database")
+            await writer.write_areas(areas)
+    except Exception as e:
+        _LOGGER.error(f"Error syncing areas: {e}", exc_info=True)
+
+    # Sync Devices
+    try:
+        device_reg = dr.async_get(hass)
+        devices = []
+        for device in device_reg.devices.values():
+            # Get primary config entry
+            primary_entry = next(iter(device.config_entries), None) if device.config_entries else None
+            
+            devices.append({
+                "device_id": device.id,
+                "name": device.name,
+                "name_by_user": device.name_by_user,
+                "model": device.model,
+                "manufacturer": device.manufacturer,
+                "sw_version": device.sw_version,
+                "area_id": device.area_id,
+                "primary_config_entry": primary_entry
+            })
+        if devices:
+            _LOGGER.debug(f"Syncing {len(devices)} devices to database")
+            await writer.write_devices(devices)
+    except Exception as e:
+        _LOGGER.error(f"Error syncing devices: {e}", exc_info=True)
+
+    # Sync Integrations (Config Entries)
+    try:
+        integrations = []
+        for config_entry in hass.config_entries.async_entries():
+            integrations.append({
+                "entry_id": config_entry.entry_id,
+                "domain": config_entry.domain,
+                "title": config_entry.title,
+                "state": config_entry.state.value if hasattr(config_entry.state, "value") else str(config_entry.state),
+                "source": config_entry.source
+            })
+        if integrations:
+            _LOGGER.debug(f"Syncing {len(integrations)} integrations to database")
+            await writer.write_integrations(integrations)
+    except Exception as e:
+        _LOGGER.error(f"Error syncing integrations: {e}", exc_info=True)
     
     # Setup Data Update Coordinators for statistics
     from .coordinator import ScribeDataUpdateCoordinator

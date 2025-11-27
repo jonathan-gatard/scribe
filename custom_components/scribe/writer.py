@@ -265,6 +265,9 @@ class ScribeWriter:
                 # Always init users table
                 await self._init_users_table(conn)
                 await self._init_entities_table(conn)
+                await self._init_areas_table(conn)
+                await self._init_devices_table(conn)
+                await self._init_integrations_table(conn)
 
             # Hypertable & Compression (each operation in its own transaction)
             if self.record_states:
@@ -396,6 +399,113 @@ class ScribeWriter:
                 _LOGGER.debug("Entities written successfully")
         except Exception as e:
             _LOGGER.error(f"Error writing entities: {e}")
+
+    async def _init_areas_table(self, conn):
+        """Initialize areas table."""
+        _LOGGER.debug("Creating table areas if not exists")
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS areas (
+                area_id TEXT PRIMARY KEY,
+                name TEXT,
+                picture TEXT
+            );
+        """))
+
+    async def write_areas(self, areas: list[dict]):
+        """Write areas to the database (upsert)."""
+        if not self._engine or not areas:
+            return
+
+        _LOGGER.debug(f"Writing {len(areas)} areas to database...")
+        try:
+            async with self._engine.begin() as conn:
+                stmt = text("""
+                    INSERT INTO areas (area_id, name, picture)
+                    VALUES (:area_id, :name, :picture)
+                    ON CONFLICT (area_id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        picture = EXCLUDED.picture;
+                """)
+                await conn.execute(stmt, areas)
+                _LOGGER.debug("Areas written successfully")
+        except Exception as e:
+            _LOGGER.error(f"Error writing areas: {e}")
+
+    async def _init_devices_table(self, conn):
+        """Initialize devices table."""
+        _LOGGER.debug("Creating table devices if not exists")
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS devices (
+                device_id TEXT PRIMARY KEY,
+                name TEXT,
+                name_by_user TEXT,
+                model TEXT,
+                manufacturer TEXT,
+                sw_version TEXT,
+                area_id TEXT,
+                primary_config_entry TEXT
+            );
+        """))
+
+    async def write_devices(self, devices: list[dict]):
+        """Write devices to the database (upsert)."""
+        if not self._engine or not devices:
+            return
+
+        _LOGGER.debug(f"Writing {len(devices)} devices to database...")
+        try:
+            async with self._engine.begin() as conn:
+                stmt = text("""
+                    INSERT INTO devices (device_id, name, name_by_user, model, manufacturer, sw_version, area_id, primary_config_entry)
+                    VALUES (:device_id, :name, :name_by_user, :model, :manufacturer, :sw_version, :area_id, :primary_config_entry)
+                    ON CONFLICT (device_id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        name_by_user = EXCLUDED.name_by_user,
+                        model = EXCLUDED.model,
+                        manufacturer = EXCLUDED.manufacturer,
+                        sw_version = EXCLUDED.sw_version,
+                        area_id = EXCLUDED.area_id,
+                        primary_config_entry = EXCLUDED.primary_config_entry;
+                """)
+                await conn.execute(stmt, devices)
+                _LOGGER.debug("Devices written successfully")
+        except Exception as e:
+            _LOGGER.error(f"Error writing devices: {e}")
+
+    async def _init_integrations_table(self, conn):
+        """Initialize integrations table."""
+        _LOGGER.debug("Creating table integrations if not exists")
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS integrations (
+                entry_id TEXT PRIMARY KEY,
+                domain TEXT,
+                title TEXT,
+                state TEXT,
+                source TEXT
+            );
+        """))
+
+    async def write_integrations(self, integrations: list[dict]):
+        """Write integrations to the database (upsert)."""
+        if not self._engine or not integrations:
+            return
+
+        _LOGGER.debug(f"Writing {len(integrations)} integrations to database...")
+        try:
+            async with self._engine.begin() as conn:
+                stmt = text("""
+                    INSERT INTO integrations (entry_id, domain, title, state, source)
+                    VALUES (:entry_id, :domain, :title, :state, :source)
+                    ON CONFLICT (entry_id) DO UPDATE SET
+                        domain = EXCLUDED.domain,
+                        title = EXCLUDED.title,
+                        state = EXCLUDED.state,
+                        source = EXCLUDED.source;
+                """)
+                await conn.execute(stmt, integrations)
+                _LOGGER.debug("Integrations written successfully")
+        except Exception as e:
+            _LOGGER.error(f"Error writing integrations: {e}")
 
     async def _init_hypertable(self, table_name, segment_by):
         """Initialize hypertable and compression.

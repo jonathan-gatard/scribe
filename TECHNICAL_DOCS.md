@@ -113,16 +113,61 @@ Stores Home Assistant user metadata to provide context for events.
 
 **Syncing**: This table is automatically synchronized with Home Assistant's user registry on startup.
 
-### 4. `entities`
-Stores metadata for all entities (including scripts and automations).
-*   `entity_id` (TEXT): Primary Key.
-*   `unique_id` (TEXT): Unique ID of the entity.
-*   `platform` (TEXT): Integration platform (e.g., `hue`, `mqtt`).
-*   `domain` (TEXT): Entity domain (e.g., `light`, `sensor`).
-*   `name` (TEXT): Friendly name or original name.
-*   `device_id` (TEXT): Associated device ID.
-*   `area_id` (TEXT): Associated area ID.
-*   `capabilities` (JSONB): Entity capabilities (e.g., supported features).
+### `entities` Table
+
+Stores metadata for Home Assistant entities.
+
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `entity_id` | TEXT | The entity ID (e.g., `light.living_room`). Primary Key. |
+| `unique_id` | TEXT | The unique ID of the entity. |
+| `platform` | TEXT | The platform that provides the entity (e.g., `hue`). |
+| `domain` | TEXT | The domain of the entity (e.g., `light`). |
+| `name` | TEXT | The friendly name of the entity. |
+| `device_id` | TEXT | The ID of the device this entity belongs to. |
+| `area_id` | TEXT | The ID of the area this entity belongs to. |
+| `capabilities` | JSONB | JSON object containing entity capabilities. |
+| `last_updated` | TIMESTAMPTZ | When this record was last updated. |
+
+### `areas` Table
+
+Stores metadata for Home Assistant areas.
+
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `area_id` | TEXT | The unique ID of the area. Primary Key. |
+| `name` | TEXT | The name of the area. |
+| `picture` | TEXT | URL or path to the area picture. |
+| `last_updated` | TIMESTAMPTZ | When this record was last updated. |
+
+### `devices` Table
+
+Stores metadata for Home Assistant devices.
+
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `device_id` | TEXT | The unique ID of the device. Primary Key. |
+| `name` | TEXT | The name of the device. |
+| `name_by_user` | TEXT | The name assigned by the user. |
+| `model` | TEXT | The model of the device. |
+| `manufacturer` | TEXT | The manufacturer of the device. |
+| `sw_version` | TEXT | The software version of the device. |
+| `area_id` | TEXT | The ID of the area this device belongs to. |
+| `primary_config_entry` | TEXT | The primary config entry ID for this device. |
+| `last_updated` | TIMESTAMPTZ | When this record was last updated. |
+
+### `integrations` Table
+
+Stores metadata for Home Assistant integrations (config entries).
+
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `entry_id` | TEXT | The unique ID of the config entry. Primary Key. |
+| `domain` | TEXT | The domain of the integration (e.g., `hue`). |
+| `title` | TEXT | The title of the integration. |
+| `state` | TEXT | The current state of the integration (e.g., `loaded`). |
+| `source` | TEXT | The source of the config entry (e.g., `discovery`). |
+| `last_updated` | TIMESTAMPTZ | When this record was last updated. |
 
 **Syncing**: This table is automatically synchronized with Home Assistant's entity registry on startup.
 
