@@ -95,10 +95,10 @@ Real-time metrics from the writer (no DB queries).
 
 | Sensor | Description |
 | :--- | :--- |
-| <img src="https://api.iconify.design/mdi:database-plus.svg" width="15" /> `sensor.scribe_states_written` | Total number of state changes written to the DB. |
-| <img src="https://api.iconify.design/mdi:database-plus.svg" width="15" /> `sensor.scribe_events_written` | Total number of events written to the DB. |
-| <img src="https://api.iconify.design/mdi:buffer.svg" width="15" /> `sensor.scribe_buffer_size` | Current number of items waiting in the memory buffer. |
-| <img src="https://api.iconify.design/mdi:timer-sand.svg" width="15" /> `sensor.scribe_write_duration` | Time taken (in ms) for the last database write operation. |
+| <img src="https://api.iconify.design/mdi:database-plus.svg?color=%232196F3" width="15" /> `sensor.scribe_states_written` | Total number of state changes written to the DB. |
+| <img src="https://api.iconify.design/mdi:database-plus.svg?color=%232196F3" width="15" /> `sensor.scribe_events_written` | Total number of events written to the DB. |
+| <img src="https://api.iconify.design/mdi:buffer.svg?color=%232196F3" width="15" /> `sensor.scribe_buffer_size` | Current number of items waiting in the memory buffer. |
+| <img src="https://api.iconify.design/mdi:timer-sand.svg?color=%232196F3" width="15" /> `sensor.scribe_write_duration` | Time taken (in ms) for the last database write operation. |
 
 ### Chunk Statistics (`enable_stats_chunk: true`)
 
@@ -106,12 +106,12 @@ Chunk counts (updated every `stats_chunk_interval` minutes).
 
 | Sensor | Description |
 | :--- | :--- |
-| <img src="https://api.iconify.design/mdi:cube-outline.svg" width="15" /> `sensor.scribe_states_total_chunks` | Total number of chunks for the states table. |
-| <img src="https://api.iconify.design/mdi:package-down.svg" width="15" /> `sensor.scribe_states_compressed_chunks` | Number of chunks that have been compressed. |
-| <img src="https://api.iconify.design/mdi:package-up.svg" width="15" /> `sensor.scribe_states_uncompressed_chunks` | Number of chunks waiting to be compressed. |
-| <img src="https://api.iconify.design/mdi:cube-outline.svg" width="15" /> `sensor.scribe_events_total_chunks` | Total number of chunks for the events table. |
-| <img src="https://api.iconify.design/mdi:package-down.svg" width="15" /> `sensor.scribe_events_compressed_chunks` | Number of compressed event chunks. |
-| <img src="https://api.iconify.design/mdi:package-up.svg" width="15" /> `sensor.scribe_events_uncompressed_chunks` | Number of uncompressed event chunks. |
+| <img src="https://api.iconify.design/mdi:cube-outline.svg?color=%232196F3" width="15" /> `sensor.scribe_states_total_chunks` | Total number of chunks for the states table. |
+| <img src="https://api.iconify.design/mdi:package-down.svg?color=%232196F3" width="15" /> `sensor.scribe_states_compressed_chunks` | Number of chunks that have been compressed. |
+| <img src="https://api.iconify.design/mdi:package-up.svg?color=%232196F3" width="15" /> `sensor.scribe_states_uncompressed_chunks` | Number of chunks waiting to be compressed. |
+| <img src="https://api.iconify.design/mdi:cube-outline.svg?color=%232196F3" width="15" /> `sensor.scribe_events_total_chunks` | Total number of chunks for the events table. |
+| <img src="https://api.iconify.design/mdi:package-down.svg?color=%232196F3" width="15" /> `sensor.scribe_events_compressed_chunks` | Number of compressed event chunks. |
+| <img src="https://api.iconify.design/mdi:package-up.svg?color=%232196F3" width="15" /> `sensor.scribe_events_uncompressed_chunks` | Number of uncompressed event chunks. |
 
 ### Size Statistics (`enable_stats_size: true`)
 
@@ -119,12 +119,12 @@ Storage usage in bytes (updated every `stats_size_interval` minutes).
 
 | Sensor | Description |
 | :--- | :--- |
-| <img src="https://api.iconify.design/mdi:database.svg" width="15" /> `sensor.scribe_states_total_size` | Total disk size of the states table. |
-| <img src="https://api.iconify.design/mdi:package-variant.svg" width="15" /> `sensor.scribe_states_compressed_size` | Size of compressed state data. |
-| <img src="https://api.iconify.design/mdi:package-variant-closed.svg" width="15" /> `sensor.scribe_states_uncompressed_size` | Size of uncompressed state data. |
-| <img src="https://api.iconify.design/mdi:database.svg" width="15" /> `sensor.scribe_events_total_size` | Total disk size of the events table. |
-| <img src="https://api.iconify.design/mdi:package-variant.svg" width="15" /> `sensor.scribe_events_compressed_size` | Size of compressed event data. |
-| <img src="https://api.iconify.design/mdi:package-variant-closed.svg" width="15" /> `sensor.scribe_events_uncompressed_size` | Size of uncompressed event data. |
+| <img src="https://api.iconify.design/mdi:database.svg?color=%232196F3" width="15" /> `sensor.scribe_states_total_size` | Total disk size of the states table. |
+| <img src="https://api.iconify.design/mdi:package-variant.svg?color=%232196F3" width="15" /> `sensor.scribe_states_compressed_size` | Size of compressed state data. |
+| <img src="https://api.iconify.design/mdi:package-variant-closed.svg?color=%232196F3" width="15" /> `sensor.scribe_states_uncompressed_size` | Size of uncompressed state data. |
+| <img src="https://api.iconify.design/mdi:database.svg?color=%232196F3" width="15" /> `sensor.scribe_events_total_size` | Total disk size of the events table. |
+| <img src="https://api.iconify.design/mdi:package-variant.svg?color=%232196F3" width="15" /> `sensor.scribe_events_compressed_size` | Size of compressed event data. |
+| <img src="https://api.iconify.design/mdi:package-variant-closed.svg?color=%232196F3" width="15" /> `sensor.scribe_events_uncompressed_size` | Size of uncompressed event data. |
 
 ## Services
 
