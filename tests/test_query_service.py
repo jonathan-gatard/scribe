@@ -1,6 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
-from homeassistant.core import HomeAssistant
+from unittest.mock import MagicMock, AsyncMock
 from custom_components.scribe.writer import ScribeWriter
 
 @pytest.fixture

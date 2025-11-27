@@ -3,7 +3,6 @@ import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from homeassistant.core import HomeAssistant
 from custom_components.scribe import async_setup_entry
-from custom_components.scribe.const import DOMAIN
 
 @pytest.fixture
 def mock_writer():

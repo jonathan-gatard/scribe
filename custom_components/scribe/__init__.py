@@ -23,7 +23,6 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.entityfilter import generate_filter
 from homeassistant.helpers.json import JSONEncoder
-from homeassistant.loader import bind_hass
 
 from .const import (
     DOMAIN,
