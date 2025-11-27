@@ -90,23 +90,35 @@ class TestDatabaseVersions:
             max_queue_size=100,
             buffer_on_failure=True,
             table_name_states="states",
-            table_name_events="events"
+            table_name_events="events",
+            # Enable all stats to test all queries
+            enable_stats_io=True,
+            enable_stats_chunk=True,
+            enable_stats_size=True,
+            stats_chunk_interval=1,
+            stats_size_interval=1
         )
         
-        # Initialize DB
+        # Initialize DB (Tests CREATE TABLE, create_hypertable, add_compression_policy)
         await writer._init_db()
         assert writer._engine is not None
         
         # Verify tables created
         async with writer._engine.connect() as conn:
             # Check for hypertable
-            # Note: query depends on TimescaleDB version, but we assume > 2.0 for these images
             result = await conn.execute(text(
                 "SELECT * FROM timescaledb_information.hypertables WHERE hypertable_name = 'states'"
             ))
             assert result.rowcount > 0 or len(result.fetchall()) > 0
+
+            # Check for compression policy
+            # Note: The view name might vary slightly by version, but jobs view is standard
+            result = await conn.execute(text(
+                "SELECT * FROM timescaledb_information.jobs WHERE proc_name = 'policy_compression'"
+            ))
+            assert result.rowcount > 0 or len(result.fetchall()) > 0
             
-        # Test writing data
+        # Test writing data (Tests INSERT)
         writer.enqueue({
             "type": "state",
             "time": time.time(),
@@ -116,10 +128,22 @@ class TestDatabaseVersions:
             "attributes": "{}"
         })
         
+        writer.enqueue({
+            "type": "event",
+            "time": time.time(),
+            "event_type": "test_event",
+            "event_data": "{}",
+            "origin": "LOCAL",
+            "context_id": "1",
+            "context_user_id": "user",
+            "context_parent_id": "parent"
+        })
+        
         # Force flush
         await writer._flush()
         
         assert writer._states_written == 1
+        assert writer._events_written == 1
         
         # Verify data in DB
         async with writer._engine.connect() as conn:
@@ -127,5 +151,19 @@ class TestDatabaseVersions:
             rows = result.fetchall()
             assert len(rows) == 1
             assert rows[0].state == "on"
+
+        # Test Statistics Queries (get_db_stats)
+        stats = await writer.get_db_stats()
+        
+        # Verify keys exist (means queries ran without error)
+        assert "states_total_chunks" in stats
+        assert "states_total_size" in stats
+        assert "events_total_chunks" in stats
+        assert "events_total_size" in stats
+        
+        # Since we inserted data, we should have at least 1 chunk and some size
+        # Note: TimescaleDB might not update stats immediately or create chunks immediately for small data
+        # But the query execution itself is what we are testing here.
+        print(f"Stats retrieved: {stats}")
 
         await writer.close()
