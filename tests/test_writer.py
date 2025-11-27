@@ -21,6 +21,9 @@ async def writer(hass, mock_engine):
         buffer_on_failure=True,
         table_name_states="states",
         table_name_events="events",
+        ssl_root_cert="/tmp/root.crt",
+        ssl_cert_file="/tmp/client.crt",
+        ssl_key_file="/tmp/client.key",
         engine=mock_engine
     )
     yield writer
@@ -197,7 +200,10 @@ async def test_writer_engine_creation_failure(hass):
             max_queue_size=10000,
             buffer_on_failure=True,
             table_name_states="states",
-            table_name_events="events"
+            table_name_events="events",
+            ssl_root_cert=None,
+            ssl_cert_file=None,
+            ssl_key_file=None
         )
         await writer.start()
         assert writer._engine is None

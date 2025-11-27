@@ -25,6 +25,9 @@ from .const import (
     DOMAIN,
     CONF_DB_URL,
     CONF_DB_SSL,
+    CONF_SSL_ROOT_CERT,
+    CONF_SSL_CERT_FILE,
+    CONF_SSL_KEY_FILE,
     CONF_CHUNK_TIME_INTERVAL,
     CONF_COMPRESS_AFTER,
     CONF_INCLUDE_DOMAINS,
@@ -72,6 +75,9 @@ CONFIG_SCHEMA = vol.Schema(
             {
                 vol.Required(CONF_DB_URL): cv.string,
                 vol.Optional(CONF_DB_SSL, default=DEFAULT_DB_SSL): cv.boolean,
+                vol.Optional(CONF_SSL_ROOT_CERT): cv.string,
+                vol.Optional(CONF_SSL_CERT_FILE): cv.string,
+                vol.Optional(CONF_SSL_KEY_FILE): cv.string,
                 vol.Optional(CONF_CHUNK_TIME_INTERVAL, default=DEFAULT_CHUNK_TIME_INTERVAL): cv.string,
                 vol.Optional(CONF_COMPRESS_AFTER, default=DEFAULT_COMPRESS_AFTER): cv.string,
                 vol.Optional(CONF_RECORD_STATES, default=DEFAULT_RECORD_STATES): cv.boolean,
@@ -181,6 +187,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     # SSL configuration (from YAML only)
     db_ssl = yaml_config.get(CONF_DB_SSL, DEFAULT_DB_SSL)
+    
+    # SSL Paths (from Config Entry or YAML)
+    ssl_root_cert = config.get(CONF_SSL_ROOT_CERT) or yaml_config.get(CONF_SSL_ROOT_CERT)
+    ssl_cert_file = config.get(CONF_SSL_CERT_FILE) or yaml_config.get(CONF_SSL_CERT_FILE)
+    ssl_key_file = config.get(CONF_SSL_KEY_FILE) or yaml_config.get(CONF_SSL_KEY_FILE)
 
     # Initialize Writer
     # The ScribeWriter runs in a separate thread to handle DB I/O
@@ -197,7 +208,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         buffer_on_failure=options.get(CONF_BUFFER_ON_FAILURE, config.get(CONF_BUFFER_ON_FAILURE, DEFAULT_BUFFER_ON_FAILURE)),
         table_name_states=DEFAULT_TABLE_NAME_STATES,
         table_name_events=DEFAULT_TABLE_NAME_EVENTS,
-        use_ssl=db_ssl
+        use_ssl=db_ssl,
+        ssl_root_cert=ssl_root_cert,
+        ssl_cert_file=ssl_cert_file,
+        ssl_key_file=ssl_key_file,
     )
     
     # Start the writer task (async)

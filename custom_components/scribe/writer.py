@@ -20,7 +20,7 @@ from homeassistant.core import HomeAssistant
 _LOGGER = logging.getLogger(__name__)
 
 
-def _create_ssl_context() -> ssl.SSLContext:
+def _create_ssl_context(ssl_root_cert=None, ssl_cert_file=None, ssl_key_file=None) -> ssl.SSLContext:
     """Create and configure SSL context in executor thread.
     
     asyncpg calls ssl.load_cert_chain() synchronously when establishing SSL connections.
@@ -44,32 +44,21 @@ def _create_ssl_context() -> ssl.SSLContext:
     except Exception as e:
         _LOGGER.debug("Could not load system CA certificates: %s", e)
     
-    # Load PostgreSQL client certificates from standard locations
-    # asyncpg checks these paths: /.postgresql/ (containers) and ~/.postgresql/
-    cert_locations = [
-        (Path("/.postgresql/postgresql.crt"), Path("/.postgresql/postgresql.key")),
-        (Path.home() / ".postgresql" / "postgresql.crt", Path.home() / ".postgresql" / "postgresql.key"),
-    ]
-    
-    for cert_path, key_path in cert_locations:
-        if cert_path.exists():
-            try:
-                key_file = str(key_path) if key_path.exists() else None
-                _LOGGER.debug("Loading PostgreSQL client certificate from %s", cert_path)
-                ssl_context.load_cert_chain(str(cert_path), key_file)
-                break  # Only load from first found location
-            except Exception as e:
-                _LOGGER.debug("Could not load cert chain from %s: %s", cert_path, e)
+    # Load PostgreSQL client certificates
+    if ssl_cert_file and Path(ssl_cert_file).exists():
+        try:
+            _LOGGER.debug("Loading PostgreSQL client certificate from %s", ssl_cert_file)
+            ssl_context.load_cert_chain(ssl_cert_file, ssl_key_file)
+        except Exception as e:
+            _LOGGER.error("Could not load cert chain from %s: %s", ssl_cert_file, e)
     
     # Load CA certificate for server verification
-    for ca_path in [Path("/.postgresql/root.crt"), Path.home() / ".postgresql" / "root.crt"]:
-        if ca_path.exists():
-            try:
-                _LOGGER.debug("Loading CA certificate from %s", ca_path)
-                ssl_context.load_verify_locations(str(ca_path))
-                break  # Only load from first found location
-            except Exception as e:
-                _LOGGER.debug("Could not load CA cert from %s: %s", ca_path, e)
+    if ssl_root_cert and Path(ssl_root_cert).exists():
+        try:
+            _LOGGER.debug("Loading CA certificate from %s", ssl_root_cert)
+            ssl_context.load_verify_locations(ssl_root_cert)
+        except Exception as e:
+            _LOGGER.error("Could not load CA cert from %s: %s", ssl_root_cert, e)
     
     _LOGGER.debug("SSL context created successfully")
     return ssl_context
@@ -97,6 +86,9 @@ class ScribeWriter:
         table_name_states: str, 
         table_name_events: str,
         use_ssl: bool = False,
+        ssl_root_cert: str = None,
+        ssl_cert_file: str = None,
+        ssl_key_file: str = None,
         engine: Any = None
     ):
         """Initialize the writer."""
@@ -119,6 +111,9 @@ class ScribeWriter:
         self.table_name_states = table_name_states
         self.table_name_events = table_name_events
         self.use_ssl = use_ssl
+        self.ssl_root_cert = ssl_root_cert
+        self.ssl_cert_file = ssl_cert_file
+        self.ssl_key_file = ssl_key_file
         
         # Stats for sensors
         self._states_written = 0
@@ -159,7 +154,12 @@ class ScribeWriter:
                     # certificates. By providing our own pre-configured SSL context,
                     # we prevent asyncpg from doing blocking I/O in the event loop.
                     _LOGGER.debug("SSL enabled, creating SSL context in executor...")
-                    ssl_context = await self.hass.async_add_executor_job(_create_ssl_context)
+                    ssl_context = await self.hass.async_add_executor_job(
+                        _create_ssl_context, 
+                        self.ssl_root_cert, 
+                        self.ssl_cert_file, 
+                        self.ssl_key_file
+                    )
                     connect_args = {"ssl": ssl_context}
                 else:
                     # Disable SSL explicitly to prevent asyncpg from auto-detecting

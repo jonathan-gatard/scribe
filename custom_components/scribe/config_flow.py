@@ -15,6 +15,9 @@ from homeassistant.helpers import selector
 from .const import (
     DOMAIN,
     CONF_DB_URL,
+    CONF_SSL_ROOT_CERT,
+    CONF_SSL_CERT_FILE,
+    CONF_SSL_KEY_FILE,
     CONF_INCLUDE_DOMAINS,
     CONF_INCLUDE_ENTITIES,
     CONF_EXCLUDE_DOMAINS,
@@ -73,6 +76,9 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(
                         CONF_RECORD_EVENTS, default=DEFAULT_RECORD_EVENTS
                     ): bool,
+                    vol.Optional(CONF_SSL_ROOT_CERT): str,
+                    vol.Optional(CONF_SSL_CERT_FILE): str,
+                    vol.Optional(CONF_SSL_KEY_FILE): str,
                 }
             ),
             errors=errors,
