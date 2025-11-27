@@ -13,6 +13,8 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 - 🔒 **Secure**: Full SSL/TLS support.
 - 👥 **User Context**: Automatically syncs Home Assistant users to the database for rich context.
 - 🧩 **Entity Metadata**: Automatically syncs entity registry (names, platforms, etc.) to the `entities` table.
+- 🏠 **Area & Device Context**: Automatically syncs areas and devices to `areas` and `devices` tables.
+- 🔌 **Integration Info**: Automatically syncs integration config entries to the `integrations` table.
 - 🎯 **Smart Filtering**: Include/exclude by domain, entity, or attribute.
 - ✅ **100% Test Coverage**: Robust and reliable.
 
@@ -173,6 +175,23 @@ Force an immediate flush of buffered data to the database.
 
 ```yaml
 service: scribe.flush
+```
+
+### `scribe.query`
+Execute a read-only SQL query against the TimescaleDB database.
+
+**Parameters:**
+- `sql` (Required): The SQL query to execute. Must be a `SELECT` statement.
+
+**Returns:**
+A list of rows, where each row is a dictionary of column names and values.
+
+**Example:**
+```yaml
+service: scribe.query
+data:
+  sql: "SELECT * FROM states ORDER BY time DESC LIMIT 5"
+response_variable: query_result
 ```
 
 ## Troubleshooting

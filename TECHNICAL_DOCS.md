@@ -27,7 +27,8 @@ Scribe is a custom Home Assistant integration designed to offload historical dat
     *   Sets up the integration.
     *   Initializes the `ScribeWriter` thread.
     *   Registers event listeners (`EVENT_STATE_CHANGED`, `EVENT_HOMEASSISTANT_STOP`).
-    *   Handles the `scribe.flush` service.
+    *   Registers event listeners (`EVENT_STATE_CHANGED`, `EVENT_HOMEASSISTANT_STOP`).
+    *   Handles the `scribe.flush` and `scribe.query` services.
     *   Forwards setup to `sensor` and `binary_sensor` platforms.
 2.  **`writer.py` (`ScribeWriter`)**: The heart of the integration.
     *   Runs as a separate **Daemon Thread** to avoid blocking the main Home Assistant loop.
@@ -37,6 +38,7 @@ Scribe is a custom Home Assistant integration designed to offload historical dat
     *   **Retry Logic**: If the database is unreachable:
         *   If `buffer_on_failure` is **True**: The batch is put back into the queue (prepended). A `max_queue_size` (default: 10,000) prevents memory exhaustion.
         *   If `buffer_on_failure` is **False** (default): The batch is dropped to prevent memory buildup.
+    *   **Query Execution**: Provides a read-only `query()` method for executing SQL SELECT statements safely.
 3.  **`config_flow.py`**: Handles UI configuration.
     *   Supports standard user flow and import from YAML.
     *   Validates database connections.
