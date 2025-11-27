@@ -19,7 +19,15 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
-from .const import DOMAIN, CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS
+from .const import (
+    DOMAIN, 
+    CONF_ENABLE_STATS_CHUNK, 
+    CONF_ENABLE_STATS_SIZE, 
+    CONF_ENABLE_STATS_IO,
+    DEFAULT_ENABLE_STATS_CHUNK,
+    DEFAULT_ENABLE_STATS_SIZE,
+    DEFAULT_ENABLE_STATS_IO,
+)
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -28,37 +36,50 @@ async def async_setup_entry(
 ) -> None:
     """Set up Scribe sensors.
     
-    Retrieves the writer instance and coordinator from hass.data and creates
-    the sensor entities.
+    Retrieves the writer instance and coordinators from hass.data and creates
+    the sensor entities based on enabled statistics types.
     """
-    writer = hass.data[DOMAIN][entry.entry_id]["writer"]
-    coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
+    data = hass.data[DOMAIN][entry.entry_id]
+    writer = data["writer"]
+    chunk_coordinator = data.get("chunk_coordinator")
+    size_coordinator = data.get("size_coordinator")
     
-    entities = [
-        ScribeStatesWrittenSensor(writer, entry),
-        ScribeEventsWrittenSensor(writer, entry),
-        ScribeBufferSizeSensor(writer, entry),
-        ScribeWriteDurationSensor(writer, entry),
-    ]
+    entities = []
     
-    # Add Statistics Sensors if enabled
-    # These sensors rely on the DataUpdateCoordinator to fetch data periodically
-    if entry.options.get(CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS) and coordinator:
+    # IO Statistics Sensors (always-on, real-time from writer)
+    enable_stats_io = entry.options.get(CONF_ENABLE_STATS_IO, entry.data.get(CONF_ENABLE_STATS_IO, DEFAULT_ENABLE_STATS_IO))
+    if enable_stats_io:
         entities.extend([
-            # States table sensors
-            ScribeStatsTotalSizeSensor(coordinator, entry),
-            ScribeStatsCompressedSizeSensor(coordinator, entry),
-            ScribeStatsUncompressedSizeSensor(coordinator, entry),
-            ScribeStatsTotalChunksSensor(coordinator, entry),
-            ScribeStatsCompressedChunksSensor(coordinator, entry),
-            ScribeStatsUncompressedChunksSensor(coordinator, entry),
-            # Events table sensors
-            ScribeEventsTotalSizeSensor(coordinator, entry),
-            ScribeEventsCompressedSizeSensor(coordinator, entry),
-            ScribeEventsUncompressedSizeSensor(coordinator, entry),
-            ScribeEventsTotalChunksSensor(coordinator, entry),
-            ScribeEventsCompressedChunksSensor(coordinator, entry),
-            ScribeEventsUncompressedChunksSensor(coordinator, entry),
+            ScribeStatesWrittenSensor(writer, entry),
+            ScribeEventsWrittenSensor(writer, entry),
+            ScribeBufferSizeSensor(writer, entry),
+            ScribeWriteDurationSensor(writer, entry),
+        ])
+    
+    # Chunk Statistics Sensors (from chunk_coordinator)
+    if chunk_coordinator:
+        entities.extend([
+            # States table chunks
+            ScribeStatsTotalChunksSensor(chunk_coordinator, entry),
+            ScribeStatsCompressedChunksSensor(chunk_coordinator, entry),
+            ScribeStatsUncompressedChunksSensor(chunk_coordinator, entry),
+            # Events table chunks
+            ScribeEventsTotalChunksSensor(chunk_coordinator, entry),
+            ScribeEventsCompressedChunksSensor(chunk_coordinator, entry),
+            ScribeEventsUncompressedChunksSensor(chunk_coordinator, entry),
+        ])
+    
+    # Size Statistics Sensors (from size_coordinator)
+    if size_coordinator:
+        entities.extend([
+            # States table sizes
+            ScribeStatsTotalSizeSensor(size_coordinator, entry),
+            ScribeStatsCompressedSizeSensor(size_coordinator, entry),
+            ScribeStatsUncompressedSizeSensor(size_coordinator, entry),
+            # Events table sizes
+            ScribeEventsTotalSizeSensor(size_coordinator, entry),
+            ScribeEventsCompressedSizeSensor(size_coordinator, entry),
+            ScribeEventsUncompressedSizeSensor(size_coordinator, entry),
         ])
     
     async_add_entities(entities, True)

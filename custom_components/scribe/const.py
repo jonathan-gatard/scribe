@@ -23,7 +23,13 @@ CONF_MAX_QUEUE_SIZE = "max_queue_size"
 CONF_TABLE_NAME_STATES = "table_name_states"
 CONF_TABLE_NAME_EVENTS = "table_name_events"
 
-CONF_ENABLE_STATISTICS = "enable_statistics"
+# Statistics configuration
+CONF_ENABLE_STATS_CHUNK = "enable_stats_chunk"
+CONF_ENABLE_STATS_SIZE = "enable_stats_size"
+CONF_ENABLE_STATS_IO = "enable_stats_io"
+CONF_STATS_CHUNK_INTERVAL = "stats_chunk_interval"
+CONF_STATS_SIZE_INTERVAL = "stats_size_interval"
+
 CONF_BUFFER_ON_FAILURE = "buffer_on_failure"
 
 DEFAULT_CHUNK_TIME_INTERVAL = "7 days"
@@ -40,5 +46,10 @@ DEFAULT_MAX_QUEUE_SIZE = 10000
 DEFAULT_TABLE_NAME_STATES = "states"
 DEFAULT_TABLE_NAME_EVENTS = "events"
 
-DEFAULT_ENABLE_STATISTICS = False
+DEFAULT_ENABLE_STATS_CHUNK = False
+DEFAULT_ENABLE_STATS_SIZE = False
+DEFAULT_ENABLE_STATS_IO = False
+DEFAULT_STATS_CHUNK_INTERVAL = 60  # minutes
+DEFAULT_STATS_SIZE_INTERVAL = 60  # minutes
+
 DEFAULT_BUFFER_ON_FAILURE = True

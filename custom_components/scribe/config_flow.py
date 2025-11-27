@@ -27,7 +27,6 @@ from .const import (
     CONF_RECORD_EVENTS,
     CONF_BATCH_SIZE,
     CONF_FLUSH_INTERVAL,
-    CONF_ENABLE_STATISTICS,
     CONF_MAX_QUEUE_SIZE,
     CONF_BUFFER_ON_FAILURE,
     DEFAULT_CHUNK_TIME_INTERVAL,
@@ -37,7 +36,6 @@ from .const import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_FLUSH_INTERVAL,
     DEFAULT_MAX_QUEUE_SIZE,
-    DEFAULT_ENABLE_STATISTICS,
     DEFAULT_BUFFER_ON_FAILURE,
 )
 
@@ -79,9 +77,6 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ): bool,
                     vol.Optional(
                         CONF_RECORD_EVENTS, default=DEFAULT_RECORD_EVENTS
-                    ): bool,
-                    vol.Optional(
-                        CONF_ENABLE_STATISTICS, default=DEFAULT_ENABLE_STATISTICS
                     ): bool,
                 }
             ),
@@ -165,12 +160,6 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_RECORD_EVENTS,
                         default=self.config_entry.options.get(
                             CONF_RECORD_EVENTS, DEFAULT_RECORD_EVENTS
-                        ),
-                    ): selector.BooleanSelector(),
-                    vol.Optional(
-                        CONF_ENABLE_STATISTICS,
-                        default=self.config_entry.options.get(
-                            CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS
                         ),
                     ): selector.BooleanSelector(),
                     vol.Optional(

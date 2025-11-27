@@ -38,7 +38,11 @@ from .const import (
     CONF_MAX_QUEUE_SIZE,
     CONF_TABLE_NAME_STATES,
     CONF_TABLE_NAME_EVENTS,
-    CONF_ENABLE_STATISTICS,
+    CONF_ENABLE_STATS_IO,
+    CONF_ENABLE_STATS_CHUNK,
+    CONF_ENABLE_STATS_SIZE,
+    CONF_STATS_CHUNK_INTERVAL,
+    CONF_STATS_SIZE_INTERVAL,
     DEFAULT_CHUNK_TIME_INTERVAL,
     DEFAULT_COMPRESS_AFTER,
     DEFAULT_DB_SSL,
@@ -49,7 +53,11 @@ from .const import (
     DEFAULT_MAX_QUEUE_SIZE,
     DEFAULT_TABLE_NAME_STATES,
     DEFAULT_TABLE_NAME_EVENTS,
-    DEFAULT_ENABLE_STATISTICS,
+    DEFAULT_ENABLE_STATS_IO,
+    DEFAULT_ENABLE_STATS_CHUNK,
+    DEFAULT_ENABLE_STATS_SIZE,
+    DEFAULT_STATS_CHUNK_INTERVAL,
+    DEFAULT_STATS_SIZE_INTERVAL,
     CONF_BUFFER_ON_FAILURE,
     DEFAULT_BUFFER_ON_FAILURE,
 )
@@ -78,7 +86,11 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(CONF_TABLE_NAME_STATES, default=DEFAULT_TABLE_NAME_STATES): cv.string,
                 vol.Optional(CONF_TABLE_NAME_EVENTS, default=DEFAULT_TABLE_NAME_EVENTS): cv.string,
                 vol.Optional(CONF_BUFFER_ON_FAILURE, default=DEFAULT_BUFFER_ON_FAILURE): cv.boolean,
-                vol.Optional(CONF_ENABLE_STATISTICS, default=DEFAULT_ENABLE_STATISTICS): cv.boolean,
+                vol.Optional(CONF_ENABLE_STATS_IO, default=DEFAULT_ENABLE_STATS_IO): cv.boolean,
+                vol.Optional(CONF_ENABLE_STATS_CHUNK, default=DEFAULT_ENABLE_STATS_CHUNK): cv.boolean,
+                vol.Optional(CONF_ENABLE_STATS_SIZE, default=DEFAULT_ENABLE_STATS_SIZE): cv.boolean,
+                vol.Optional(CONF_STATS_CHUNK_INTERVAL, default=DEFAULT_STATS_CHUNK_INTERVAL): cv.positive_int,
+                vol.Optional(CONF_STATS_SIZE_INTERVAL, default=DEFAULT_STATS_SIZE_INTERVAL): cv.positive_int,
                 vol.Optional(CONF_INCLUDE_DOMAINS, default=[]): vol.All(cv.ensure_list, [cv.string]),
                 vol.Optional(CONF_INCLUDE_ENTITIES, default=[]): vol.All(cv.ensure_list, [cv.entity_id]),
                 vol.Optional(CONF_EXCLUDE_DOMAINS, default=[]): vol.All(cv.ensure_list, [cv.string]),
@@ -199,19 +211,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Start the writer task (async)
     await writer.start()
     
-    # Setup Data Update Coordinator for statistics
+    # Setup Data Update Coordinators for statistics
     from .coordinator import ScribeDataUpdateCoordinator
     
-    coordinator = None
-    enable_statistics = options.get(CONF_ENABLE_STATISTICS, config.get(CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS))
-    if enable_statistics:
-        coordinator = ScribeDataUpdateCoordinator(hass, writer)
-        await coordinator.async_config_entry_first_refresh()
+    chunk_coordinator = None
+    size_coordinator = None
+    
+    # Check granular settings
+    enable_stats_chunk = options.get(CONF_ENABLE_STATS_CHUNK, config.get(CONF_ENABLE_STATS_CHUNK, DEFAULT_ENABLE_STATS_CHUNK))
+    enable_stats_size = options.get(CONF_ENABLE_STATS_SIZE, config.get(CONF_ENABLE_STATS_SIZE, DEFAULT_ENABLE_STATS_SIZE))
+    
+    if enable_stats_chunk:
+        chunk_interval = options.get(CONF_STATS_CHUNK_INTERVAL, config.get(CONF_STATS_CHUNK_INTERVAL, DEFAULT_STATS_CHUNK_INTERVAL))
+        chunk_coordinator = ScribeDataUpdateCoordinator(
+            hass, 
+            writer, 
+            update_interval_minutes=chunk_interval,
+            stats_type="chunk"
+        )
+        await chunk_coordinator.async_config_entry_first_refresh()
+    
+    if enable_stats_size:
+        size_interval = options.get(CONF_STATS_SIZE_INTERVAL, config.get(CONF_STATS_SIZE_INTERVAL, DEFAULT_STATS_SIZE_INTERVAL))
+        size_coordinator = ScribeDataUpdateCoordinator(
+            hass, 
+            writer, 
+            update_interval_minutes=size_interval,
+            stats_type="size"
+        )
+        await size_coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "writer": writer,
-        "coordinator": coordinator
+        "chunk_coordinator": chunk_coordinator,
+        "size_coordinator": size_coordinator,
     }
 
     # Forward setup to platforms (Sensor, Binary Sensor)
