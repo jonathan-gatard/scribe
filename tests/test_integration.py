@@ -11,7 +11,7 @@ DB_URL = os.getenv("SCRIBE_INTEGRATION_TEST_DB_URL")
 
 @pytest.mark.skipif(not DB_URL, reason="Integration test DB URL not set")
 @pytest.mark.asyncio
-async def test_integration_write_and_read(hass):
+async def test_integration_write_and_read(hass, socket_enabled):
     """Test writing to a real database and reading back."""
     
     # 1. Setup Writer
@@ -82,7 +82,7 @@ async def test_integration_write_and_read(hass):
 
 @pytest.mark.skipif(not DB_URL, reason="Integration test DB URL not set")
 @pytest.mark.asyncio
-async def test_integration_compression_setup(hass):
+async def test_integration_compression_setup(hass, socket_enabled):
     """Test that compression policies are correctly set up."""
     writer = ScribeWriter(
         hass=hass,
