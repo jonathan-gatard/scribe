@@ -12,14 +12,6 @@ jobs:
     strategy:
       matrix:
         include:
-          # Bleeding Edge (Dev) - Test both PG17 and PG18
-          - ha-version: "dev"
-            python-version: "3.13"
-            postgres-version: "pg18"
-          - ha-version: "dev"
-            python-version: "3.13"
-            postgres-version: "pg17"
-
           # Beta - Test both PG17 and PG18
           - ha-version: "beta"
             python-version: "3.13"
@@ -69,8 +61,6 @@ jobs:
           pip install homeassistant
         elif [ "${{ matrix.ha-version }}" == "beta" ]; then
           pip install --pre homeassistant
-        elif [ "${{ matrix.ha-version }}" == "dev" ]; then
-          pip install git+https://github.com/home-assistant/core.git@dev
         else
           pip install homeassistant==${{ matrix.ha-version }}
         fi
