@@ -75,7 +75,7 @@ scribe:
   compress_after: "7 days"
   record_states: true
   record_events: false
-  batch_size: 100
+  batch_size: 500
   flush_interval: 5
   max_queue_size: 10000
   buffer_on_failure: true
