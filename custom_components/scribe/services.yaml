@@ -2,3 +2,19 @@ flush:
   name: Flush Buffer
   description: Manually flush the event buffer to the database.
   icon: mdi:database-arrow-right
+
+query:
+  name: Query Database
+  description: Execute a read-only SQL query against the TimescaleDB database.
+  icon: mdi:database-search
+  fields:
+    sql:
+      name: SQL Query
+      description: The SELECT SQL query to execute.
+      required: true
+      selector:
+        text:
+          multiline: true
+  response:
+    query_result:
+      description: A list of rows returned by the query.
