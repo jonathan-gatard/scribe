@@ -16,7 +16,18 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 
 ## Installation
 
-### 1. Database Setup
+### 1. Install Component
+
+**HACS (Recommended)**
+1. Add this repository as a custom repository in HACS.
+2. Search for "Scribe" and install.
+3. Restart Home Assistant.
+
+**Manual**
+1. Copy the `custom_components/scribe` folder to your Home Assistant's `custom_components` directory.
+2. Restart Home Assistant.
+
+### 2. Database Setup
 
 You need a running TimescaleDB instance. We recommend PostgreSQL 17.
 
@@ -40,17 +51,6 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 GRANT ALL ON SCHEMA public TO scribe;
 ```
 
-### 2. Install Component
-
-**HACS (Recommended)**
-1. Add this repository as a custom repository in HACS.
-2. Search for "Scribe" and install.
-3. Restart Home Assistant.
-
-**Manual**
-1. Copy the `custom_components/scribe` folder to your Home Assistant's `custom_components` directory.
-2. Restart Home Assistant.
-
 ## Configuration
 
 ### Minimal Configuration
@@ -60,77 +60,71 @@ scribe:
   db_url: postgresql://scribe:password@192.168.1.10:5432/scribe
 ```
 
-### Complete Configuration
+### Configuration Parameters
 
-```yaml
-scribe:
-  # Database connection (REQUIRED)
-  db_url: postgresql://scribe:password@192.168.1.10:5432/scribe
-  db_ssl: false  # Enable SSL/TLS
-  
-  # TimescaleDB settings
-  chunk_time_interval: "7 days"   # Chunk size
-  compress_after: "60 days"       # Compression policy
-  
-  # What to record
-  record_states: true
-  record_events: false
-  
-  # Performance tuning
-  batch_size: 100           # Items per write
-  flush_interval: 5         # Seconds between flushes
-  max_queue_size: 10000     # Max buffer size
-  buffer_on_failure: true   # Buffer writes on DB failure
-  
-  # Statistics sensors (all optional, default: false)
-  enable_stats_io: false         # Real-time writer metrics
-  enable_stats_chunk: false      # Chunk count statistics
-  enable_stats_size: false       # Storage size statistics
-  stats_chunk_interval: 60      # Minutes between chunk stats updates
-  stats_size_interval: 60       # Minutes between size stats updates
-  
-  # Filtering
-  include_domains:
-    - sensor
-    - light
-  include_entities:
-    - sensor.temperature
-  exclude_domains:
-    - automation
-  exclude_entities:
-    - sensor.noisy_sensor
-  exclude_attributes:
-    - entity_picture
-```
+| Parameter | Description | Example |
+| :--- | :--- | :--- |
+| `db_url` | **Required.** The connection string for your TimescaleDB database. | `postgresql://user:pass@host:5432/db` |
+| `db_ssl` | Enable SSL/TLS for the database connection. | `false` |
+| `chunk_time_interval` | The duration of each data chunk in TimescaleDB. | `"7 days"` |
+| `compress_after` | How old data should be before it is compressed. | `"60 days"` |
+| `record_states` | Whether to record state changes. | `true` |
+| `record_events` | Whether to record events. | `false` |
+| `batch_size` | Number of items to buffer before writing to the database. | `100` |
+| `flush_interval` | Maximum time (in seconds) to wait before flushing the buffer. | `5` |
+| `max_queue_size` | Maximum number of items to hold in memory before dropping new ones. | `10000` |
+| `buffer_on_failure` | If true, keeps data in memory if the DB is unreachable (up to `max_queue_size`). | `true` |
+| `enable_stats_io` | Enable real-time writer performance sensors (no DB queries). | `false` |
+| `enable_stats_chunk` | Enable chunk count statistics sensors (queries DB). | `false` |
+| `enable_stats_size` | Enable storage size statistics sensors (queries DB). | `false` |
+| `stats_chunk_interval` | Interval (in minutes) to update chunk statistics. | `60` |
+| `stats_size_interval` | Interval (in minutes) to update size statistics. | `60` |
+| `include_domains` | List of domains to include. | `["sensor", "light"]` |
+| `include_entities` | List of specific entities to include. | `["sensor.temp"]` |
+| `exclude_domains` | List of domains to exclude. | `["automation"]` |
+| `exclude_entities` | List of specific entities to exclude. | `["sensor.noisy"]` |
+| `exclude_attributes` | List of attributes to exclude from the `attributes` column. | `["entity_picture"]` |
 
 ## Statistics Sensors
 
-Enable sensors by setting their flags in your configuration:
+Enable sensors by setting their flags in your configuration.
 
 ### IO Statistics (`enable_stats_io: true`)
-Real-time metrics from the writer (no DB queries):
-- `sensor.scribe_states_written` - Total states written
-- `sensor.scribe_events_written` - Total events written
-- `sensor.scribe_buffer_size` - Current queue size
-- `sensor.scribe_write_duration` - Last write duration (seconds)
+
+Real-time metrics from the writer (no DB queries).
+
+| Sensor | Description | Example |
+| :--- | :--- | :--- |
+| `sensor.scribe_states_written` | Total number of state changes written to the DB. | `15420` |
+| `sensor.scribe_events_written` | Total number of events written to the DB. | `0` |
+| `sensor.scribe_buffer_size` | Current number of items waiting in the memory buffer. | `12` |
+| `sensor.scribe_write_duration` | Time taken (in seconds) for the last database write operation. | `0.045` |
 
 ### Chunk Statistics (`enable_stats_chunk: true`)
-Chunk counts (updated every N minutes):
-- `sensor.scribe_states_total_chunks`
-- `sensor.scribe_states_compressed_chunks`
-- `sensor.scribe_states_uncompressed_chunks`
-- `sensor.scribe_events_total_chunks`
-- `sensor.scribe_events_compressed_chunks`
-- `sensor.scribe_events_uncompressed_chunks`
+
+Chunk counts (updated every `stats_chunk_interval` minutes).
+
+| Sensor | Description | Example |
+| :--- | :--- | :--- |
+| `sensor.scribe_states_total_chunks` | Total number of chunks for the states table. | `12` |
+| `sensor.scribe_states_compressed_chunks` | Number of chunks that have been compressed. | `10` |
+| `sensor.scribe_states_uncompressed_chunks` | Number of chunks waiting to be compressed. | `2` |
+| `sensor.scribe_events_total_chunks` | Total number of chunks for the events table. | `5` |
+| `sensor.scribe_events_compressed_chunks` | Number of compressed event chunks. | `4` |
+| `sensor.scribe_events_uncompressed_chunks` | Number of uncompressed event chunks. | `1` |
 
 ### Size Statistics (`enable_stats_size: true`)
-Storage usage in bytes (updated every N minutes):
-- `sensor.scribe_states_total_size`
-- `sensor.scribe_states_compressed_size`
-- `sensor.scribe_states_uncompressed_size`
-- `sensor.scribe_events_total_size`
-- `sensor.scribe_events_compressed_size`
-- `sensor.scribe_events_uncompressed_size`
+
+Storage usage in bytes (updated every `stats_size_interval` minutes).
+
+| Sensor | Description | Example |
+| :--- | :--- | :--- |
+| `sensor.scribe_states_total_size` | Total disk size of the states table. | `1.2 GB` |
+| `sensor.scribe_states_compressed_size` | Size of compressed state data. | `450 MB` |
+| `sensor.scribe_states_uncompressed_size` | Size of uncompressed state data. | `750 MB` |
+| `sensor.scribe_events_total_size` | Total disk size of the events table. | `500 MB` |
+| `sensor.scribe_events_compressed_size` | Size of compressed event data. | `200 MB` |
+| `sensor.scribe_events_uncompressed_size` | Size of uncompressed event data. | `300 MB` |
 
 ## Services
 
