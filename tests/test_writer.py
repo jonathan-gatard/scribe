@@ -165,9 +165,9 @@ async def test_writer_get_db_stats(writer, mock_db_connection):
     
     stats = await writer.get_db_stats()
     
-    assert stats["states_size_bytes"] == 1024
+    assert stats["states_total_size"] == 10
     assert stats["states_total_chunks"] == 10
-    assert stats["events_size_bytes"] == 1024
+    assert stats["events_total_size"] == 10
 
 @pytest.mark.asyncio
 async def test_writer_engine_creation_failure(hass):

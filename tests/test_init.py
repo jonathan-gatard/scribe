@@ -98,33 +98,35 @@ async def test_event_listener(hass, mock_config_entry):
             "new_state": State("sensor.test", "123", {"unit": "W"})
         }
         
-        # Manually find and call the listener because async_fire/fire doesn't seem to trigger None listeners in this test env
-        listeners = hass.bus._listeners.get(None, [])
-        assert len(listeners) > 0, "No catch-all listener registered"
+        # Capture the listener using patch on hass.bus.async_listen
+        # Since we can't easily patch it before setup in this structure without refactoring,
+        # let's iterate listeners again but be more robust.
         
-        # Find the handle_event listener (it's a coroutine function)
-        handler = listeners[0][0] # (job, filter, weak) -> job.target
-        
-        # In newer HA versions, job might be an object, let's try to call it
-        # Based on debug output: <Job listen None HassJobType.Coroutinefunction ...>
-        # We can just call the target if we can access it, or use the job
-        
-        # Simpler approach: The listener is the first one in the list for None
-        # We can just execute it.
-        
-        # Let's try to find the one that is our handle_event
         target_listener = None
+        # In HA core, listeners are stored in hass.bus._listeners
+        # It's a dict: {event_type: [list of listeners]}
+        # For EVENT_STATE_CHANGED, it should be there.
+        
+        listeners = hass.bus._listeners.get(EVENT_STATE_CHANGED, [])
         for listener_item in listeners:
-            # Handle both (job, filter, weak) and (job, filter) formats
-            job = listener_item[0]
-            if "handle_event" in str(job):
-                target_listener = job.target
-                break
+             # listener_item is a generic callback, usually the job is wrapped
+             # We look for our function name in the string representation
+             if "handle_event" in str(listener_item):
+                 target_listener = listener_item
+                 break
         
-        assert target_listener is not None
+        # If not found in specific event, check None (catch-all) if we used MATCH_ALL? 
+        # But handle_event is for EVENT_STATE_CHANGED.
         
-        await target_listener(event)
+        # If still not found, maybe we can just fire the event?
+        # hass.bus.async_fire(EVENT_STATE_CHANGED, event.data)
+        # But we need to await it or wait for it.
         
+        # Let's try firing it and waiting.
+        hass.bus.async_fire(EVENT_STATE_CHANGED, event.data)
+        await hass.async_block_till_done()
+        
+        # Verify enqueue called
         mock_writer.enqueue.assert_called()
         call_arg = mock_writer.enqueue.call_args[0][0]
         assert call_arg["type"] == "state"
@@ -200,9 +202,9 @@ async def test_yaml_exclude_attributes(hass, mock_config_entry):
 async def test_statistics_setup(hass, mock_config_entry):
     """Test statistics setup."""
     from custom_components.scribe import async_setup_entry
-    from custom_components.scribe.const import CONF_ENABLE_STATISTICS
+    from custom_components.scribe.const import CONF_ENABLE_STATS_CHUNK
     
-    mock_config_entry.options = {CONF_ENABLE_STATISTICS: True}
+    mock_config_entry.options = {CONF_ENABLE_STATS_CHUNK: True}
     
     with patch("custom_components.scribe.ScribeWriter") as mock_writer_cls, \
          patch("custom_components.scribe.coordinator.ScribeDataUpdateCoordinator") as mock_coord_cls:
@@ -218,7 +220,7 @@ async def test_statistics_setup(hass, mock_config_entry):
         
         mock_coord_cls.assert_called_once()
         mock_coord.async_config_entry_first_refresh.assert_called_once()
-        assert hass.data[DOMAIN][mock_config_entry.entry_id]["coordinator"] == mock_coord
+        assert hass.data[DOMAIN][mock_config_entry.entry_id]["chunk_coordinator"] == mock_coord
 
 @pytest.mark.asyncio
 async def test_event_listener_filtering(hass, mock_config_entry):
@@ -241,47 +243,31 @@ async def test_event_listener_filtering(hass, mock_config_entry):
         
         await async_setup_entry(hass, mock_config_entry)
         
-        listeners = hass.bus._listeners.get(None, [])
-        target_listener = None
-        for listener_item in listeners:
-            # Handle both (job, filter, weak) and (job, filter) formats
-            job = listener_item[0]
-            if "handle_event" in str(job):
-                target_listener = job.target
-                break
-        assert target_listener is not None
+        # Use async_fire instead of manual calling
         
         # Test 1: Entity not included
-        event_excluded = MagicMock()
-        event_excluded.event_type = EVENT_STATE_CHANGED
-        event_excluded.data = {"entity_id": "sensor.excluded", "new_state": State("sensor.excluded", "1")}
-        await target_listener(event_excluded)
+        hass.bus.async_fire(EVENT_STATE_CHANGED, {"entity_id": "sensor.excluded", "new_state": State("sensor.excluded", "1")})
+        await hass.async_block_till_done()
         mock_writer.enqueue.assert_not_called()
         
         # Test 2: New state is None
-        event_none = MagicMock()
-        event_none.event_type = EVENT_STATE_CHANGED
-        event_none.data = {"entity_id": "sensor.included", "new_state": None}
-        await target_listener(event_none)
+        hass.bus.async_fire(EVENT_STATE_CHANGED, {"entity_id": "sensor.included", "new_state": None})
+        await hass.async_block_till_done()
         mock_writer.enqueue.assert_not_called()
         
         # Test 3: Non-numeric state
-        event_str = MagicMock()
-        event_str.event_type = EVENT_STATE_CHANGED
-        event_str.data = {"entity_id": "sensor.included", "new_state": State("sensor.included", "string")}
-        await target_listener(event_str)
+        hass.bus.async_fire(EVENT_STATE_CHANGED, {"entity_id": "sensor.included", "new_state": State("sensor.included", "string")})
+        await hass.async_block_till_done()
         mock_writer.enqueue.assert_called()
         assert mock_writer.enqueue.call_args[0][0]["value"] is None
         mock_writer.enqueue.reset_mock()
         
         # Test 4: Attribute exclusion
-        event_attr = MagicMock()
-        event_attr.event_type = EVENT_STATE_CHANGED
-        event_attr.data = {
+        hass.bus.async_fire(EVENT_STATE_CHANGED, {
             "entity_id": "sensor.included", 
             "new_state": State("sensor.included", "1", {"excluded_attr": 1, "kept_attr": 2})
-        }
-        await target_listener(event_attr)
+        })
+        await hass.async_block_till_done()
         mock_writer.enqueue.assert_called()
         import json
         attrs = json.loads(mock_writer.enqueue.call_args[0][0]["attributes"])
@@ -291,7 +277,11 @@ async def test_event_listener_filtering(hass, mock_config_entry):
         
         # Test 5: Exception handling
         mock_writer.enqueue.side_effect = Exception("Enqueue Error")
-        await target_listener(event_attr) # Should not raise
+        hass.bus.async_fire(EVENT_STATE_CHANGED, {
+            "entity_id": "sensor.included", 
+            "new_state": State("sensor.included", "1", {"excluded_attr": 1, "kept_attr": 2})
+        })
+        await hass.async_block_till_done() # Should not raise
         mock_writer.enqueue.side_effect = None
 
 @pytest.mark.asyncio
@@ -311,20 +301,8 @@ async def test_event_listener_no_record_states(hass, mock_config_entry):
         
         await async_setup_entry(hass, mock_config_entry)
         
-        listeners = hass.bus._listeners.get(None, [])
-        target_listener = None
-        for listener_item in listeners:
-            # Handle both (job, filter, weak) and (job, filter) formats
-            job = listener_item[0]
-            if "handle_event" in str(job):
-                target_listener = job.target
-                break
-        
-        event = MagicMock()
-        event.event_type = EVENT_STATE_CHANGED
-        event.data = {"entity_id": "sensor.test", "new_state": State("sensor.test", "1")}
-        
-        await target_listener(event)
+        hass.bus.async_fire(EVENT_STATE_CHANGED, {"entity_id": "sensor.test", "new_state": State("sensor.test", "1")})
+        await hass.async_block_till_done()
         mock_writer.enqueue.assert_not_called()
 
 @pytest.mark.asyncio
@@ -343,25 +321,17 @@ async def test_generic_events(hass, mock_config_entry):
         
         await async_setup_entry(hass, mock_config_entry)
         
-        listeners = hass.bus._listeners.get(None, [])
-        target_listener = None
-        for listener_item in listeners:
-            # Handle both (job, filter, weak) and (job, filter) formats
-            job = listener_item[0]
-            if "handle_event" in str(job):
-                target_listener = job.target
-                break
+        # Use MATCH_ALL listener
+        # Since we can't easily find the listener, we fire an event and check if enqueue is called
         
-        event = MagicMock()
-        event.event_type = "custom_event"
-        event.data = {"foo": "bar"}
-        event.time_fired = 1234567890
-        event.origin = "LOCAL"
-        event.context.id = "ctx_id"
-        event.context.user_id = "user_id"
-        event.context.parent_id = "parent_id"
+        event_data = {"foo": "bar"}
+        context = MagicMock()
+        context.id = "ctx_id"
+        context.user_id = "user_id"
+        context.parent_id = "parent_id"
         
-        await target_listener(event)
+        hass.bus.async_fire("custom_event", event_data, context=context)
+        await hass.async_block_till_done()
         
         mock_writer.enqueue.assert_called()
         call_arg = mock_writer.enqueue.call_args[0][0]
@@ -369,8 +339,10 @@ async def test_generic_events(hass, mock_config_entry):
         assert call_arg["event_type"] == "custom_event"
         
         # Test Exception
+        # Test Exception
         mock_writer.enqueue.side_effect = Exception("Event Error")
-        await target_listener(event) # Should not raise
+        hass.bus.async_fire("custom_event", event_data)
+        await hass.async_block_till_done() # Should not raise
 
 @pytest.mark.asyncio
 async def test_flush_service(hass, mock_config_entry):
