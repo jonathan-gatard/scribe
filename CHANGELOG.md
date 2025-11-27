@@ -2,12 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.3.1] - 2025-11-27
-
-### Fixed
-- **Users Sync**: Fixed `AttributeError` when syncing users. Now correctly uses `async_get_users()` to fetch user data.
-
-## [2.3.0] - 2025-11-27
+## [2.4.0] - 2025-11-27
 
 ### Added
 - **Users Table**: Added `users` table and automatic syncing of Home Assistant users to the database. This allows joining `context_user_id` with user metadata.
@@ -15,6 +10,72 @@ All notable changes to this project will be documented in this file.
 
 ### Optimized
 - **State Storage**: Optimized `states` table storage. If a state value is a valid float, the `state` column (string) is now set to `NULL` to save space. It is only populated if the value is non-numeric.
+
+### Fixed
+- **Users Sync**: Fixed `AttributeError` when syncing users. Now correctly uses `async_get_users()` to fetch user data.
+
+## [2.2.23] - 2025-11-27
+
+### Changed
+- **CI**: Removed dev/bleeding edge tests from CI to improve stability.
+
+## [2.2.22] - 2025-11-27
+
+### Changed
+- **Logging**: Changed debug logs to DEBUG level and cleaned up tests workflow.
+
+## [2.2.21] - 2025-11-27
+
+### Added
+- **Debugging**: Added debug logging to inspect Home Assistant events.
+
+## [2.2.7] - 2025-11-27
+
+### Changed
+- **Documentation**: Updated README and LICENSE (removed example column, added full config, added technical data link).
+
+## [2.2.6] - 2025-11-27
+
+### Changed
+- **Documentation**: Updated README icons to Home Assistant blue.
+
+## [2.2.5] - 2025-11-27
+
+### Fixed
+- **Documentation**: Fixed README icons display.
+
+## [2.2.4] - 2025-11-27
+
+### Added
+- **SSL**: Implemented relative path support for SSL certificates.
+
+## [2.2.2] - 2025-11-27
+
+### Fixed
+- **Tests**: Fixed `test_sensor` unit mismatch and models deprecation warning.
+
+## [2.2.1] - 2025-11-27
+
+### Fixed
+- **Code Quality**: Fixed lint errors.
+- **Documentation**: Updated README.
+- **Sensors**: Changed duration unit to ms.
+
+## [2.2.0] - 2025-11-27
+
+### Optimized
+- **Writer**: Optimized `ScribeWriter` using `deque`, `asyncio.gather`, and improved logging.
+
+## [2.1.2] - 2025-11-27
+
+### Changed
+- **Documentation**: Refined README structure and added configuration tables.
+
+## [2.0.0] - 2025-11-27
+
+### Major Release
+- **Production Ready**: Scribe 2.0.0 - Production-ready TimescaleDB integration.
+
 ## [1.11.0] - 2025-11-26
 
 ### Added
