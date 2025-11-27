@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.0] - 2025-11-27
+
+### Added
+- **Users Table**: Added `users` table and automatic syncing of Home Assistant users to the database. This allows joining `context_user_id` with user metadata.
+- **Logos**: Updated brand assets with new logos.
+
+### Optimized
+- **State Storage**: Optimized `states` table storage. If a state value is a valid float, the `state` column (string) is now set to `NULL` to save space. It is only populated if the value is non-numeric.
 ## [1.11.0] - 2025-11-26
 
 ### Added
