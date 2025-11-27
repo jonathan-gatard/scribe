@@ -1,0 +1,32 @@
+name: Unit Tests
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ha-version: ["stable", "beta", "dev"]
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run Unit Tests in Dev Container
+        uses: devcontainers/ci@v0.3
+        with:
+          runCmd: |
+            # Install HA version from matrix
+            if [ "${{ matrix.ha-version }}" == "stable" ]; then
+              pip install homeassistant
+            elif [ "${{ matrix.ha-version }}" == "beta" ]; then
+              pip install --pre homeassistant
+            elif [ "${{ matrix.ha-version }}" == "dev" ]; then
+              pip install git+https://github.com/home-assistant/core.git@dev
+            fi
+            
+            # Run tests (ignoring integration tests)
+            pytest tests --ignore=tests/test_integration.py

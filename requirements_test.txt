@@ -1,6 +1,7 @@
 pytest
 pytest-homeassistant-custom-component
 pytest-asyncio
+docker
 psycopg2-binary
 sqlalchemy
 asyncpg
