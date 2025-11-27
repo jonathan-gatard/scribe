@@ -9,7 +9,6 @@ from custom_components.scribe.writer import ScribeWriter
 # Get DB URL from env or skip
 DB_URL = os.getenv("SCRIBE_INTEGRATION_TEST_DB_URL")
 
-@pytest.mark.skipif(not DB_URL, reason="Integration test DB URL not set")
 @pytest.fixture(autouse=True)
 def mock_create_async_engine():
     """Override the mock to use the real engine for integration tests."""
@@ -46,7 +45,7 @@ async def test_integration_write_and_read(hass, socket_enabled):
             "entity_id": "sensor.integration_test",
             "state": "123.45",
             "attributes": '{"unit": "C"}',
-            "time": datetime.now().isoformat(),
+            "time": datetime.now(),
             "value": 123.45
         })
         
@@ -55,7 +54,7 @@ async def test_integration_write_and_read(hass, socket_enabled):
             "type": "event",
             "event_type": "integration_event",
             "event_data": '{"foo": "bar"}',
-            "time": datetime.now().isoformat(),
+            "time": datetime.now(),
             "origin": "LOCAL",
             "context_id": "ctx_1",
             "context_user_id": "user_1",
