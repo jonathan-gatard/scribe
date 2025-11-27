@@ -10,6 +10,7 @@ import asyncio
 # Versions to test
 PG_VERSIONS = ["latest-pg15", "latest-pg16", "latest-pg17", "latest-pg18"]
 
+@pytest.mark.enable_socket
 class TestDatabaseVersions:
     @pytest.fixture(scope="module")
     def docker_client(self):
