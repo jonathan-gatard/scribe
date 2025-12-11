@@ -12,7 +12,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorDeviceClass,
 )
-from homeassistant.const import UnitOfInformation
+from homeassistant.const import UnitOfInformation, PERCENTAGE
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -306,8 +306,7 @@ class ScribeEventsUncompressedChunksSensor(ScribeCoordinatorSensor):
 class ScribeCompressionRatioSensor(ScribeCoordinatorSensor):
     """Sensor for Compression Ratio."""
     
-    _attr_native_unit_of_measurement = UnitOfInformation.BYTES
-    _attr_device_class = SensorDeviceClass.DATA_SIZE
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:ratio"
 
