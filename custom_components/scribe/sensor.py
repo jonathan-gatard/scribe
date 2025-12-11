@@ -312,6 +312,9 @@ class ScribeCompressionRatioSensor(ScribeCoordinatorSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:ratio"
 
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator, entry, "compression_ratio", "Compression Ratio")
+
     @property
     def native_value(self):
         data = self.coordinator.data
