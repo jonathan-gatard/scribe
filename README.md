@@ -16,7 +16,7 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 - 🧩 **Entity Metadata**: Automatically syncs entity registry (names, platforms, etc.) to the `entities` table.
 - 🏠 **Area & Device Context**: Automatically syncs areas and devices to `areas` and `devices` tables.
 - 🔌 **Integration Info**: Automatically syncs integration config entries to the `integrations` table.
-- 🎯 **Smart Filtering**: Include/exclude by domain, entity, or attribute.
+- 🎯 **Smart Filtering**: Include/exclude by domain, entity, entity glob, or attribute.
 - ✅ **100% Test Coverage**: Robust and reliable.
 
 ## Installation
@@ -85,10 +85,10 @@ scribe:
   stats_chunk_interval: 60
   stats_size_interval: 60
   include_domains: []
-  include_entities: []
+  include_entity_globs: []
   exclude_domains: []
   exclude_entities: []
-  exclude_entities: []
+  exclude_entity_globs: []
   exclude_attributes: []
   # Optional: Disable specific metadata tables (default: true)
   enable_table_areas: true
@@ -119,8 +119,10 @@ scribe:
 | `stats_size_interval` | Interval (in minutes) to update size statistics. |
 | `include_domains` | List of domains to include. |
 | `include_entities` | List of specific entities to include. |
+| `include_entity_globs` | List of entity patterns to include (e.g. `sensor.weather_*`). |
 | `exclude_domains` | List of domains to exclude. |
 | `exclude_entities` | List of specific entities to exclude. |
+| `exclude_entity_globs` | List of entity patterns to exclude (e.g. `switch.kitchen_*`). |
 | `exclude_attributes` | List of attributes to exclude from the `attributes` column. |
 | `enable_table_areas` | Enable creation and sync of the `areas` table. |
 | `enable_table_devices` | Enable creation and sync of the `devices` table. |

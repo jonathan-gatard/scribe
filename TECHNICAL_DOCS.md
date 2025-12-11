@@ -59,7 +59,7 @@ Scribe is a custom Home Assistant integration designed to offload historical dat
 ### Data Flow
 1.  **Event Fired**: HA fires an event (e.g., `state_changed`).
 2.  **Listener**: `handle_event` in `__init__.py` catches it.
-3.  **Filtering**: Checks `include/exclude` domains/entities configuration.
+3.  **Filtering**: Checks `include/exclude` domains/entities/globs configuration.
 4.  **Enqueue**: The event is processed into a dictionary and passed to `writer.enqueue()`.
 5.  **Buffering**: The item is added to `self._queue`.
 6.  **Flush Trigger**:
