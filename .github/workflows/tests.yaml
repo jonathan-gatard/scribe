@@ -43,15 +43,9 @@ jobs:
         python-version: ${{ matrix.python-version }}
         allow-prereleases: true
         
-    - name: Install Home Assistant ${{ matrix.ha-version }}
+    - name: Install Home Assistant Stable
       run: |
-        if [ "${{ matrix.ha-version }}" == "stable" ]; then
-          pip install homeassistant
-        elif [ "${{ matrix.ha-version }}" == "beta" ]; then
-          pip install --pre homeassistant
-        else
-          pip install homeassistant==${{ matrix.ha-version }}
-        fi
+        pip install homeassistant
 
     - name: Install dependencies
       run: |
