@@ -143,7 +143,6 @@ class ScribeStatsTotalSizeSensor(ScribeCoordinatorSensor):
         self._attr_native_unit_of_measurement = UnitOfInformation.BYTES
         self._attr_device_class = SensorDeviceClass.DATA_SIZE
         self._attr_suggested_display_precision = 0
-        self._attr_suggested_unit_of_measurement = None
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:database"
 
@@ -160,7 +159,6 @@ class ScribeStatsCompressedSizeSensor(ScribeCoordinatorSensor):
         self._attr_native_unit_of_measurement = UnitOfInformation.BYTES
         self._attr_device_class = SensorDeviceClass.DATA_SIZE
         self._attr_suggested_display_precision = 0
-        self._attr_suggested_unit_of_measurement = None
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:package-variant"
 
@@ -177,7 +175,6 @@ class ScribeStatsUncompressedSizeSensor(ScribeCoordinatorSensor):
         self._attr_native_unit_of_measurement = UnitOfInformation.BYTES
         self._attr_device_class = SensorDeviceClass.DATA_SIZE
         self._attr_suggested_display_precision = 0
-        self._attr_suggested_unit_of_measurement = None
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:package-variant-closed"
 
@@ -237,7 +234,6 @@ class ScribeEventsTotalSizeSensor(ScribeCoordinatorSensor):
         self._attr_native_unit_of_measurement = UnitOfInformation.BYTES
         self._attr_device_class = SensorDeviceClass.DATA_SIZE
         self._attr_suggested_display_precision = 0
-        self._attr_suggested_unit_of_measurement = None
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:database"
 
@@ -254,7 +250,6 @@ class ScribeEventsCompressedSizeSensor(ScribeCoordinatorSensor):
         self._attr_native_unit_of_measurement = UnitOfInformation.BYTES
         self._attr_device_class = SensorDeviceClass.DATA_SIZE
         self._attr_suggested_display_precision = 0
-        self._attr_suggested_unit_of_measurement = None
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:package-variant"
 
