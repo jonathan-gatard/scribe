@@ -56,11 +56,30 @@ async def test_writer_init_db(writer, mock_engine, mock_db_connection):
     assert any("CREATE TABLE IF NOT EXISTS events" in c for c in calls)
     assert any("create_hypertable('states'" in c for c in calls)
     assert any("create_hypertable('events'" in c for c in calls)
+    
+    # Check for initial count queries
+    assert any("SELECT count(*) FROM states" in c for c in calls)
+    assert any("SELECT count(*) FROM events" in c for c in calls)
 
 @pytest.mark.asyncio
 async def test_writer_enqueue_flush(writer, mock_db_connection):
     """Test enqueue and flush logic."""
+    # Mock initial counts to 0
+    async def execute_side_effect(statement, *args, **kwargs):
+        stmt_str = str(statement)
+        if "SELECT count(*)" in stmt_str:
+            mock_res = MagicMock()
+            mock_res.scalar.return_value = 0
+            return mock_res
+        # For other calls, return a generic mock
+        return MagicMock()
+        
+    mock_db_connection.execute.side_effect = execute_side_effect
+
     await writer.start()
+    
+    # Reset side_effect for flush (or just ensure it works)
+    mock_db_connection.execute.side_effect = None
     
     # Enqueue items
     writer.enqueue({"type": "state", "data": 1})

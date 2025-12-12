@@ -210,9 +210,29 @@ class ScribeWriter:
         await self.init_db()
         _LOGGER.debug("Database initialization completed")
         
+        # Fetch initial counts
+        await self._get_initial_counts()
+        
         # Start Loop
         self._task = asyncio.create_task(self._run())
         _LOGGER.info("ScribeWriter started successfully")
+
+    async def _get_initial_counts(self):
+        """Fetch initial row counts from database."""
+        _LOGGER.debug("Fetching initial row counts...")
+        try:
+            async with self._engine.connect() as conn:
+                if self.record_states:
+                    res = await conn.execute(text(f"SELECT count(*) FROM {self.table_name_states}"))
+                    self._states_written = res.scalar() or 0
+                
+                if self.record_events:
+                    res = await conn.execute(text(f"SELECT count(*) FROM {self.table_name_events}"))
+                    self._events_written = res.scalar() or 0
+                    
+            _LOGGER.debug(f"Initial counts: states={self._states_written}, events={self._events_written}")
+        except Exception as e:
+            _LOGGER.warning(f"Failed to fetch initial counts: {e}")
 
 
 
