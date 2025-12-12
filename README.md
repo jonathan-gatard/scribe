@@ -34,14 +34,14 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 
 ### 2. Database Setup
 
-You need a running TimescaleDB instance. We recommend PostgreSQL 17.
+You need a running TimescaleDB instance. We recommend PostgreSQL 17 or 18.
 
 ```bash
 # High Availability (Recommended)
-docker run -d --name timescaledb -p 5432:5432 -e POSTGRES_PASSWORD=password timescale/timescaledb-ha:pg17
+docker run -d --name timescaledb -p 5432:5432 -e POSTGRES_PASSWORD=password timescale/timescaledb-ha:pg18
 
 # Standard
-docker run -d --name timescaledb -p 5432:5432 -e POSTGRES_PASSWORD=password timescale/timescaledb:pg17
+docker run -d --name timescaledb -p 5432:5432 -e POSTGRES_PASSWORD=password timescale/timescaledb:pg18
 ```
 
 Create the database and user:
