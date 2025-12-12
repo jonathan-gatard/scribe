@@ -716,26 +716,22 @@ class ScribeWriter:
 
         async def get_states_size_stats():
             try:
+                # 1. Get Total Size (Compressed + Uncompressed)
                 async with self._engine.connect() as conn:
-                    res = await conn.execute(text(f"""
-                        SELECT 
-                            SUM(pg_total_relation_size(chunk_schema || '.' || chunk_name)) AS total_size,
-                            SUM(CASE WHEN is_compressed 
-                                THEN pg_total_relation_size(chunk_schema || '.' || chunk_name) 
-                                ELSE 0 END) AS compressed_size,
-                            SUM(CASE WHEN NOT is_compressed 
-                                THEN pg_total_relation_size(chunk_schema || '.' || chunk_name) 
-                                ELSE 0 END) AS uncompressed_size
-                        FROM timescaledb_information.chunks
-                        WHERE hypertable_name = '{self.table_name_states}'
-                    """))
-                    row = res.fetchone()
-                    if row:
-                        return {
-                            "states_total_size": row[0] or 0,
-                            "states_compressed_size": row[1] or 0,
-                            "states_uncompressed_size": row[2] or 0
-                        }
+                    res_total = await conn.execute(text(f"SELECT total_bytes FROM hypertable_detailed_size('{self.table_name_states}')"))
+                    row_total = res_total.fetchone()
+                    total_bytes = row_total[0] if row_total else 0
+                    
+                    # 2. Get Compressed Size
+                    res_comp = await conn.execute(text(f"SELECT after_compression_total_bytes FROM hypertable_compression_stats('{self.table_name_states}')"))
+                    row_comp = res_comp.fetchone()
+                    compressed_bytes = row_comp[0] if row_comp else 0
+
+                    return {
+                        "states_total_size": total_bytes,
+                        "states_compressed_size": compressed_bytes,
+                        "states_uncompressed_size": max(0, total_bytes - compressed_bytes)
+                    }
             except Exception as e:
                 _LOGGER.debug(f"Failed to get states size stats: {e}")
             return {}
@@ -764,26 +760,22 @@ class ScribeWriter:
 
         async def get_events_size_stats():
             try:
+                # 1. Get Total Size (Compressed + Uncompressed)
                 async with self._engine.connect() as conn:
-                    res = await conn.execute(text(f"""
-                        SELECT 
-                            SUM(pg_total_relation_size(chunk_schema || '.' || chunk_name)) AS total_size,
-                            SUM(CASE WHEN is_compressed 
-                                THEN pg_total_relation_size(chunk_schema || '.' || chunk_name) 
-                                ELSE 0 END) AS compressed_size,
-                            SUM(CASE WHEN NOT is_compressed 
-                                THEN pg_total_relation_size(chunk_schema || '.' || chunk_name) 
-                                ELSE 0 END) AS uncompressed_size
-                        FROM timescaledb_information.chunks
-                        WHERE hypertable_name = '{self.table_name_events}'
-                    """))
-                    row = res.fetchone()
-                    if row:
-                        return {
-                            "events_total_size": row[0] or 0,
-                            "events_compressed_size": row[1] or 0,
-                            "events_uncompressed_size": row[2] or 0
-                        }
+                    res_total = await conn.execute(text(f"SELECT total_bytes FROM hypertable_detailed_size('{self.table_name_events}')"))
+                    row_total = res_total.fetchone()
+                    total_bytes = row_total[0] if row_total else 0
+                    
+                    # 2. Get Compressed Size
+                    res_comp = await conn.execute(text(f"SELECT after_compression_total_bytes FROM hypertable_compression_stats('{self.table_name_events}')"))
+                    row_comp = res_comp.fetchone()
+                    compressed_bytes = row_comp[0] if row_comp else 0
+
+                    return {
+                        "events_total_size": total_bytes,
+                        "events_compressed_size": compressed_bytes,
+                        "events_uncompressed_size": max(0, total_bytes - compressed_bytes)
+                    }
             except Exception as e:
                 _LOGGER.debug(f"Failed to get events size stats: {e}")
             return {}

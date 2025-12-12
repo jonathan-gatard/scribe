@@ -193,21 +193,33 @@ async def test_writer_get_db_stats(writer, mock_db_connection):
         stmt_str = str(statement)
         mock_res = MagicMock()
         
+        if "hypertable_detailed_size" in stmt_str:
+            # Return total_bytes
+            mock_res.fetchone.return_value = (1000,) # total_bytes
+            return mock_res
+            
         if "hypertable_compression_stats" in stmt_str:
-             # Return valid compression stats
-             row = MagicMock()
-             row.before_compression_total_bytes = 200
-             row.after_compression_total_bytes = 100
-             mock_res.fetchone.return_value = row
-        elif "timescaledb_information.chunks" in stmt_str:
-             if "COUNT(*)" in stmt_str:
-                 mock_res.fetchone.return_value = (10, 5, 5) # chunks
-             elif "SUM(pg_total_relation_size" in stmt_str:
-                 mock_res.fetchone.return_value = (1000, 800, 200) # size
-        else:
-             mock_res.fetchone.return_value = (0,) # default
-             mock_res.scalar.return_value = 0
+             # Check if it is the "SELECT *" query for ratio stats
+             if "SELECT *" in stmt_str:
+                 row = MagicMock()
+                 row.before_compression_total_bytes = 400
+                 row.after_compression_total_bytes = 100
+                 mock_res.fetchone.return_value = row
+                 return mock_res
+             else:
+                 # It is the "SELECT after_compression_total_bytes" query for size stats
+                 mock_res.fetchone.return_value = (100,)
+                 return mock_res
              
+        if "timescaledb_information.chunks" in stmt_str:
+            # Chunk counts
+            mock_res.fetchone.return_value = (10, 5, 5)
+            # We need to handle exceptions or invalid queries?
+            return mock_res
+
+        # Default fallback
+        mock_res.scalar.return_value = 0
+        mock_res.fetchone.return_value = (0, 0, 0)
         return mock_res
     
     mock_db_connection.execute.side_effect = execute_side_effect
@@ -216,7 +228,7 @@ async def test_writer_get_db_stats(writer, mock_db_connection):
     
     assert stats["states_total_size"] == 1000
     assert stats["states_total_chunks"] == 10
-    assert stats["states_before_compression_total_bytes"] == 200
+    assert stats["states_before_compression_total_bytes"] == 400
     assert stats["states_after_compression_total_bytes"] == 100
 
 @pytest.mark.asyncio
