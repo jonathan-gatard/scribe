@@ -8,6 +8,12 @@ Scribe is a custom Home Assistant integration designed to offload historical dat
 | Feature | Native Recorder (PostgreSQL) | Scribe (TimescaleDB) |
 | :--- | :--- | :--- |
 | **Primary Purpose** | Core HA History, Logbook, Energy Dashboard | Long-term Analysis, Grafana, Data Science |
+### Compression Stats
+Compression ratios are calculated by querying `hypertable_compression_stats` for both `states` and `events` tables.
+Formula: `(1 - (after_compression_total_bytes / before_compression_total_bytes)) * 100`
+
+| Feature | Native Recorder (PostgreSQL) | Scribe (TimescaleDB) |
+| :--- | :--- | :--- |
 | **Data Retention** | Usually short (e.g., 10-30 days) | Infinite / Long-term (Years) |
 | **Storage Engine** | Standard SQL Tables | **Hypertables** (Partitioned by time) |
 | **Compression** | None (Row-based) | **Columnar Compression** (90%+ savings) |
