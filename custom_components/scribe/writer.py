@@ -134,6 +134,8 @@ class ScribeWriter:
         self._last_write_duration = None
         self._connected = False
         self._last_error = None
+        self._states_history = deque()
+        self._events_history = deque()
         self._dropped_events = 0
         
         # Queue
@@ -637,6 +639,13 @@ class ScribeWriter:
         try:
             self._flush_pending = False  # Reset flag immediately
             
+            # Prune history first (maintain rolling window even if idle)
+            now = time.time()
+            while self._states_history and now - self._states_history[0][0] > 60:
+                self._states_history.popleft()
+            while self._events_history and now - self._events_history[0][0] > 60:
+                self._events_history.popleft()
+
             if not self._queue:
                 return
 
@@ -668,6 +677,11 @@ class ScribeWriter:
                 duration = time.time() - start_time
                 self._states_written += len(states_data)
                 self._events_written += len(events_data)
+                
+                # Update history for rates
+                self._states_history.append((time.time(), len(states_data)))
+                self._events_history.append((time.time(), len(events_data)))
+                
                 self._last_write_duration = duration
                 
                 if not self._connected:
@@ -907,3 +921,13 @@ class ScribeWriter:
     @property
     def buffer_size(self):
         return len(self._queue)
+
+    @property
+    def states_rate_minute(self):
+        """Return states written per minute (rolling window)."""
+        return sum(count for _, count in self._states_history)
+
+    @property
+    def events_rate_minute(self):
+        """Return events written per minute (rolling window)."""
+        return sum(count for _, count in self._events_history)

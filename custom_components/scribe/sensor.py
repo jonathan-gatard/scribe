@@ -49,6 +49,8 @@ async def async_setup_entry(
         entities.extend([
             ScribeStatesWrittenSensor(writer, entry),
             ScribeEventsWrittenSensor(writer, entry),
+            ScribeStatesRateSensor(writer, entry),
+            ScribeEventsRateSensor(writer, entry),
             ScribeBufferSizeSensor(writer, entry),
             ScribeWriteDurationSensor(writer, entry),
         ])
@@ -488,3 +490,43 @@ class ScribeWriteDurationSensor(ScribeSensor):
              return round(val * 1000, 2)
         except Exception:
              return None
+
+class ScribeStatesRateSensor(ScribeSensor):
+    """Sensor for states written rate (per minute)."""
+
+    def __init__(self, writer, entry):
+        self.entity_description = SensorEntityDescription(
+            key="states_rate",
+            name="States Rate",
+            icon="mdi:speedometer",
+            state_class=SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement="states/min",
+        )
+        super().__init__(writer, entry)
+
+    @property
+    def native_value(self):
+        try:
+            return self._writer.states_rate_minute
+        except Exception:
+            return 0
+
+class ScribeEventsRateSensor(ScribeSensor):
+    """Sensor for events written rate (per minute)."""
+
+    def __init__(self, writer, entry):
+        self.entity_description = SensorEntityDescription(
+            key="events_rate",
+            name="Events Rate",
+            icon="mdi:speedometer",
+            state_class=SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement="events/min",
+        )
+        super().__init__(writer, entry)
+
+    @property
+    def native_value(self):
+        try:
+            return self._writer.events_rate_minute
+        except Exception:
+            return 0

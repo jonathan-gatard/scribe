@@ -139,6 +139,10 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
         """Manage the options."""
         errors = {}
         
+        # specific domains
+        domains = list(self.hass.services.async_services().keys())
+        domains.sort()
+        
         if user_input is not None:
             if not user_input.get(CONF_RECORD_STATES) and not user_input.get(CONF_RECORD_EVENTS):
                 errors["base"] = "must_record_something"
@@ -188,7 +192,14 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Optional(
                         CONF_INCLUDE_DOMAINS,
                         default=self.config_entry.options.get(CONF_INCLUDE_DOMAINS, []),
-                    ): selector.TextSelector(selector.TextSelectorConfig(multiple=True)),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=domains,
+                            multiple=True,
+                            custom_value=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN
+                        )
+                    ),
                     vol.Optional(
                         CONF_INCLUDE_ENTITIES,
                         default=self.config_entry.options.get(CONF_INCLUDE_ENTITIES, []),
@@ -200,7 +211,14 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Optional(
                         CONF_EXCLUDE_DOMAINS,
                         default=self.config_entry.options.get(CONF_EXCLUDE_DOMAINS, []),
-                    ): selector.TextSelector(selector.TextSelectorConfig(multiple=True)),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=domains,
+                            multiple=True,
+                            custom_value=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN
+                        )
+                    ),
                     vol.Optional(
                         CONF_EXCLUDE_ENTITIES,
                         default=self.config_entry.options.get(CONF_EXCLUDE_ENTITIES, []),
