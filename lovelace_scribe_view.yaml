@@ -24,6 +24,11 @@ cards:
             name: Buffer Size
           - entity: sensor.scribe_last_write_duration
             name: Last Flush Duration
+          - type: divider
+          - entity: sensor.scribe_states_rate
+            name: States Write Rate
+          - entity: sensor.scribe_events_rate
+            name: Events Write Rate
 
   - type: horizontal-stack
     cards:
