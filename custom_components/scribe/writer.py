@@ -13,6 +13,7 @@ from typing import Any, Dict
 from collections import deque
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from homeassistant.core import HomeAssistant
@@ -130,7 +131,7 @@ class ScribeWriter:
         # Stats for sensors
         self._states_written = 0
         self._events_written = 0
-        self._last_write_duration = 0.0
+        self._last_write_duration = None
         self._connected = False
         self._last_error = None
         self._dropped_events = 0
@@ -668,11 +669,29 @@ class ScribeWriter:
                 self._states_written += len(states_data)
                 self._events_written += len(events_data)
                 self._last_write_duration = duration
+                
+                if not self._connected:
+                     _LOGGER.info(f"Database connection restored. Flushed {len(states_data)} states and {len(events_data)} events.")
+
                 self._connected = True
                 self._last_error = None
 
+            except SQLAlchemyError as e:
+                # simplify log message for DB errors
+                msg = str(e.orig) if hasattr(e, "orig") else str(e)
+                # If msg is still too long/ugly, just truncating or picking the first line
+                if "\n" in msg:
+                    msg = msg.split("\n")[0]
+                
+                _LOGGER.error(f"Database error during flush: {msg}")
+                self._connected = False
+                self._last_error = msg
+                
+                if self.buffer_on_failure:
+                    _LOGGER.warning(f"Buffering {len(batch)} items due to failure. Current queue size: {len(self._queue)}")
+                    
             except Exception as e:
-                _LOGGER.error(f"Error flushing batch: {e}", exc_info=True)
+                _LOGGER.error(f"Error flushing batch: {e}")
                 self._connected = False
                 self._last_error = str(e)
                 
@@ -884,3 +903,7 @@ class ScribeWriter:
     @property
     def running(self):
         return self._running
+
+    @property
+    def buffer_size(self):
+        return len(self._queue)

@@ -482,6 +482,9 @@ class ScribeWriteDurationSensor(ScribeSensor):
     def native_value(self):
         """Return the state of the sensor."""
         try:
-             return round(self._writer._last_write_duration * 1000, 2)
+             val = self._writer._last_write_duration
+             if val is None:
+                 return None
+             return round(val * 1000, 2)
         except Exception:
-             return 0.0
+             return None
