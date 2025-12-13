@@ -5,6 +5,19 @@ Scribe is a next-generation component that writes Home Assistant states and even
 **Why Scribe?**
 Scribe is built differently. Unlike other integrations that rely on synchronous drivers or the default recorder, Scribe uses **`asyncpg`**, a high-performance asynchronous PostgreSQL driver. This allows it to handle massive amounts of data without blocking Home Assistant's event loop. It's designed for stability, speed, and efficiency.
 
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Statistics Sensors](#statistics-sensors)
+- [Services](#services)
+- [Dashboard / View](#dashboard--view)
+- [Troubleshooting](#troubleshooting)
+- [Technical Data](#technical-data)
+- [License](#license)
+
 ## Features
 
 - 🚀 **Async-First Architecture**: Built on `asyncpg` for non-blocking, high-throughput writes.
