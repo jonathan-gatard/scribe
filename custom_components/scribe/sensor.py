@@ -148,8 +148,11 @@ class ScribeStatsTotalSizeSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("states_total_size", 0)
-
+        try:
+            val = self.coordinator.data.get("states_total_size", 0)
+            return val
+        except Exception:
+            return None
 
 class ScribeStatsCompressedSizeSensor(ScribeCoordinatorSensor):
     """Sensor for States compressed size."""
@@ -164,7 +167,10 @@ class ScribeStatsCompressedSizeSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("states_compressed_size", 0)
+        try:
+            return self.coordinator.data.get("states_compressed_size", 0)
+        except Exception:
+            return None
 
 
 class ScribeStatsUncompressedSizeSensor(ScribeCoordinatorSensor):
@@ -180,7 +186,10 @@ class ScribeStatsUncompressedSizeSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("states_uncompressed_size", 0)
+        try:
+            return self.coordinator.data.get("states_uncompressed_size", 0)
+        except Exception:
+            return None
 
 
 class ScribeStatsTotalChunksSensor(ScribeCoordinatorSensor):
@@ -193,7 +202,10 @@ class ScribeStatsTotalChunksSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("states_total_chunks", 0)
+        try:
+            return self.coordinator.data.get("states_total_chunks", 0)
+        except Exception:
+            return None
 
 
 class ScribeStatsCompressedChunksSensor(ScribeCoordinatorSensor):
@@ -206,7 +218,10 @@ class ScribeStatsCompressedChunksSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("states_compressed_chunks", 0)
+        try:
+            return self.coordinator.data.get("states_compressed_chunks", 0)
+        except Exception:
+            return None
 
 
 class ScribeStatsUncompressedChunksSensor(ScribeCoordinatorSensor):
@@ -219,7 +234,10 @@ class ScribeStatsUncompressedChunksSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("states_uncompressed_chunks", 0)
+        try:
+            return self.coordinator.data.get("states_uncompressed_chunks", 0)
+        except Exception:
+            return None
 
 
 # =============================================
@@ -239,7 +257,10 @@ class ScribeEventsTotalSizeSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("events_total_size", 0)
+        try:
+            return self.coordinator.data.get("events_total_size", 0)
+        except Exception:
+            return None
 
 
 class ScribeEventsCompressedSizeSensor(ScribeCoordinatorSensor):
@@ -255,7 +276,10 @@ class ScribeEventsCompressedSizeSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("events_compressed_size", 0)
+        try:
+            return self.coordinator.data.get("events_compressed_size", 0)
+        except Exception:
+            return None
 
 
 class ScribeEventsUncompressedSizeSensor(ScribeCoordinatorSensor):
@@ -271,7 +295,10 @@ class ScribeEventsUncompressedSizeSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("events_uncompressed_size", 0)
+        try:
+            return self.coordinator.data.get("events_uncompressed_size", 0)
+        except Exception:
+            return None
 
 
 class ScribeEventsTotalChunksSensor(ScribeCoordinatorSensor):
@@ -284,7 +311,10 @@ class ScribeEventsTotalChunksSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("events_total_chunks", 0)
+        try:
+            return self.coordinator.data.get("events_total_chunks", 0)
+        except Exception:
+            return None
 
 
 class ScribeEventsCompressedChunksSensor(ScribeCoordinatorSensor):
@@ -297,7 +327,10 @@ class ScribeEventsCompressedChunksSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("events_compressed_chunks", 0)
+        try:
+            return self.coordinator.data.get("events_compressed_chunks", 0)
+        except Exception:
+            return None
 
 
 class ScribeEventsUncompressedChunksSensor(ScribeCoordinatorSensor):
@@ -310,7 +343,10 @@ class ScribeEventsUncompressedChunksSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("events_uncompressed_chunks", 0)
+        try:
+            return self.coordinator.data.get("events_uncompressed_chunks", 0)
+        except Exception:
+            return None
 
 
  
@@ -327,15 +363,18 @@ class ScribeStatesCompressionRatioSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        data = self.coordinator.data
-        before = data.get("states_before_compression_total_bytes", 0)
-        after = data.get("states_after_compression_total_bytes", 0)
-        
-        if not before:
-            return None
+        try:
+            data = self.coordinator.data
+            before = data.get("states_before_compression_total_bytes", 0)
+            after = data.get("states_after_compression_total_bytes", 0)
             
-        # Calculate percentage saved (1 - compressed/original)
-        return round((1 - (after / before)) * 100, 1)
+            if not before:
+                return None
+                
+            # Calculate percentage saved (1 - compressed/original)
+            return round((1 - (after / before)) * 100, 1)
+        except Exception:
+            return None
 
 class ScribeEventsCompressionRatioSensor(ScribeCoordinatorSensor):
     """Sensor for Events Compression Ratio."""
@@ -349,15 +388,18 @@ class ScribeEventsCompressionRatioSensor(ScribeCoordinatorSensor):
 
     @property
     def native_value(self):
-        data = self.coordinator.data
-        before = data.get("events_before_compression_total_bytes", 0)
-        after = data.get("events_after_compression_total_bytes", 0)
-        
-        if not before:
-            return None
+        try:
+            data = self.coordinator.data
+            before = data.get("events_before_compression_total_bytes", 0)
+            after = data.get("events_after_compression_total_bytes", 0)
+            
+            if not before:
+                return None
 
-        # Calculate percentage saved
-        return round((1 - (after / before)) * 100, 1)
+            # Calculate percentage saved
+            return round((1 - (after / before)) * 100, 1)
+        except Exception:
+            return None
 
 
 class ScribeStatesWrittenSensor(ScribeSensor):
@@ -375,7 +417,10 @@ class ScribeStatesWrittenSensor(ScribeSensor):
     @property
     def native_value(self):
         """Return the state of the sensor."""
-        return self._writer._states_written
+        try:
+            return self._writer._states_written
+        except Exception:
+            return 0
 
 class ScribeEventsWrittenSensor(ScribeSensor):
     """Sensor for total events written."""
@@ -392,7 +437,10 @@ class ScribeEventsWrittenSensor(ScribeSensor):
     @property
     def native_value(self):
         """Return the state of the sensor."""
-        return self._writer._events_written
+        try:
+            return self._writer._events_written
+        except Exception:
+            return 0
 
 class ScribeBufferSizeSensor(ScribeSensor):
     """Sensor for current buffer size."""
@@ -412,7 +460,10 @@ class ScribeBufferSizeSensor(ScribeSensor):
         
         No lock needed as we are running in the same thread (asyncio).
         """
-        return len(self._writer._queue)
+        try:
+            return len(self._writer._queue)
+        except Exception:
+            return 0
 
 class ScribeWriteDurationSensor(ScribeSensor):
     """Sensor for last write duration."""
@@ -430,4 +481,7 @@ class ScribeWriteDurationSensor(ScribeSensor):
     @property
     def native_value(self):
         """Return the state of the sensor."""
-        return round(self._writer._last_write_duration * 1000, 2)
+        try:
+             return round(self._writer._last_write_duration * 1000, 2)
+        except Exception:
+             return 0.0

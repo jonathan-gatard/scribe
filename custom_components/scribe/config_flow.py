@@ -106,10 +106,14 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             from sqlalchemy.ext.asyncio import create_async_engine
             from sqlalchemy import text
             
-            engine = create_async_engine(db_url)
+            # Create a test engine with a short timeout to avoid blocking UI
+            engine = create_async_engine(db_url, connect_args={"timeout": 10})
             async with engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
             await engine.dispose()
+        except ImportError:
+            _LOGGER.error("SQLAlchemy or asyncpg not installed.")
+            raise Exception("Missing dependencies")
         except Exception as e:
             _LOGGER.error(f"Database connection failed: {e}")
             raise Exception(f"Cannot connect to database: {e}")

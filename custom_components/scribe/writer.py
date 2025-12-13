@@ -146,76 +146,83 @@ class ScribeWriter:
 
     async def start(self):
         """Start the writer task."""
-        if self._running:
-            return
-            
-        _LOGGER.debug("Starting ScribeWriter...")
-        self._running = True
-        
-        # Create Engine
-        if not self._engine:
-            try:
-                _LOGGER.debug(f"Creating AsyncEngine for {self.db_url.split('@')[-1]} (attempt 1)")
-                
-                # Clean URL - remove sslmode parameter as asyncpg doesn't support it in URL
-                # clean_url = self._clean_db_url(self.db_url)
-                
-                if self.use_ssl:
-                    # Resolve paths relative to HA config dir if they are relative
-                    def resolve_path(path_str):
-                        if not path_str:
-                            return None
-                        path = Path(path_str)
-                        if not path.is_absolute():
-                            return str(Path(self.hass.config.config_dir) / path)
-                        return str(path)
-
-                    root_cert = resolve_path(self.ssl_root_cert)
-                    cert_file = resolve_path(self.ssl_cert_file)
-                    key_file = resolve_path(self.ssl_key_file)
-
-                    # Create SSL context in executor to avoid blocking the event loop
-                    # We pass the resolved paths
-                    _LOGGER.debug("SSL enabled, creating SSL context in executor...")
-                    ssl_context = await self.hass.async_add_executor_job(
-                        _create_ssl_context, 
-                        root_cert, 
-                        cert_file, 
-                        key_file
-                    )
-                    connect_args = {"ssl": ssl_context}
-                else:
-                    # Disable SSL explicitly to prevent asyncpg from auto-detecting
-                    # certificates and doing blocking I/O
-                    _LOGGER.debug("SSL disabled (default)")
-                    connect_args = {"ssl": False}
-                
-                # Create engine
-                self._engine = create_async_engine(
-                    self.db_url,
-                    pool_size=10,
-                    max_overflow=20,
-                    echo=False,
-                    connect_args=connect_args
-                )
-                
-                _LOGGER.debug("AsyncEngine created successfully")
-            except Exception as e:
-                print(f"DEBUG: Failed to create engine: {e}")
-                _LOGGER.error(f"Failed to create engine: {e}", exc_info=True)
+        try:
+            if self._running:
                 return
+                
+            _LOGGER.debug("Starting ScribeWriter...")
+            self._running = True
+            
+            # Create Engine
+            if not self._engine:
+                try:
+                    _LOGGER.debug(f"Creating AsyncEngine for {self.db_url.split('@')[-1]} (attempt 1)")
+                    
+                    if self.use_ssl:
+                        # Resolve paths relative to HA config dir if they are relative
+                        def resolve_path(path_str):
+                            if not path_str:
+                                return None
+                            path = Path(path_str)
+                            if not path.is_absolute():
+                                return str(Path(self.hass.config.config_dir) / path)
+                            return str(path)
 
-        # Initialize DB
-        _LOGGER.debug("Starting database initialization...")
-        await self.init_db()
-        _LOGGER.debug("Database initialization completed")
-        
-        # Fetch initial counts
-        await self._get_initial_counts()
-        
-        # Start Loop
-        self._task = asyncio.create_task(self._run())
-        _LOGGER.info("ScribeWriter started successfully")
+                        root_cert = resolve_path(self.ssl_root_cert)
+                        cert_file = resolve_path(self.ssl_cert_file)
+                        key_file = resolve_path(self.ssl_key_file)
+
+                        # Create SSL context in executor to avoid blocking the event loop
+                        # We pass the resolved paths
+                        _LOGGER.debug("SSL enabled, creating SSL context in executor...")
+                        ssl_context = await self.hass.async_add_executor_job(
+                            _create_ssl_context, 
+                            root_cert, 
+                            cert_file, 
+                            key_file
+                        )
+                        connect_args = {"ssl": ssl_context}
+                    else:
+                        # Disable SSL explicitly to prevent asyncpg from auto-detecting
+                        # certificates and doing blocking I/O
+                        _LOGGER.debug("SSL disabled (default)")
+                        connect_args = {"ssl": False}
+                    
+                    # Create engine
+                    self._engine = create_async_engine(
+                        self.db_url,
+                        pool_size=10,
+                        max_overflow=20,
+                        echo=False,
+                        connect_args=connect_args
+                    )
+                    
+                    _LOGGER.debug("AsyncEngine created successfully")
+                except Exception as e:
+                    _LOGGER.error(f"Failed to create engine: {e}", exc_info=True)
+                    return
+
+            # Initialize DB
+            _LOGGER.debug("Starting database initialization...")
+            try:
+                await self.init_db()
+            except Exception as e:
+                 _LOGGER.error(f"Failed to initialize database: {e}", exc_info=True)
+
+            _LOGGER.debug("Database initialization completed")
+            
+            # Fetch initial counts
+            try:
+                await self._get_initial_counts()
+            except Exception as e:
+                 _LOGGER.warning(f"Failed to fetch initial counts: {e}")
+            
+            # Start Loop
+            self._task = asyncio.create_task(self._run())
+            _LOGGER.info("ScribeWriter started successfully")
+
+        except Exception as e:
+             _LOGGER.error(f"Unexpected error starting ScribeWriter: {e}", exc_info=True)
 
     async def _get_initial_counts(self):
         """Fetch initial row counts from database."""
@@ -246,13 +253,21 @@ class ScribeWriter:
                 await self._task
             except asyncio.CancelledError:
                 pass
+            except Exception as e:
+                _LOGGER.error(f"Error waiting for writer task to stop: {e}", exc_info=True)
         
         # Final flush
-        await self._flush()
+        try:
+            await self._flush()
+        except Exception as e:
+            _LOGGER.error(f"Error during final flush: {e}", exc_info=True)
         
         if self._engine:
-            await self._engine.dispose()
-            _LOGGER.debug("Engine disposed")
+            try:
+                await self._engine.dispose()
+                _LOGGER.debug("Engine disposed")
+            except Exception as e:
+                 _LOGGER.error(f"Error disposing engine: {e}", exc_info=True)
 
     async def _run(self):
         """Main loop."""
@@ -264,7 +279,9 @@ class ScribeWriter:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                _LOGGER.error(f"Error in writer loop: {e}")
+                _LOGGER.error(f"Error in writer loop: {e}", exc_info=True)
+                # Prevent tight loop if persistent error
+                await asyncio.sleep(5)
 
     def enqueue(self, data: Dict[str, Any]):
         """Add data to the queue.
@@ -272,13 +289,16 @@ class ScribeWriter:
         This is called from the main loop, so it shouldn't block.
         We use deque with maxlen, so old items are automatically dropped if full.
         """
-        self._queue.append(data)
-        
-        # Trigger flush if batch size reached (but only if no flush is already pending)
-        if len(self._queue) >= self.batch_size and not self._flush_pending:
-            self._flush_pending = True
-            _LOGGER.debug(f"Batch size reached ({len(self._queue)} >= {self.batch_size}), triggering flush")
-            asyncio.create_task(self._flush())
+        try:
+            self._queue.append(data)
+            
+            # Trigger flush if batch size reached (but only if no flush is already pending)
+            if len(self._queue) >= self.batch_size and not self._flush_pending:
+                self._flush_pending = True
+                _LOGGER.debug(f"Batch size reached ({len(self._queue)} >= {self.batch_size}), triggering flush")
+                asyncio.create_task(self._flush())
+        except Exception as e:
+            _LOGGER.error(f"Error enqueuing data: {e}", exc_info=True)
 
     async def init_db(self):
         """Initialize database tables."""
@@ -308,16 +328,22 @@ class ScribeWriter:
 
             # Hypertable & Compression (each operation in its own transaction)
             if self.record_states:
-                await self._init_hypertable(self.table_name_states, "entity_id")
+                try:
+                     await self._init_hypertable(self.table_name_states, "entity_id")
+                except Exception as e:
+                     _LOGGER.error(f"Failed to init hypertable/compression for states: {e}", exc_info=True)
             
             if self.record_events:
-                await self._init_hypertable(self.table_name_events, "event_type")
+                try:
+                    await self._init_hypertable(self.table_name_events, "event_type")
+                except Exception as e:
+                     _LOGGER.error(f"Failed to init hypertable/compression for events: {e}", exc_info=True)
                     
             _LOGGER.info("Database initialized successfully")
             self._connected = True
 
         except Exception as e:
-            _LOGGER.error(f"Error initializing database: {e}")
+            _LOGGER.error(f"Error initializing database: {e}", exc_info=True)
             self._connected = False
 
     async def _init_states_table(self, conn):
@@ -393,7 +419,7 @@ class ScribeWriter:
                 await conn.execute(stmt, users)
                 _LOGGER.debug("Users written successfully")
         except Exception as e:
-            _LOGGER.error(f"Error writing users: {e}")
+            _LOGGER.error(f"Error writing users: {e}", exc_info=True)
 
     async def _init_entities_table(self, conn):
         """Initialize entities table."""
@@ -435,7 +461,7 @@ class ScribeWriter:
                 await conn.execute(stmt, entities)
                 _LOGGER.debug("Entities written successfully")
         except Exception as e:
-            _LOGGER.error(f"Error writing entities: {e}")
+            _LOGGER.error(f"Error writing entities: {e}", exc_info=True)
 
     async def _init_areas_table(self, conn):
         """Initialize areas table."""
@@ -466,7 +492,7 @@ class ScribeWriter:
                 await conn.execute(stmt, areas)
                 _LOGGER.debug("Areas written successfully")
         except Exception as e:
-            _LOGGER.error(f"Error writing areas: {e}")
+            _LOGGER.error(f"Error writing areas: {e}", exc_info=True)
 
     async def _init_devices_table(self, conn):
         """Initialize devices table."""
@@ -491,14 +517,14 @@ class ScribeWriter:
 
         _LOGGER.debug(f"Writing {len(devices)} devices to database...")
         
-        # Sanitize text fields (ensure string)
-        text_fields = ["sw_version", "model", "manufacturer", "name", "name_by_user"]
-        for device in devices:
-            for field in text_fields:
-               if device.get(field) is not None:
-                   device[field] = str(device[field])
-
         try:
+            # Sanitize text fields (ensure string)
+            text_fields = ["sw_version", "model", "manufacturer", "name", "name_by_user"]
+            for device in devices:
+                for field in text_fields:
+                   if device.get(field) is not None:
+                       device[field] = str(device[field])
+
             async with self._engine.begin() as conn:
                 stmt = text("""
                     INSERT INTO devices (device_id, name, name_by_user, model, manufacturer, sw_version, area_id, primary_config_entry)
@@ -515,7 +541,7 @@ class ScribeWriter:
                 await conn.execute(stmt, devices)
                 _LOGGER.debug("Devices written successfully")
         except Exception as e:
-            _LOGGER.error(f"Error writing devices: {e}")
+            _LOGGER.error(f"Error writing devices: {e}", exc_info=True)
 
     async def _init_integrations_table(self, conn):
         """Initialize integrations table."""
@@ -550,7 +576,7 @@ class ScribeWriter:
                 await conn.execute(stmt, integrations)
                 _LOGGER.debug("Integrations written successfully")
         except Exception as e:
-            _LOGGER.error(f"Error writing integrations: {e}")
+            _LOGGER.error(f"Error writing integrations: {e}", exc_info=True)
 
     async def _init_hypertable(self, table_name, segment_by):
         """Initialize hypertable and compression.
@@ -590,83 +616,91 @@ class ScribeWriter:
             _LOGGER.debug(f"Compression policy failed: {e}")
 
     def _sanitize_obj(self, obj: Any) -> Any:
-        """Recursively remove null bytes from strings."""
-        if isinstance(obj, str):
-            if "\0" in obj:
-                return obj.replace("\0", "")
+        try:
+            """Recursively remove null bytes from strings."""
+            if isinstance(obj, str):
+                if "\0" in obj:
+                    return obj.replace("\0", "")
+                return obj
+            if isinstance(obj, dict):
+                 return {k: self._sanitize_obj(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                 return [self._sanitize_obj(v) for v in obj]
             return obj
-        if isinstance(obj, dict):
-             return {k: self._sanitize_obj(v) for k, v in obj.items()}
-        if isinstance(obj, list):
-             return [self._sanitize_obj(v) for v in obj]
-        return obj
+        except Exception as e:
+            _LOGGER.error(f"Error serializing obj: {e}", exc_info=True)
+            return obj
 
     async def _flush(self):
         """Flush the queue to the database."""
-        self._flush_pending = False  # Reset flag immediately
-        
-        if not self._queue:
-            return
-
-        # Swap queue - drain the deque
-        batch = list(self._queue)
-        self._queue.clear()
-        
-        start_time = time.time()
-        
         try:
-            # Sanitize batch
-            sanitized_batch = [self._sanitize_obj(item) for item in batch]
+            self._flush_pending = False  # Reset flag immediately
             
-            states_data = [x for x in sanitized_batch if x['type'] == 'state']
-            events_data = [x for x in sanitized_batch if x['type'] == 'event']
-            
-            async with self._engine.begin() as conn:
-                if states_data:
-                    await conn.execute(
-                        text(f"INSERT INTO {self.table_name_states} (time, entity_id, state, value, attributes) VALUES (:time, :entity_id, :state, :value, :attributes)"),
-                        states_data
-                    )
-                if events_data:
-                    await conn.execute(
-                        text(f"INSERT INTO {self.table_name_events} (time, event_type, event_data, origin, context_id, context_user_id, context_parent_id) VALUES (:time, :event_type, :event_data, :origin, :context_id, :context_user_id, :context_parent_id)"),
-                        events_data
-                    )
-            
-            duration = time.time() - start_time
-            self._states_written += len(states_data)
-            self._events_written += len(events_data)
-            self._last_write_duration = duration
-            self._connected = True
-            self._last_error = None
+            if not self._queue:
+                return
 
-        except Exception as e:
-            _LOGGER.error(f"Error flushing batch: {e}", exc_info=True)
-            self._connected = False
-            self._last_error = str(e)
+            # Swap queue - drain the deque
+            batch = list(self._queue)
+            self._queue.clear()
             
-            if self.buffer_on_failure:
-                _LOGGER.warning(f"Buffering {len(batch)} items due to failure. Current queue size: {len(self._queue)}")
-                # Prepend back to queue
-                # We want to keep [OldBatch] + [NewQueue], but capped at max_queue_size.
-                # Since we want to drop OLDEST items if full, we want the TAIL of this combined list.
-                # deque(..., maxlen=N) keeps the tail (newest items).
-                # So we reconstruct the deque with the combined list.
-                self._queue = deque(batch + list(self._queue), maxlen=self.max_queue_size)
+            start_time = time.time()
+            
+            try:
+                # Sanitize batch
+                sanitized_batch = [self._sanitize_obj(item) for item in batch]
                 
-                # Calculate dropped
-                # current_len = len(self._queue)
-                # total_len = len(batch) + len(self._queue) - len(batch) # wait, this is just len(batch) + old_len
-                # Actually, we can't easily know how many were dropped by deque without checking lengths before/after
-                # But we know we added len(batch).
-                # If we were full, we dropped some.
+                states_data = [x for x in sanitized_batch if x['type'] == 'state']
+                events_data = [x for x in sanitized_batch if x['type'] == 'event']
                 
-                # Let's just log the current state
-                if len(self._queue) == self.max_queue_size:
-                     _LOGGER.warning(f"Buffer full! Queue size: {len(self._queue)}")
-            else:
-                self._dropped_events += len(batch)
-                _LOGGER.warning(f"Dropped {len(batch)} items (buffering disabled)")
+                async with self._engine.begin() as conn:
+                    if states_data:
+                        await conn.execute(
+                            text(f"INSERT INTO {self.table_name_states} (time, entity_id, state, value, attributes) VALUES (:time, :entity_id, :state, :value, :attributes)"),
+                            states_data
+                        )
+                    if events_data:
+                        await conn.execute(
+                            text(f"INSERT INTO {self.table_name_events} (time, event_type, event_data, origin, context_id, context_user_id, context_parent_id) VALUES (:time, :event_type, :event_data, :origin, :context_id, :context_user_id, :context_parent_id)"),
+                            events_data
+                        )
+                
+                duration = time.time() - start_time
+                self._states_written += len(states_data)
+                self._events_written += len(events_data)
+                self._last_write_duration = duration
+                self._connected = True
+                self._last_error = None
+
+            except Exception as e:
+                _LOGGER.error(f"Error flushing batch: {e}", exc_info=True)
+                self._connected = False
+                self._last_error = str(e)
+                
+                if self.buffer_on_failure:
+                    _LOGGER.warning(f"Buffering {len(batch)} items due to failure. Current queue size: {len(self._queue)}")
+                    # Prepend back to queue
+                    # We want to keep [OldBatch] + [NewQueue], but capped at max_queue_size.
+                    # Since we want to drop OLDEST items if full, we want the TAIL of this combined list.
+                    # deque(..., maxlen=N) keeps the tail (newest items).
+                    # So we reconstruct the deque with the combined list.
+                    self._queue = deque(batch + list(self._queue), maxlen=self.max_queue_size)
+                    
+                    # Calculate dropped
+                    # current_len = len(self._queue)
+                    # total_len = len(batch) + len(self._queue) - len(batch) # wait, this is just len(batch) + old_len
+                    # Actually, we can't easily know how many were dropped by deque without checking lengths before/after
+                    # But we know we added len(batch).
+                    # If we were full, we dropped some.
+                    
+                    # Let's just log the current state
+                    if len(self._queue) == self.max_queue_size:
+                         _LOGGER.warning(f"Buffer full! Queue size: {len(self._queue)}")
+                else:
+                    self._dropped_events += len(batch)
+                    _LOGGER.warning(f"Dropped {len(batch)} items (buffering disabled)")
+        except Exception as e:
+            _LOGGER.error(f"Critical error in _flush: {e}", exc_info=True)
+
 
     async def query(self, sql: str) -> list[dict]:
         """Execute a read-only SQL query."""
