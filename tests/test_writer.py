@@ -1,6 +1,8 @@
+
 """Test ScribeWriter."""
 import pytest
 import asyncio
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, AsyncMock, patch
 from collections import deque
 from custom_components.scribe.writer import ScribeWriter
@@ -427,3 +429,42 @@ async def test_writer_get_db_stats_connect_failure(writer):
     
     stats = await writer.get_db_stats()
     assert stats == {}
+
+@pytest.mark.asyncio
+async def test_writer_sanitizes_null_bytes(writer, mock_db_connection):
+    """Test that null bytes are removed from strings."""
+    # Start writer
+    await writer.start()
+    
+    # Enqueue data with null bytes
+    # Note: writers uses datetime in queue
+    now = datetime(2023, 10, 27, 10, 0, 0, tzinfo=timezone.utc)
+    
+    dirty_state = {
+        "time": now,
+        "entity_id": "sensor.dirty",
+        "state": "bad\u0000value",
+        "value": 1.0,
+        "attributes": '{"key": "nu\u0000ll"}',
+        "type": "state"
+    }
+    writer.enqueue(dirty_state)
+    
+    # Trigger flush manually
+    await writer._flush()
+    
+    # Verify execute call
+    # conn.execute(stmt, parameters)
+    assert mock_db_connection.execute.called
+    call_args = mock_db_connection.execute.call_args
+    # call_args[0] are positional args: (statement, parameters)
+    params = call_args[0][1] 
+    
+    # Verify the first item in the batch
+    item = params[0]
+    
+    # Null bytes should be removed
+    assert "\u0000" not in item["state"]
+    assert item["state"] == "badvalue"
+    assert "\u0000" not in item["attributes"]
+    assert item["attributes"] == '{"key": "null"}'
