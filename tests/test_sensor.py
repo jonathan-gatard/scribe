@@ -145,5 +145,10 @@ async def test_async_setup_entry_statistics(hass):
     async_add_entities.assert_called_once()
     entities = async_add_entities.call_args[0][0]
     
-    # 4 IO sensors + 6 Chunk sensors + 6 Size sensors + 2 Ratio sensors = 18
-    assert len(entities) == 18
+    # 4 IO - Original
+    # 2 Rate - New
+    # 6 Chunk - Enabled
+    # 6 Size - Enabled
+    # 2 Ratio - Enabled
+    # Total = 20
+    assert len(entities) == 20
