@@ -589,6 +589,18 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.debug(f"Compression policy failed: {e}")
 
+    def _sanitize_obj(self, obj: Any) -> Any:
+        """Recursively remove null bytes from strings."""
+        if isinstance(obj, str):
+            if "\0" in obj:
+                return obj.replace("\0", "")
+            return obj
+        if isinstance(obj, dict):
+             return {k: self._sanitize_obj(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+             return [self._sanitize_obj(v) for v in obj]
+        return obj
+
     async def _flush(self):
         """Flush the queue to the database."""
         self._flush_pending = False  # Reset flag immediately
@@ -603,8 +615,11 @@ class ScribeWriter:
         start_time = time.time()
         
         try:
-            states_data = [x for x in batch if x['type'] == 'state']
-            events_data = [x for x in batch if x['type'] == 'event']
+            # Sanitize batch
+            sanitized_batch = [self._sanitize_obj(item) for item in batch]
+            
+            states_data = [x for x in sanitized_batch if x['type'] == 'state']
+            events_data = [x for x in sanitized_batch if x['type'] == 'event']
             
             async with self._engine.begin() as conn:
                 if states_data:
