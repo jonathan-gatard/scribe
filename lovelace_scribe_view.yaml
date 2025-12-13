@@ -1,0 +1,78 @@
+title: Scribe
+icon: mdi:database
+cards:
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: "## 📊 Scribe Database Statistics"
+        
+      - type: tile
+        entity: sensor.scribe_states_written
+        name: Total States Written
+        icon: mdi:database-plus
+      
+      - type: tile
+        entity: sensor.scribe_events_written
+        name: Total Events Written
+        icon: mdi:database-plus
+        
+      - type: entities
+        title: Write Performance
+        show_header_toggle: false
+        entities:
+          - entity: sensor.scribe_buffer_size
+            name: Buffer Size
+          - entity: sensor.scribe_last_write_duration
+            name: Last Flush Duration
+
+  - type: horizontal-stack
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "### 📉 States Table"
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: sensor.scribe_states_total_size
+                name: Total Size
+              - entity: sensor.scribe_states_compressed_size
+                name: Compressed Size
+              - entity: sensor.scribe_states_uncompressed_size
+                name: Uncompressed Size
+              - entity: sensor.scribe_states_compression_ratio
+                name: Compression Ratio
+              - type: divider
+              - entity: sensor.scribe_states_total_chunks
+                name: Total Chunks
+              - entity: sensor.scribe_states_compressed_chunks
+                name: Compressed Chunks
+
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "### 📉 Events Table"
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: sensor.scribe_events_total_size
+                name: Total Size
+              - entity: sensor.scribe_events_compressed_size
+                name: Compressed Size
+              - entity: sensor.scribe_events_uncompressed_size
+                name: Uncompressed Size
+              - entity: sensor.scribe_events_compression_ratio
+                name: Compression Ratio
+              - type: divider
+              - entity: sensor.scribe_events_total_chunks
+                name: Total Chunks
+              - entity: sensor.scribe_events_compressed_chunks
+                name: Compressed Chunks
+
+  - type: history-graph
+    title: Queue & Performance History
+    hours_to_show: 1
+    refresh_interval: 0
+    entities:
+      - sensor.scribe_buffer_size
+      - sensor.scribe_last_write_duration

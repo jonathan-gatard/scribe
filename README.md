@@ -230,6 +230,18 @@ You can configure SSL certificates for the database connection. This is useful i
 ### Still having issues?
 Please [open an issue](https://github.com/jonathan-gatard/scribe/issues) on GitHub with your logs and configuration. We're happy to help!
 
+## Dashboard / View
+
+A pre-configured Lovelace view containing all useful Scribe sensors (Database Statistics, Compression Ratios, I/O Performance) is available in this repository.
+
+**To add it to your Home Assistant dashboard:**
+
+1.  Open your dashboard and click "Edit Dashboard" (pencil icon).
+2.  Click the **+** button to add a new View.
+3.  Select **YAML Mode** (or "Edit in YAML").
+4.  Copy the content of [`lovelace_scribe_view.yaml`](lovelace_scribe_view.yaml) and paste it into the editor.
+5.  Save and enjoy your metrics! 📊
+
 ## Technical Data
 
 For detailed technical information about the architecture, database schema, and data flow, please refer to the [Technical Documentation](TECHNICAL_DOCS.md).
