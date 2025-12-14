@@ -619,19 +619,17 @@ class ScribeWriter:
             _LOGGER.debug(f"Compression policy failed: {e}")
 
     def _sanitize_obj(self, obj: Any) -> Any:
+        """Recursively sanitize strings for PostgreSQL compatibility."""
         try:
-            """Recursively remove null bytes from strings."""
             if isinstance(obj, str):
-                if "\0" in obj:
-                    return obj.replace("\0", "")
-                return obj
+                return obj.replace("\0", "").encode("utf-8", errors="ignore").decode("utf-8")
             if isinstance(obj, dict):
-                 return {k: self._sanitize_obj(v) for k, v in obj.items()}
+                return {k: self._sanitize_obj(v) for k, v in obj.items()}
             if isinstance(obj, list):
-                 return [self._sanitize_obj(v) for v in obj]
+                return [self._sanitize_obj(v) for v in obj]
             return obj
         except Exception as e:
-            _LOGGER.error(f"Error serializing obj: {e}", exc_info=True)
+            _LOGGER.error(f"Error sanitizing obj: {e}", exc_info=True)
             return obj
 
     async def _flush(self):
