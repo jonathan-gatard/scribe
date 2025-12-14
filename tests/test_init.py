@@ -267,8 +267,7 @@ async def test_event_listener_filtering(hass, mock_config_entry):
         })
         await hass.async_block_till_done()
         mock_writer.enqueue.assert_called()
-        import json
-        attrs = json.loads(mock_writer.enqueue.call_args[0][0]["attributes"])
+        attrs = mock_writer.enqueue.call_args[0][0]["attributes"]
         assert "excluded_attr" not in attrs
         assert "kept_attr" in attrs
         mock_writer.enqueue.reset_mock()

@@ -20,7 +20,6 @@ from homeassistant.const import (
     EVENT_HOMEASSISTANT_STOP,
 )
 from homeassistant.helpers.entityfilter import generate_filter
-from homeassistant.helpers.json import JSONEncoder
 
 from .const import (
     DOMAIN,
@@ -447,7 +446,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "entity_id": entity_id,
                     "state": state_str,
                     "value": state_val,
-                    "attributes": json.dumps(filtered_attrs, default=str),
+                    "attributes": filtered_attrs,
                 })
             except Exception as e:
                 _LOGGER.error(f"Error enqueueing state for {entity_id}: {e}")
@@ -480,7 +479,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         "type": "event",
                         "time": event.time_fired,
                         "event_type": event.event_type,
-                        "event_data": json.dumps(event.data, cls=JSONEncoder),
+                        "event_data": event.data,
                         "origin": str(event.origin),
                         "context_id": event.context.id,
                         "context_user_id": event.context.user_id,

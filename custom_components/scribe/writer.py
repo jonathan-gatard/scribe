@@ -11,6 +11,9 @@ import time
 from pathlib import Path
 from typing import Any, Dict
 from collections import deque
+import json
+
+from homeassistant.helpers.json import JSONEncoder
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -619,17 +622,22 @@ class ScribeWriter:
             _LOGGER.debug(f"Compression policy failed: {e}")
 
     def _sanitize_obj(self, obj: Any) -> Any:
-        """Recursively sanitize strings for PostgreSQL compatibility."""
         try:
+            """Recursively remove null bytes from strings."""
             if isinstance(obj, str):
-                return obj.replace("\0", "").encode("utf-8", errors="ignore").decode("utf-8")
+                if "\0" in obj:
+                    _LOGGER.warning(f"Sanitized string containing null byte: {obj!r}")
+                    return obj.replace("\0", "")
+                return obj
             if isinstance(obj, dict):
-                return {k: self._sanitize_obj(v) for k, v in obj.items()}
+                 return {k: self._sanitize_obj(v) for k, v in obj.items()}
             if isinstance(obj, list):
-                return [self._sanitize_obj(v) for v in obj]
+                 return [self._sanitize_obj(v) for v in obj]
+            if isinstance(obj, tuple):
+                 return tuple(self._sanitize_obj(v) for v in obj)
             return obj
         except Exception as e:
-            _LOGGER.error(f"Error sanitizing obj: {e}", exc_info=True)
+            _LOGGER.error(f"Error serializing obj: {e}", exc_info=True)
             return obj
 
     async def _flush(self):
@@ -657,8 +665,21 @@ class ScribeWriter:
                 # Sanitize batch
                 sanitized_batch = [self._sanitize_obj(item) for item in batch]
                 
-                states_data = [x for x in sanitized_batch if x['type'] == 'state']
-                events_data = [x for x in sanitized_batch if x['type'] == 'event']
+                states_data = []
+                for x in sanitized_batch:
+                    if x['type'] == 'state':
+                        # Serialize attributes if dict
+                        if isinstance(x.get('attributes'), dict):
+                             x['attributes'] = json.dumps(x['attributes'], default=str)
+                        states_data.append(x)
+                        
+                events_data = []
+                for x in sanitized_batch:
+                    if x['type'] == 'event':
+                        # Serialize event_data if dict
+                        if isinstance(x.get('event_data'), dict):
+                             x['event_data'] = json.dumps(x['event_data'], cls=JSONEncoder)
+                        events_data.append(x)
                 
                 async with self._engine.begin() as conn:
                     if states_data:
@@ -696,6 +717,7 @@ class ScribeWriter:
                     msg = msg.split("\n")[0]
                 
                 _LOGGER.error(f"Database error during flush: {msg}")
+                _LOGGER.error(f"Failed batch data example: {json.dumps(sanitized_batch, default=str)}")
                 self._connected = False
                 self._last_error = msg
                 
