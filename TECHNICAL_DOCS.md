@@ -179,11 +179,29 @@ Stores metadata for Home Assistant integrations (config entries).
 
 **Syncing**: This table is automatically synchronized with Home Assistant's entity registry on startup.
 
-## Migration from Recorder
+## External Data Migration
 
-Scribe does not automatically import data from the native Recorder database. However, you can migrate data manually using SQL if both databases are accessible.
+Scribe provides dedicated scripts in the `migration/` directory to backfill data from external sources such as InfluxDB and LTSS.
 
-**Example Migration Query (PostgreSQL to Scribe)**:
+### Supported Sources
+1.  **InfluxDB**: Migrates data from InfluxDB appropriately mapping measurements to entities.
+2.  **LTSS**: Migrates data from the custom LTSS component (PostgreSQL based).
+
+### Migration Strategy
+The migration scripts operate by:
+1.  **Connecting** to both the source database and Scribe (PostgreSQL/TimescaleDB).
+2.  **Reading** data in configurable time chunks to manage memory usage.
+3.  **Transforming** data:
+    *   Sanitizing inputs (e.g., removing null bytes).
+    *   Parsing state values to numeric floats where possible.
+    *   Cleaning attributes.
+4.  **Writing** to Scribe using efficient batched inserts.
+
+For detailed usage instructions, please refer to the **[Migration section in the README](README.md#migration)**.
+
+### Manual Recorder Migration (SQL)
+To migrate from the native Home Assistant `recorder` (PostgreSQL), you can use SQL if both databases are accessible:
+
 ```sql
 INSERT INTO scribe_states (time, entity_id, state, value, attributes)
 SELECT
@@ -195,7 +213,7 @@ SELECT
 FROM states
 WHERE to_timestamp(last_updated_ts) < NOW() - INTERVAL '1 hour';
 ```
-*Note: This is a simplified example. You would need to join with `states_meta` in the native schema to get `entity_id` strings.*
+*Note: This is a simplified example.*
 
 ## Error Handling & Reliability
 
