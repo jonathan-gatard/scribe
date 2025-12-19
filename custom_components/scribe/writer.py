@@ -720,7 +720,8 @@ class ScribeWriter:
                     msg = msg.split("\n")[0]
                 
                 _LOGGER.error(f"Database error during flush: {msg}")
-                _LOGGER.error(f"Failed batch data example: {json.dumps(sanitized_batch, default=str)}")
+                # _LOGGER.error(f"Failed batch data example: {json.dumps(batch[:1], default=str)}") # Avoid logging full batch
+
                 self._connected = False
                 self._last_error = msg
                 
