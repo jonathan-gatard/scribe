@@ -54,16 +54,21 @@ async def test_query_select_valid(writer, mock_engine):
     assert mock_conn.execute.called
 
 @pytest.mark.asyncio
-async def test_query_invalid_command(writer):
-    """Test invalid SQL command (DELETE)."""
-    with pytest.raises(ValueError, match="Only SELECT queries are allowed"):
-        await writer.query("DELETE FROM states")
+async def test_ensure_read_only_transaction(writer, mock_engine):
+    """Test that the transaction is set to read-only."""
+    mock_conn = mock_engine.connect.return_value.__aenter__.return_value
+    mock_result = MagicMock()
+    mock_result.__iter__.return_value = []
+    mock_conn.execute.return_value = mock_result
 
-@pytest.mark.asyncio
-async def test_query_invalid_command_drop(writer):
-    """Test invalid SQL command (DROP)."""
-    with pytest.raises(ValueError, match="Only SELECT queries are allowed"):
-        await writer.query("DROP TABLE states")
+    await writer.query("SELECT * FROM states")
+    
+    # Verify that SET LOCAL TRANSACTION READ ONLY was called
+    # We expect at least one call with that text
+    calls = mock_conn.execute.call_args_list
+    # Check if any of the calls contain the read-only command
+    has_read_only = any("SET LOCAL TRANSACTION READ ONLY" in str(call) for call in calls)
+    assert has_read_only, "Read-only transaction was not enforced"
 
 @pytest.mark.asyncio
 async def test_query_whitespace(writer, mock_engine):
