@@ -37,6 +37,9 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 
 ### 1. Install Component
 
+<details>
+<summary><b>Installation Instructions (Click to expand)</b></summary>
+
 **HACS (Recommended)**
 1. Add this repository as a custom repository in HACS.
 2. Search for "Scribe" and install.
@@ -45,8 +48,12 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 **Manual**
 1. Copy the `custom_components/scribe` folder to your Home Assistant's `custom_components` directory.
 2. Restart Home Assistant.
+</details>
 
 ### 2. Database Setup
+
+<details>
+<summary><b>Database Setup Instructions (Click to expand)</b></summary>
 
 You need a running TimescaleDB instance. We recommend PostgreSQL 17 or 18.
 
@@ -81,6 +88,9 @@ scribe:
 
 ### Full Configuration (Default Values)
 
+<details>
+<summary><b>Show Full YAML Configuration</b></summary>
+
 ```yaml
 scribe:
   db_url: postgresql://scribe:password@192.168.1.10:5432/scribe
@@ -111,9 +121,12 @@ scribe:
   enable_table_integrations: true
   enable_table_users: true
 ```
-
+</details>
 
 ### Configuration Parameters
+
+<details>
+<summary><b>Show Parameter Reference</b></summary>
 
 | Parameter | Description |
 | :--- | :--- |
@@ -144,6 +157,7 @@ scribe:
 | `enable_table_entities` | Enable creation and sync of the `entities` table. |
 | `enable_table_integrations` | Enable creation and sync of the `integrations` table. |
 | `enable_table_users` | Enable creation and sync of the `users` table. |
+</details>
 
 ## Migration
 
@@ -203,6 +217,9 @@ Enable sensors by setting their flags in your configuration.
 
 ### IO Statistics (`enable_stats_io: true`)
 
+<details>
+<summary><b>Show IO Sensors</b></summary>
+
 Real-time metrics from the writer (no DB queries).
 
 | Sensor | Description |
@@ -213,8 +230,12 @@ Real-time metrics from the writer (no DB queries).
 | <img src="https://api.iconify.design/mdi:timer-sand.svg?color=%232196F3" width="15" /> `sensor.scribe_write_duration` | Time taken (in ms) for the last database write operation. |
 | <img src="https://api.iconify.design/mdi:speedometer.svg?color=%232196F3" width="15" /> `sensor.scribe_states_rate` | Rate of states written to DB (per minute). |
 | <img src="https://api.iconify.design/mdi:speedometer.svg?color=%232196F3" width="15" /> `sensor.scribe_events_rate` | Rate of events written to DB (per minute). |
+</details>
 
 ### Chunk Statistics (`enable_stats_chunk: true`)
+
+<details>
+<summary><b>Show Chunk Sensors</b></summary>
 
 Chunk counts (updated every `stats_chunk_interval` minutes).
 
@@ -226,8 +247,12 @@ Chunk counts (updated every `stats_chunk_interval` minutes).
 | <img src="https://api.iconify.design/mdi:cube-outline.svg?color=%232196F3" width="15" /> `sensor.scribe_events_total_chunks` | Total number of chunks for the events table. |
 | <img src="https://api.iconify.design/mdi:package-down.svg?color=%232196F3" width="15" /> `sensor.scribe_events_compressed_chunks` | Number of compressed event chunks. |
 | <img src="https://api.iconify.design/mdi:package-up.svg?color=%232196F3" width="15" /> `sensor.scribe_events_uncompressed_chunks` | Number of uncompressed event chunks. |
+</details>
 
 ### Size Statistics (`enable_stats_size: true`)
+
+<details>
+<summary><b>Show Size Sensors</b></summary>
 
 Storage usage in bytes (updated every `stats_size_interval` minutes).
 
@@ -241,6 +266,7 @@ Storage usage in bytes (updated every `stats_size_interval` minutes).
 | <img src="https://api.iconify.design/mdi:package-variant.svg?color=%232196F3" width="15" /> `sensor.scribe_events_compressed_size` | Size of compressed event data. |
 | <img src="https://api.iconify.design/mdi:package-variant-closed.svg?color=%232196F3" width="15" /> `sensor.scribe_events_uncompressed_size` | Size of uncompressed event data. |
 | <img src="https://api.iconify.design/mdi:percent.svg?color=%232196F3" width="15" /> `sensor.scribe_events_compression_ratio` | Compression ratio for events (%). |
+</details>
 
 ## Services
 
