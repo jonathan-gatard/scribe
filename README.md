@@ -255,7 +255,31 @@ A pre-configured Lovelace view containing all useful Scribe sensors (Database St
 2.  Click the **+** button to add a new View.
 3.  Select **YAML Mode** (or "Edit in YAML").
 4.  Copy the content of [`lovelace_scribe_view.yaml`](lovelace_scribe_view.yaml) and paste it into the editor.
-5.  Save and enjoy your metrics! 📊
+
+## Migration
+
+If you are migrating from InfluxDB, Scribe provides a helper script to backfill data.
+
+1. Navigate to the `migration` directory:
+   ```bash
+   cd migration
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install influxdb-client psycopg2-binary python-dotenv
+   ```
+
+3. Configure the migration:
+   ```bash
+   cp .env.example .env
+   nano .env  # Edit with your InfluxDB and Scribe credentials
+   ```
+
+4. Run the migration:
+   ```bash
+   python3 influx2scribe.py
+   ```
 
 ## Technical Data
 
