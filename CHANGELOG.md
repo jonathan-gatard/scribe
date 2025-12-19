@@ -14,6 +14,54 @@ All notable changes to this project will be documented in this file.
 - Fix potential infinite recursion in object sanitization.
 - Remove unused `_queue_lock`.
 
+
+## [2.11.2] - 2025-12-14
+
+### Fixed
+- **Encoding**: Fixed `UnicodeEncodeError` by sanitizing inputs and handling untranslatable characters in `writer.py`.
+
+## [2.11.1] - 2025-12-13
+
+### Fixed
+- **Documentation**: Updated dashboard and readme with rate sensors instructions.
+
+## [2.11.0] - 2025-12-13
+
+### Added
+- **Rate Sensors**: Added `sensor.scribe_states_rate` and `sensor.scribe_events_rate` to monitor database write throughput.
+- **UI**: Improved entity selection with UI selectors for filtering.
+
+## [2.10.2] - 2025-12-13
+
+### Changed
+- **Cleanup**: Repository cleanup and minor robustness improvements.
+
+## [2.10.1] - 2025-12-13
+
+### Fixed
+- **Error Handling**: Improved error logging and sensor stability.
+
+## [2.10.0] - 2025-12-13
+
+### Added
+- **Robustness**: Comprehensive error handling and null-byte sanitization to prevent database writer crashes.
+
+## [2.9.12] - 2025-12-12
+
+### Fixed
+- **Sensors**: Fixed duplicate sensor classes and unused variables.
+
+## [2.9.11] - 2025-12-12
+
+### Changed
+- **Sensors**: Improved adaptive units logic and split ratio sensors.
+- **Writer**: Uses hypertable stats for more accurate compressed size reporting.
+
+## [2.9.0] - 2025-12-11
+
+### Added
+- **Entity Globs**: Added support for `include_entity_globs` and `exclude_entity_globs` to filter entities by pattern.
+
 ## [2.8.4] - 2025-11-27
 
 ### Changed
