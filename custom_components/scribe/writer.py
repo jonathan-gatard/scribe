@@ -662,25 +662,26 @@ class ScribeWriter:
             start_time = time.time()
             
             try:
-                # Sanitize batch
-                sanitized_batch = [self._sanitize_obj(item) for item in batch]
-                
-                states_data = []
-                for x in sanitized_batch:
-                    if x['type'] == 'state':
-                        # Serialize attributes if dict
-                        if isinstance(x.get('attributes'), dict):
-                             x['attributes'] = json.dumps(x['attributes'], default=str)
-                        states_data.append(x)
-                        
-                events_data = []
-                for x in sanitized_batch:
-                    if x['type'] == 'event':
-                        # Serialize event_data if dict
-                        if isinstance(x.get('event_data'), dict):
-                             x['event_data'] = json.dumps(x['event_data'], cls=JSONEncoder)
-                        events_data.append(x)
-                
+                def _process_batch(batch_items):
+                    sanitized_batch = [self._sanitize_obj(item) for item in batch_items]
+                    
+                    states_res = []
+                    events_res = []
+                    
+                    for x in sanitized_batch:
+                        if x['type'] == 'state':
+                            if isinstance(x.get('attributes'), dict):
+                                x['attributes'] = json.dumps(x['attributes'], default=str)
+                            states_res.append(x)
+                        elif x['type'] == 'event':
+                            if isinstance(x.get('event_data'), dict):
+                                x['event_data'] = json.dumps(x['event_data'], cls=JSONEncoder)
+                            events_res.append(x)
+                    return states_res, events_res
+
+                # Run CPU-intensive serialization in executor
+                states_data, events_data = await self.hass.async_add_executor_job(_process_batch, batch)
+
                 async with self._engine.begin() as conn:
                     if states_data:
                         await conn.execute(
