@@ -37,9 +37,6 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 
 ### 1. Install Component
 
-<details>
-<summary><b>Installation Instructions (Click to expand)</b></summary>
-
 **HACS (Recommended)**
 1. Add this repository as a custom repository in HACS.
 2. Search for "Scribe" and install.
@@ -48,7 +45,6 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 **Manual**
 1. Copy the `custom_components/scribe` folder to your Home Assistant's `custom_components` directory.
 2. Restart Home Assistant.
-</details>
 
 ### 2. Database Setup
 
@@ -162,6 +158,9 @@ Scribe provided helper scripts to backfill data from various sources.
 
 ### InfluxDB Migration
 
+<details>
+<summary><b>Show InfluxDB Migration Guide</b></summary>
+
 1. Navigate to the `migration` directory:
    ```bash
    cd migration
@@ -183,8 +182,12 @@ Scribe provided helper scripts to backfill data from various sources.
    ```bash
    python3 influx2scribe.py
    ```
+</details>
 
 ### LTSS Migration
+
+<details>
+<summary><b>Show LTSS Migration Guide</b></summary>
 
 1. Navigate to the `migration` directory:
    ```bash
@@ -207,6 +210,7 @@ Scribe provided helper scripts to backfill data from various sources.
    ```bash
    python3 ltss2scribe.py
    ```
+</details>
 
 ## Statistics Sensors
 
