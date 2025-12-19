@@ -760,16 +760,20 @@ class ScribeWriter:
         if not self._engine:
             raise RuntimeError("Database not connected")
 
-        # Security Check: Only allow SELECT queries
-        if not sql.strip().upper().startswith("SELECT"):
-            raise ValueError("Only SELECT queries are allowed.")
-
-        _LOGGER.debug(f"Executing query: {sql}")
+        # Security: Enforce Read-Only Transaction
+        _LOGGER.debug(f"Executing query (Read-Only): {sql}")
         try:
             async with self._engine.connect() as conn:
-                result = await conn.execute(text(sql))
-                # Convert rows to list of dicts
-                return [dict(row._mapping) for row in result]
+                # set transaction to read only
+                await conn.begin()
+                await conn.execute(text("SET LOCAL TRANSACTION READ ONLY"))
+                
+                try:
+                    result = await conn.execute(text(sql))
+                    # Convert rows to list of dicts
+                    return [dict(row._mapping) for row in result]
+                finally:
+                    await conn.rollback()
         except Exception as e:
             _LOGGER.error(f"Error executing query: {e}")
             raise e
