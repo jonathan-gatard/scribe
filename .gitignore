@@ -4,3 +4,4 @@ __pycache__/
 tuto/
 .venv/
 PROCESS.md
+migration/.env

@@ -1,8 +1,8 @@
 
 import os
 import sys
-import time
 import json
+import logging
 import psycopg2
 from psycopg2.extras import execute_batch
 from influxdb_client import InfluxDBClient
@@ -12,11 +12,22 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+# Configure logging
+LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
+logging.basicConfig(
+    level=logging.INFO,
+    format=LOG_FORMAT,
+    handlers=[
+        logging.FileHandler("migration_influx.log"),
+        logging.StreamHandler()
+    ]
+)
+
 # --- Configuration Loading ---
 def get_env_var(name, default=None, required=False):
     val = os.getenv(name, default)
     if required and not val:
-        print(f"Error: Environment variable {name} is required.")
+        logging.error(f"Environment variable {name} is required.")
         sys.exit(1)
     return val
 
@@ -43,7 +54,7 @@ try:
     START_TIME = datetime.fromisoformat(START_TIME_STR)
     END_TIME = datetime.fromisoformat(END_TIME_STR)
 except ValueError as e:
-    print(f"Error parsing date format: {e}")
+    logging.error(f"Error parsing date format: {e}")
     sys.exit(1)
 
 CHUNK_SIZE = timedelta(hours=CHUNK_SIZE_HOURS)
@@ -67,41 +78,41 @@ def migrate():
             host=SCRIBE_HOST, port=SCRIBE_PORT, database=SCRIBE_DB, user=SCRIBE_USER, password=SCRIBE_PASS
         )
         pg_cur = pg_conn.cursor()
-        print("Connected to Scribe (PostgreSQL).")
+        logging.info("Connected to Scribe (PostgreSQL).")
     except Exception as e:
-        print(f"Failed to connect to Postgres: {e}")
+        logging.error(f"Failed to connect to Postgres: {e}")
         return
 
     # 2. Connect to InfluxDB
     client = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG, timeout=300000)
     query_api = client.query_api()
-    print("Connected to InfluxDB.")
+    logging.info("Connected to InfluxDB.")
 
     # 3. Cleanup Destination (Optional)
     if PURGE_DESTINATION:
-        print(f"Cleaning existing data in Scribe for range {START_TIME} to {END_TIME}...")
+        logging.info(f"Cleaning existing data in Scribe for range {START_TIME} to {END_TIME}...")
         try:
             pg_cur.execute(f"DELETE FROM states WHERE time >= '{START_TIME}' AND time <= '{END_TIME}'")
             pg_conn.commit()
-            print("Cleanup done.")
+            logging.info("Cleanup done.")
         except Exception as e:
-            print(f"Error during cleanup: {e}")
+            logging.error(f"Error during cleanup: {e}")
             pg_conn.rollback()
     else:
-        print("Skipping cleanup (PURGE_DESTINATION is False). Data will be appended.")
+        logging.info("Skipping cleanup (PURGE_DESTINATION is False). Data will be appended.")
 
     # 4. Chunk Loop
     current_start = START_TIME
     total_migrated_rows = 0
 
-    print(f"Starting migration from {START_TIME} to {END_TIME} in chunks of {CHUNK_SIZE_HOURS} hours.")
+    logging.info(f"Starting migration from {START_TIME} to {END_TIME} in chunks of {CHUNK_SIZE_HOURS} hours.")
 
     while current_start < END_TIME:
         current_end = current_start + CHUNK_SIZE
         if current_end > END_TIME:
             current_end = END_TIME
         
-        print(f"--- Processing Chunk: {current_start} to {current_end} ---")
+        logging.info(f"--- Processing Chunk: {current_start} to {current_end} ---")
         
         # Flux Query to get data pivoted
         query = f'''
@@ -146,7 +157,8 @@ def migrate():
                     if val is not None:
                         try:
                             pg_value = float(val)
-                        except: pass
+                        except ValueError:
+                            pass
                     
                     # Determine state string
                     if state_val is not None:
@@ -185,16 +197,16 @@ def migrate():
                 chunk_inserted = len(batch)
                 total_migrated_rows += chunk_inserted
             
-            print(f"   -> Imported {chunk_inserted} rows.")
+            logging.info(f"   -> Imported {chunk_inserted} rows.")
             
         except Exception as e:
-            print(f"Error processing chunk {current_start}: {e}")
+            logging.error(f"Error processing chunk {current_start}: {e}")
             pg_conn.rollback()
             # We continue to the next chunk even if one fails
         
         current_start = current_end
 
-    print(f"\nMigration complete. Total rows inserted: {total_migrated_rows}")
+    logging.info(f"Migration complete. Total rows inserted: {total_migrated_rows}")
     
     pg_cur.close()
     pg_conn.close()

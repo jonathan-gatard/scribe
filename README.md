@@ -11,6 +11,7 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 - [Features](#features)
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [Migration](#migration)
 - [Statistics Sensors](#statistics-sensors)
 - [Services](#services)
 - [Dashboard / View](#dashboard--view)
@@ -111,6 +112,7 @@ scribe:
   enable_table_users: true
 ```
 
+
 ### Configuration Parameters
 
 | Parameter | Description |
@@ -142,6 +144,58 @@ scribe:
 | `enable_table_entities` | Enable creation and sync of the `entities` table. |
 | `enable_table_integrations` | Enable creation and sync of the `integrations` table. |
 | `enable_table_users` | Enable creation and sync of the `users` table. |
+
+## Migration
+
+Scribe provided helper scripts to backfill data from various sources.
+
+### InfluxDB Migration
+
+1. Navigate to the `migration` directory:
+   ```bash
+   cd migration
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install influxdb-client psycopg2-binary python-dotenv
+   ```
+
+3. Configure the migration:
+   ```bash
+   cp .env.example .env
+   nano .env
+   # Fill in [InfluxDB Configuration], [Scribe Configuration], and [Migration Settings]
+   ```
+
+4. Run the migration:
+   ```bash
+   python3 influx2scribe.py
+   ```
+
+### LTSS Migration
+
+1. Navigate to the `migration` directory:
+   ```bash
+   cd migration
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install psycopg2-binary python-dotenv
+   ```
+
+3. Configure the migration:
+   ```bash
+   cp .env.example .env
+   nano .env
+   # Fill in [LTSS Configuration], [Scribe Configuration], and [Migration Settings]
+   ```
+
+4. Run the migration:
+   ```bash
+   python3 ltss2scribe.py
+   ```
 
 ## Statistics Sensors
 
@@ -256,30 +310,8 @@ A pre-configured Lovelace view containing all useful Scribe sensors (Database St
 3.  Select **YAML Mode** (or "Edit in YAML").
 4.  Copy the content of [`lovelace_scribe_view.yaml`](lovelace_scribe_view.yaml) and paste it into the editor.
 
-## Migration
 
-If you are migrating from InfluxDB, Scribe provides a helper script to backfill data.
 
-1. Navigate to the `migration` directory:
-   ```bash
-   cd migration
-   ```
-
-2. Install dependencies:
-   ```bash
-   pip install influxdb-client psycopg2-binary python-dotenv
-   ```
-
-3. Configure the migration:
-   ```bash
-   cp .env.example .env
-   nano .env  # Edit with your InfluxDB and Scribe credentials
-   ```
-
-4. Run the migration:
-   ```bash
-   python3 influx2scribe.py
-   ```
 
 ## Technical Data
 
