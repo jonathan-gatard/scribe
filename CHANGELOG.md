@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.11.3] - 2025-12-19
+
+### Security
+- Fix SQL Injection vulnerability in `query` service by enforcing READ ONLY transactions.
+
+### Performance
+- Optimize heavy JSON serialization by moving it to an executor thread prevent blocking Home Assistant event loop.
+
+### Fixes
+- Fix potential infinite recursion in object sanitization.
+- Remove unused `_queue_lock`.
+
 ## [2.8.4] - 2025-11-27
 
 ### Changed
