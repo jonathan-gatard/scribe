@@ -621,20 +621,22 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.debug(f"Compression policy failed: {e}")
 
-    def _sanitize_obj(self, obj: Any) -> Any:
+    def _sanitize_obj(self, obj: Any, depth: int = 0) -> Any:
         try:
-            """Recursively remove null bytes from strings."""
+            if depth > 100:
+                return str(obj)
+
             if isinstance(obj, str):
                 if "\0" in obj:
                     _LOGGER.warning(f"Sanitized string containing null byte: {obj!r}")
                     return obj.replace("\0", "")
                 return obj
             if isinstance(obj, dict):
-                 return {k: self._sanitize_obj(v) for k, v in obj.items()}
+                 return {k: self._sanitize_obj(v, depth + 1) for k, v in obj.items()}
             if isinstance(obj, list):
-                 return [self._sanitize_obj(v) for v in obj]
+                 return [self._sanitize_obj(v, depth + 1) for v in obj]
             if isinstance(obj, tuple):
-                 return tuple(self._sanitize_obj(v) for v in obj)
+                 return tuple(self._sanitize_obj(v, depth + 1) for v in obj)
             return obj
         except Exception as e:
             _LOGGER.error(f"Error serializing obj: {e}", exc_info=True)
