@@ -52,9 +52,6 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 
 ### 2. Database Setup
 
-<details>
-<summary><b>Database Setup Instructions (Click to expand)</b></summary>
-
 You need a running TimescaleDB instance. We recommend PostgreSQL 17 or 18.
 
 ```bash
