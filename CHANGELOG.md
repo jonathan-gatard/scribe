@@ -242,6 +242,60 @@ All notable changes to this project will be documented in this file.
 - **Binary Sensor**: Added `binary_sensor.scribe_database_connection`.
 - **Service**: Added `scribe.flush` service to manually trigger a write.
 
+## [1.7.0] - 2025-11-25
+
+### Changed
+- **Config**: Restricted configuration to YAML only for advanced setups.
+
+## [1.6.0] - 2025-11-25
+
+### Added
+- **Tests**: Added thorough test suite.
+- **Features**: Advanced features integration.
+
+## [1.5.1] - 2025-11-25
+
+### Fixed
+- **Code Quality**: Fixed indentation error in manifest.
+
+## [1.5.0] - 2025-11-25
+
+### Fixed
+- **Crash**: Fixed initialization crash.
+
+### Added
+- **Localization**: Added more French translations.
+
+## [1.4.0] - 2025-11-25
+
+### Fixed
+- **Bugs**: Various minor bug fixes.
+
+### Added
+- **Localization**: Initial French support.
+
+## [1.3.1] - 2025-11-25
+
+### Fixed
+- **Config Flow**: Fixed configuration flow loop.
+- **UI**: Added brand icons.
+
+## [1.3.0] - 2025-11-25
+
+### Added
+- **Debug**: Added debug mode for enabling verbose logs.
+
+## [1.2.0] - 2025-11-25
+
+### Added
+- **Schema**: Support for dynamic table creation.
+- **Validation**: Input validation for configuration.
+
+## [1.1.0] - 2025-11-25
+
+### Added
+- **Configuration**: Full YAML configuration support.
+
 ## [1.0.0] - 2025-11-25
 
 ### Initial Release
