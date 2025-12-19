@@ -143,7 +143,7 @@ class ScribeWriter:
         
         # Queue
         self._queue: deque = deque(maxlen=max_queue_size)
-        self._queue_lock = asyncio.Lock()
+        self._queue: deque = deque(maxlen=max_queue_size)
         self._flush_pending = False  # Prevent multiple flush tasks
         
         self._engine = engine
