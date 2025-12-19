@@ -64,11 +64,18 @@ async def test_ensure_read_only_transaction(writer, mock_engine):
     await writer.query("SELECT * FROM states")
     
     # Verify that SET LOCAL TRANSACTION READ ONLY was called
-    # We expect at least one call with that text
     calls = mock_conn.execute.call_args_list
-    # Check if any of the calls contain the read-only command
-    has_read_only = any("SET LOCAL TRANSACTION READ ONLY" in str(call) for call in calls)
-    assert has_read_only, "Read-only transaction was not enforced"
+    
+    has_read_only = False
+    for call in calls:
+        if call.args:
+            # call.args[0] is the sqlalchemy TextClause object
+            # str(call.args[0]) returns the actual SQL string
+            if "SET LOCAL TRANSACTION READ ONLY" in str(call.args[0]):
+                has_read_only = True
+                break
+                
+    assert has_read_only, f"Read-only transaction was not enforced. Calls: {calls}"
 
 @pytest.mark.asyncio
 async def test_query_whitespace(writer, mock_engine):
