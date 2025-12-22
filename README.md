@@ -39,7 +39,7 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 
 **HACS (Recommended)**
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jonathan-gatard&repository=scribe&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jonathan-gatard&repository=scribe&category=integration)
 
 1. Add this repository as a custom repository in HACS.
 2. Search for "Scribe" and install.
