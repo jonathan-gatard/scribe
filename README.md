@@ -48,7 +48,13 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 
 ### 2. Database Setup
 
-You need a running TimescaleDB instance. We recommend PostgreSQL 17 or 18.
+You need a running TimescaleDB instance. I recommend PostgreSQL 17 or 18.
+
+#### Option A: Home Assistant OS (Add-on)
+
+If you are running Home Assistant OS, I recommend using the [TimescaleDB Add-on](https://github.com/expaso/hassos-addon-timescaledb).
+
+#### Option B: Docker (Manual)
 
 ```bash
 # High Availability (Recommended)
@@ -324,7 +330,7 @@ You can configure SSL certificates for the database connection. This is useful i
 - View Home Assistant logs for coordinator errors
 
 ### Still having issues?
-Please [open an issue](https://github.com/jonathan-gatard/scribe/issues) on GitHub with your logs and configuration. We're happy to help!
+Please [open an issue](https://github.com/jonathan-gatard/scribe/issues) on GitHub with your logs and configuration. I would be happy to help!
 
 ## Dashboard / View
 
