@@ -824,26 +824,32 @@ class ScribeWriter:
             return {}
 
         async def get_states_size_stats():
+            total_bytes = 0
+            compressed_bytes = 0
+
             try:
                 # 1. Get Total Size (Compressed + Uncompressed)
                 async with self._engine.connect() as conn:
                     res_total = await conn.execute(text(f"SELECT total_bytes FROM hypertable_detailed_size('{self.table_name_states}')"))
                     row_total = res_total.fetchone()
                     total_bytes = row_total[0] if row_total else 0
-                    
-                    # 2. Get Compressed Size
+            except Exception as e:
+                _LOGGER.debug(f"Failed to get states total size: {e}")
+            
+            try:
+                # 2. Get Compressed Size
+                async with self._engine.connect() as conn:
                     res_comp = await conn.execute(text(f"SELECT after_compression_total_bytes FROM hypertable_compression_stats('{self.table_name_states}')"))
                     row_comp = res_comp.fetchone()
                     compressed_bytes = row_comp[0] if row_comp else 0
-
-                    return {
-                        "states_total_size": total_bytes,
-                        "states_compressed_size": compressed_bytes,
-                        "states_uncompressed_size": max(0, total_bytes - compressed_bytes)
-                    }
             except Exception as e:
-                _LOGGER.debug(f"Failed to get states size stats: {e}")
-            return {}
+                _LOGGER.debug(f"Failed to get states compressed size: {e}")
+
+            return {
+                "states_total_size": total_bytes,
+                "states_compressed_size": compressed_bytes,
+                "states_uncompressed_size": max(0, total_bytes - compressed_bytes)
+            }
 
         async def get_events_chunk_stats():
             try:
@@ -868,26 +874,32 @@ class ScribeWriter:
             return {}
 
         async def get_events_size_stats():
+            total_bytes = 0
+            compressed_bytes = 0
+
             try:
                 # 1. Get Total Size (Compressed + Uncompressed)
                 async with self._engine.connect() as conn:
                     res_total = await conn.execute(text(f"SELECT total_bytes FROM hypertable_detailed_size('{self.table_name_events}')"))
                     row_total = res_total.fetchone()
                     total_bytes = row_total[0] if row_total else 0
-                    
-                    # 2. Get Compressed Size
+            except Exception as e:
+                _LOGGER.debug(f"Failed to get events total size: {e}")
+            
+            try:
+                # 2. Get Compressed Size
+                async with self._engine.connect() as conn:
                     res_comp = await conn.execute(text(f"SELECT after_compression_total_bytes FROM hypertable_compression_stats('{self.table_name_events}')"))
                     row_comp = res_comp.fetchone()
                     compressed_bytes = row_comp[0] if row_comp else 0
-
-                    return {
-                        "events_total_size": total_bytes,
-                        "events_compressed_size": compressed_bytes,
-                        "events_uncompressed_size": max(0, total_bytes - compressed_bytes)
-                    }
             except Exception as e:
-                _LOGGER.debug(f"Failed to get events size stats: {e}")
-            return {}
+                _LOGGER.debug(f"Failed to get events compressed size: {e}")
+
+            return {
+                "events_total_size": total_bytes,
+                "events_compressed_size": compressed_bytes,
+                "events_uncompressed_size": max(0, total_bytes - compressed_bytes)
+            }
 
         async def get_states_compression_stats():
             try:
