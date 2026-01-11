@@ -2,13 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.12.0] - 2026-01-11
+## [2.12.1] - 2026-01-11
 
 ### Fixed
-- **Metadata Sync**: Fixed entities and integrations table insertion failures (GitHub issue #11).
-  - Added type conversion for all text fields to ensure strings before insertion (fixes "expected str, got int" error).
-  - Added null byte sanitization to all metadata write methods (fixes "invalid byte sequence for encoding UTF8: 0x00" error).
+- **Metadata Sync**: Fixed all metadata table insertion failures with comprehensive sanitization.
+  - Added type conversion (`str()`) and null byte removal for all TEXT fields before DB insertion.
   - Affected methods: `write_users`, `write_entities`, `write_areas`, `write_devices`, `write_integrations`.
+  - Fixes "expected str, got int" and "invalid byte sequence for encoding UTF8: 0x00" errors.
+
+## [2.12.0] - 2026-01-11
+
+### Changed
 - **Tests**: Updated `get_db_stats` tests to match PR #9 behavior (partial stats with default 0 values instead of empty dict on failure).
 
 ## [2.11.3] - 2025-12-19

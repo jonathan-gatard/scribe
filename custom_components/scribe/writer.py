@@ -409,6 +409,13 @@ class ScribeWriter:
 
         _LOGGER.debug(f"Writing {len(users)} users to database...")
         try:
+            # Sanitize text fields (ensure string, remove null bytes)
+            text_fields = ["user_id", "name"]
+            for user in users:
+                for field in text_fields:
+                    if user.get(field) is not None:
+                        user[field] = str(user[field]).replace("\0", "")
+
             async with self._engine.begin() as conn:
                 # Upsert users
                 # We use ON CONFLICT DO UPDATE to update existing users
@@ -450,6 +457,13 @@ class ScribeWriter:
 
         _LOGGER.debug(f"Writing {len(entities)} entities to database...")
         try:
+            # Sanitize text fields (ensure string, remove null bytes)
+            text_fields = ["entity_id", "unique_id", "platform", "domain", "name", "device_id", "area_id"]
+            for entity in entities:
+                for field in text_fields:
+                    if entity.get(field) is not None:
+                        entity[field] = str(entity[field]).replace("\0", "")
+
             async with self._engine.begin() as conn:
                 # Upsert entities
                 stmt = text("""
@@ -487,6 +501,13 @@ class ScribeWriter:
 
         _LOGGER.debug(f"Writing {len(areas)} areas to database...")
         try:
+            # Sanitize text fields (ensure string, remove null bytes)
+            text_fields = ["area_id", "name", "picture"]
+            for area in areas:
+                for field in text_fields:
+                    if area.get(field) is not None:
+                        area[field] = str(area[field]).replace("\0", "")
+
             async with self._engine.begin() as conn:
                 stmt = text("""
                     INSERT INTO areas (area_id, name, picture)
@@ -524,12 +545,12 @@ class ScribeWriter:
         _LOGGER.debug(f"Writing {len(devices)} devices to database...")
         
         try:
-            # Sanitize text fields (ensure string)
-            text_fields = ["sw_version", "model", "manufacturer", "name", "name_by_user"]
+            # Sanitize text fields (ensure string, remove null bytes)
+            text_fields = ["device_id", "name", "name_by_user", "model", "manufacturer", "sw_version", "area_id", "primary_config_entry"]
             for device in devices:
                 for field in text_fields:
-                   if device.get(field) is not None:
-                       device[field] = str(device[field])
+                    if device.get(field) is not None:
+                        device[field] = str(device[field]).replace("\0", "")
 
             async with self._engine.begin() as conn:
                 stmt = text("""
@@ -569,6 +590,13 @@ class ScribeWriter:
 
         _LOGGER.debug(f"Writing {len(integrations)} integrations to database...")
         try:
+            # Sanitize text fields (ensure string, remove null bytes)
+            text_fields = ["entry_id", "domain", "title", "state", "source"]
+            for integration in integrations:
+                for field in text_fields:
+                    if integration.get(field) is not None:
+                        integration[field] = str(integration[field]).replace("\0", "")
+
             async with self._engine.begin() as conn:
                 stmt = text("""
                     INSERT INTO integrations (entry_id, domain, title, state, source)
