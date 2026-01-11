@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.12.3] - 2026-01-11
+
+### Fixed
+- **Statistics**: Fixed `TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'` in `get_db_stats`.
+  - Ensure `total_bytes` and `compressed_bytes` default to 0 if the database returns None (e.g. empty tables or stats not yet available).
+  - This prevents the integration from crashing during startup or stats update intervals.
+  - Applied fix to both States and Events size statistics.
+
 ## [2.12.2] - 2026-01-11
 
 ### Security
