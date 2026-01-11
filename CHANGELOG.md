@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.12.6] - 2026-01-11
+
+### Changed
+- **UX**: Implemented adaptive units for database size sensors.
+  - **kB**: < 1 MB (0 decimals)
+  - **MB**: < 1 GB (1 decimal)
+  - **GB**: >= 1 GB (2 decimals)
+  - Values automatically scale based on size for optimal readability.
+
 ## [2.12.5] - 2026-01-11
 
 ### Changed
