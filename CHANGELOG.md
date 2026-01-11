@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.12.5] - 2026-01-11
+
+### Changed
+- **UX**: Removed decimal precision from database size sensors (MB).
+  - Values are now rounded to the nearest integer for cleaner display (e.g. `619 MB`).
+
 ## [2.12.4] - 2026-01-11
 
 ### Changed

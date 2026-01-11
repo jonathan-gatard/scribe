@@ -95,14 +95,14 @@ async def test_size_coordinator_sensors():
     entry.entry_id = "test_entry"
     
     # States
-    assert ScribeStatsTotalSizeSensor(coordinator, entry).native_value == 10.0
-    assert ScribeStatsCompressedSizeSensor(coordinator, entry).native_value == 8.0
-    assert ScribeStatsUncompressedSizeSensor(coordinator, entry).native_value == 2.0
+    assert ScribeStatsTotalSizeSensor(coordinator, entry).native_value == 10
+    assert ScribeStatsCompressedSizeSensor(coordinator, entry).native_value == 8
+    assert ScribeStatsUncompressedSizeSensor(coordinator, entry).native_value == 2
     
     # Events
-    assert ScribeEventsTotalSizeSensor(coordinator, entry).native_value == 20.0
-    assert ScribeEventsCompressedSizeSensor(coordinator, entry).native_value == 15.0
-    assert ScribeEventsUncompressedSizeSensor(coordinator, entry).native_value == 5.0
+    assert ScribeEventsTotalSizeSensor(coordinator, entry).native_value == 20
+    assert ScribeEventsCompressedSizeSensor(coordinator, entry).native_value == 15
+    assert ScribeEventsUncompressedSizeSensor(coordinator, entry).native_value == 5
 
 @pytest.mark.asyncio
 async def test_async_setup_entry_statistics(hass):
