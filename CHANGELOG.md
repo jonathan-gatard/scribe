@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.12.7] - 2026-01-11
+
+### Fixed
+- **UX**: Added `suggested_unit_of_measurement` to size sensors to force Home Assistant to respect the dynamic adaptive units display. This fixes issues where units were sticking to "B" despite the values being in MB/GB.
+
 ## [2.12.6] - 2026-01-11
 
 ### Changed

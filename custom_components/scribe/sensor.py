@@ -176,6 +176,11 @@ class ScribeSizeSensor(ScribeCoordinatorSensor):
         else:
             return 2
 
+    @property
+    def suggested_unit_of_measurement(self):
+        """Suggest the unit of measurement for display."""
+        return self.native_unit_of_measurement
+
 # =============================================
 # STATES TABLE SENSORS
 # =============================================
