@@ -142,9 +142,9 @@ class ScribeStatsTotalSizeSensor(ScribeCoordinatorSensor):
     
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry, "states_total_size", "States Total Size")
-        self._attr_native_unit_of_measurement = UnitOfInformation.BYTES
+        self._attr_native_unit_of_measurement = UnitOfInformation.MEGABYTES
         self._attr_device_class = SensorDeviceClass.DATA_SIZE
-        self._attr_suggested_display_precision = 0
+        self._attr_suggested_display_precision = 2
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:database"
 
@@ -152,7 +152,7 @@ class ScribeStatsTotalSizeSensor(ScribeCoordinatorSensor):
     def native_value(self):
         try:
             val = self.coordinator.data.get("states_total_size", 0)
-            return val
+            return round(val / 1024 / 1024, 2)
         except Exception:
             return None
 
@@ -161,16 +161,17 @@ class ScribeStatsCompressedSizeSensor(ScribeCoordinatorSensor):
     
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry, "states_compressed_size", "States Compressed Size")
-        self._attr_native_unit_of_measurement = UnitOfInformation.BYTES
+        self._attr_native_unit_of_measurement = UnitOfInformation.MEGABYTES
         self._attr_device_class = SensorDeviceClass.DATA_SIZE
-        self._attr_suggested_display_precision = 0
+        self._attr_suggested_display_precision = 2
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:package-variant"
 
     @property
     def native_value(self):
         try:
-            return self.coordinator.data.get("states_compressed_size", 0)
+            val = self.coordinator.data.get("states_compressed_size", 0)
+            return round(val / 1024 / 1024, 2)
         except Exception:
             return None
 
@@ -180,16 +181,17 @@ class ScribeStatsUncompressedSizeSensor(ScribeCoordinatorSensor):
     
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry, "states_uncompressed_size", "States Uncompressed Size")
-        self._attr_native_unit_of_measurement = UnitOfInformation.BYTES
+        self._attr_native_unit_of_measurement = UnitOfInformation.MEGABYTES
         self._attr_device_class = SensorDeviceClass.DATA_SIZE
-        self._attr_suggested_display_precision = 0
+        self._attr_suggested_display_precision = 2
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:package-variant-closed"
 
     @property
     def native_value(self):
         try:
-            return self.coordinator.data.get("states_uncompressed_size", 0)
+            val = self.coordinator.data.get("states_uncompressed_size", 0)
+            return round(val / 1024 / 1024, 2)
         except Exception:
             return None
 
@@ -251,16 +253,17 @@ class ScribeEventsTotalSizeSensor(ScribeCoordinatorSensor):
     
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry, "events_total_size", "Events Total Size")
-        self._attr_native_unit_of_measurement = UnitOfInformation.BYTES
+        self._attr_native_unit_of_measurement = UnitOfInformation.MEGABYTES
         self._attr_device_class = SensorDeviceClass.DATA_SIZE
-        self._attr_suggested_display_precision = 0
+        self._attr_suggested_display_precision = 2
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:database"
 
     @property
     def native_value(self):
         try:
-            return self.coordinator.data.get("events_total_size", 0)
+            val = self.coordinator.data.get("events_total_size", 0)
+            return round(val / 1024 / 1024, 2)
         except Exception:
             return None
 
@@ -270,16 +273,17 @@ class ScribeEventsCompressedSizeSensor(ScribeCoordinatorSensor):
     
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry, "events_compressed_size", "Events Compressed Size")
-        self._attr_native_unit_of_measurement = UnitOfInformation.BYTES
+        self._attr_native_unit_of_measurement = UnitOfInformation.MEGABYTES
         self._attr_device_class = SensorDeviceClass.DATA_SIZE
-        self._attr_suggested_display_precision = 0
+        self._attr_suggested_display_precision = 2
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:package-variant"
 
     @property
     def native_value(self):
         try:
-            return self.coordinator.data.get("events_compressed_size", 0)
+            val = self.coordinator.data.get("events_compressed_size", 0)
+            return round(val / 1024 / 1024, 2)
         except Exception:
             return None
 
@@ -289,16 +293,17 @@ class ScribeEventsUncompressedSizeSensor(ScribeCoordinatorSensor):
     
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry, "events_uncompressed_size", "Events Uncompressed Size")
-        self._attr_native_unit_of_measurement = UnitOfInformation.BYTES
+        self._attr_native_unit_of_measurement = UnitOfInformation.MEGABYTES
         self._attr_device_class = SensorDeviceClass.DATA_SIZE
-        self._attr_suggested_display_precision = 0
+        self._attr_suggested_display_precision = 2
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:package-variant-closed"
 
     @property
     def native_value(self):
         try:
-            return self.coordinator.data.get("events_uncompressed_size", 0)
+            val = self.coordinator.data.get("events_uncompressed_size", 0)
+            return round(val / 1024 / 1024, 2)
         except Exception:
             return None
 

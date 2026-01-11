@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.12.4] - 2026-01-11
+
+### Changed
+- **UX**: Changed display unit for database size sensors from Bytes (B) to Megabytes (MB).
+  - This improves readability for larger databases, avoiding long numbers like `649,256,960 B`.
+  - Values are now rounded to 2 decimal places.
+
 ## [2.12.3] - 2026-01-11
 
 ### Fixed

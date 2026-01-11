@@ -80,27 +80,29 @@ async def test_chunk_coordinator_sensors():
 async def test_size_coordinator_sensors():
     """Test size coordinator sensors."""
     coordinator = MagicMock()
+    # Use values that result in clean MB numbers
+    # 1 MB = 1048576 B
     coordinator.data = {
-        "states_total_size": 1000,
-        "states_compressed_size": 800,
-        "states_uncompressed_size": 200,
-        "events_total_size": 2000,
-        "events_compressed_size": 1500,
-        "events_uncompressed_size": 500,
+        "states_total_size": 1048576 * 10, # 10 MB
+        "states_compressed_size": 1048576 * 8, # 8 MB
+        "states_uncompressed_size": 1048576 * 2, # 2 MB
+        "events_total_size": 1048576 * 20, # 20 MB
+        "events_compressed_size": 1048576 * 15, # 15 MB
+        "events_uncompressed_size": 1048576 * 5, # 5 MB
     }
     
     entry = MagicMock()
     entry.entry_id = "test_entry"
     
     # States
-    assert ScribeStatsTotalSizeSensor(coordinator, entry).native_value == 1000
-    assert ScribeStatsCompressedSizeSensor(coordinator, entry).native_value == 800
-    assert ScribeStatsUncompressedSizeSensor(coordinator, entry).native_value == 200
+    assert ScribeStatsTotalSizeSensor(coordinator, entry).native_value == 10.0
+    assert ScribeStatsCompressedSizeSensor(coordinator, entry).native_value == 8.0
+    assert ScribeStatsUncompressedSizeSensor(coordinator, entry).native_value == 2.0
     
     # Events
-    assert ScribeEventsTotalSizeSensor(coordinator, entry).native_value == 2000
-    assert ScribeEventsCompressedSizeSensor(coordinator, entry).native_value == 1500
-    assert ScribeEventsUncompressedSizeSensor(coordinator, entry).native_value == 500
+    assert ScribeEventsTotalSizeSensor(coordinator, entry).native_value == 20.0
+    assert ScribeEventsCompressedSizeSensor(coordinator, entry).native_value == 15.0
+    assert ScribeEventsUncompressedSizeSensor(coordinator, entry).native_value == 5.0
 
 @pytest.mark.asyncio
 async def test_async_setup_entry_statistics(hass):
