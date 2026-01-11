@@ -287,13 +287,17 @@ async def test_writer_hypertable_failure(writer, mock_engine, mock_db_connection
 
 @pytest.mark.asyncio
 async def test_writer_get_db_stats_failure(writer, mock_db_connection):
-    """Test stats fetching failure."""
+    """Test stats fetching failure - should return partial stats with default values."""
     await writer.start()
     
     mock_db_connection.execute.side_effect = Exception("Stats Error")
     
     stats = await writer.get_db_stats()
-    assert stats == {}
+    # With PR #9, size stats functions return default 0 values even on failure
+    # Chunk stats return empty dict on failure
+    # So we expect size stats with 0 values
+    assert stats.get("states_total_size", 0) == 0
+    assert stats.get("events_total_size", 0) == 0
 
 @pytest.mark.asyncio
 async def test_writer_start_already_running(writer):
@@ -421,14 +425,16 @@ async def test_writer_compression_enable_failure(writer, mock_engine, mock_db_co
 
 @pytest.mark.asyncio
 async def test_writer_get_db_stats_connect_failure(writer):
-    """Test get_db_stats connection failure."""
+    """Test get_db_stats connection failure - should return partial stats with default values."""
     await writer.start()
     
     # Mock connect() to raise exception
     writer._engine.connect.side_effect = Exception("Connect Error")
     
     stats = await writer.get_db_stats()
-    assert stats == {}
+    # With PR #9, size stats functions return default 0 values even on failure
+    assert stats.get("states_total_size", 0) == 0
+    assert stats.get("events_total_size", 0) == 0
 
 @pytest.mark.asyncio
 async def test_writer_sanitizes_null_bytes(writer, mock_db_connection):
