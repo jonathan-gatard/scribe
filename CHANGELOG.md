@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.12.2] - 2026-01-11
+
+### Security
+- **Paranoid Sanitization**: Verified and enforced strict type sanitization (TEXT columns = string parameters) for ALL database insertions.
+  - Enforced `str()` conversion and null byte removal for critical high-frequency fields in `states` and `events` tables (`entity_id`, `state`, `event_type`, `origin`, etc.).
+  - This ensures 100% compliance with database types, even if upstream components provide incorrect types (e.g. int instead of string).
+
 ## [2.12.1] - 2026-01-11
 
 ### Fixed

@@ -700,10 +700,20 @@ class ScribeWriter:
                     
                     for x in sanitized_batch:
                         if x['type'] == 'state':
+                            # Ensure strict typing for text fields
+                            for field in ['entity_id', 'state']:
+                                if x.get(field) is not None:
+                                    x[field] = str(x[field]).replace('\0', '')
+
                             if isinstance(x.get('attributes'), dict):
                                 x['attributes'] = json.dumps(x['attributes'], default=str)
                             states_res.append(x)
                         elif x['type'] == 'event':
+                            # Ensure strict typing for text fields
+                            for field in ['event_type', 'origin', 'context_id', 'context_user_id', 'context_parent_id']:
+                                if x.get(field) is not None:
+                                    x[field] = str(x[field]).replace('\0', '')
+
                             if isinstance(x.get('event_data'), dict):
                                 x['event_data'] = json.dumps(x['event_data'], cls=JSONEncoder)
                             events_res.append(x)
