@@ -5,3 +5,4 @@ tuto/
 .venv/
 PROCESS.md
 migration/.env
+venv_tmp/
