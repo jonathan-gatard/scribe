@@ -20,7 +20,7 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input=None) -> FlowResult:
         """Handle the initial step."""
-        return self.async_abort(reason="yaml_only")
+        return self.async_abort(reason="ui_configuration_disabled")
 
     async def async_step_import(self, user_input=None) -> FlowResult:
         """Handle import from YAML."""
