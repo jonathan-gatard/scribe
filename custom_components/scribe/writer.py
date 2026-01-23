@@ -149,6 +149,11 @@ class ScribeWriter:
         self._engine = engine
         self._task = None
         self._running = False
+        
+        # ID Cache: entity_id -> metadata_id
+        self._entity_id_map: Dict[str, int] = {}
+        # Reverse Cache: metadata_id -> entity_id (for debugging/renames if needed)
+        self._metadata_id_map: Dict[int, str] = {}
 
     async def start(self):
         """Start the writer task."""
@@ -247,6 +252,39 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.warning(f"Failed to fetch initial counts: {e}")
 
+    async def _ensure_metadata_ids(self, entity_ids: list[str]):
+        """Ensure all entity_ids have a metadata_id in the cache."""
+        missing = [eid for eid in entity_ids if eid not in self._entity_id_map]
+        if not missing:
+            return
+
+        try:
+            async with self._engine.begin() as conn:
+                # Insert missing entities
+                # We use ON CONFLICT DO NOTHING to handle race conditions safely
+                await conn.execute(
+                    text("INSERT INTO entities (entity_id) VALUES (:entity_id) ON CONFLICT (entity_id) DO NOTHING"),
+                    [{"entity_id": eid} for eid in missing]
+                )
+                
+                # Fetch IDs for the missing ones
+                result = await conn.execute(
+                    text("SELECT entity_id, id FROM entities WHERE entity_id = ANY(:eids)"),
+                    {"eids": missing}
+                )
+                
+                count = 0
+                for row in result:
+                    self._entity_id_map[row.entity_id] = row.id
+                    self._metadata_id_map[row.id] = row.entity_id
+                    count += 1
+                
+                if count > 0:
+                    _LOGGER.debug(f"Registered {count} new entities")
+                    
+        except Exception as e:
+            _LOGGER.error(f"Error registering new entities: {e}")
+
 
 
     async def stop(self):
@@ -315,6 +353,10 @@ class ScribeWriter:
         try:
             # Create tables
             async with self._engine.begin() as conn:
+                # Check for migration
+                if self.record_states:
+                    await self._check_and_migrate_states(conn)
+
                 if self.record_states:
                     await self._init_states_table(conn)
                 if self.record_events:
@@ -335,7 +377,8 @@ class ScribeWriter:
             # Hypertable & Compression (each operation in its own transaction)
             if self.record_states:
                 try:
-                     await self._init_hypertable(self.table_name_states, "entity_id")
+                     # Hypertable on states_raw using metadata_id
+                     await self._init_hypertable("states_raw", "metadata_id")
                 except Exception as e:
                      _LOGGER.error(f"Failed to init hypertable/compression for states: {e}", exc_info=True)
             
@@ -352,21 +395,98 @@ class ScribeWriter:
             _LOGGER.error(f"Error initializing database: {e}", exc_info=True)
             self._connected = False
 
+    async def _check_and_migrate_states(self, conn):
+        """Check if migration from 'states' (legacy) to 'states_raw' is needed."""
+        try:
+            # Check if 'states' table exists
+            res = await conn.execute(text(
+                "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'states' AND table_type = 'BASE TABLE')"
+            ))
+            states_exists = res.scalar()
+            
+            # Check if 'states_raw' exists
+            res = await conn.execute(text(
+                "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'states_raw')"
+            ))
+            states_raw_exists = res.scalar()
+            
+            if states_exists and not states_raw_exists:
+                _LOGGER.warning("Detected legacy 'states' table. Starting migration to 'states_raw'...")
+                
+                # 1. Rename old table
+                await conn.execute(text("ALTER TABLE states RENAME TO states_legacy"))
+                
+                # 2. Ensure Entities Table Exists (it should be created by subsequent init, but we need it now)
+                await self._init_entities_table(conn)
+                
+                # 3. Populate Entities from legacy data
+                _LOGGER.info("Migrating entities from legacy states...")
+                await conn.execute(text("""
+                    INSERT INTO entities (entity_id)
+                    SELECT DISTINCT entity_id FROM states_legacy
+                    ON CONFLICT (entity_id) DO NOTHING
+                """))
+                
+                # 4. Create states_raw (Must exist for insertion)
+                await self._init_states_table(conn)
+                
+                # 5. Migrate Data
+                _LOGGER.info("Migrating state history (this may take a while)...")
+                # Note: We do a direct INSERT SELECT. For huge tables, this might timeout if not careful.
+                # However, asyncpg/SQLAlchemy usually handles long running queries fine if the server doesn't kill it.
+                await conn.execute(text("""
+                    INSERT INTO states_raw (time, metadata_id, state, value, attributes)
+                    SELECT 
+                        s.time, 
+                        e.id, 
+                        s.state, 
+                        s.value, 
+                        s.attributes
+                    FROM states_legacy s
+                    JOIN entities e ON s.entity_id = e.entity_id
+                """))
+                
+                # 6. Cleanup
+                _LOGGER.info("Dropping legacy states table...")
+                await conn.execute(text("DROP TABLE states_legacy"))
+                
+                _LOGGER.info("Migration completed successfully!")
+                
+        except Exception as e:
+            _LOGGER.error(f"Migration failed: {e}")
+            # We don't raise here to allow startup to continue (might be broken state though)
+
     async def _init_states_table(self, conn):
-        """Initialize states table."""
-        _LOGGER.debug(f"Creating table {self.table_name_states} if not exists")
+        """Initialize states_raw table and View."""
+        
+        # 1. Create states_raw
+        _LOGGER.debug(f"Creating table states_raw if not exists")
         await conn.execute(text(f"""
-            CREATE TABLE IF NOT EXISTS {self.table_name_states} (
+            CREATE TABLE IF NOT EXISTS states_raw (
                 time TIMESTAMPTZ NOT NULL,
-                entity_id TEXT NOT NULL,
+                metadata_id INTEGER NOT NULL,
                 state TEXT,
                 value DOUBLE PRECISION,
                 attributes JSONB
             );
         """))
         await conn.execute(text(f"""
-            CREATE INDEX IF NOT EXISTS {self.table_name_states}_entity_time_idx 
-            ON {self.table_name_states} (entity_id, time DESC);
+            CREATE INDEX IF NOT EXISTS states_raw_meta_time_idx 
+            ON states_raw (metadata_id, time DESC);
+        """))
+        
+        # 2. Create View 'states' for backward compatibility
+        _LOGGER.debug("Creating/Replacing view 'states'")
+        await conn.execute(text(f"""
+            CREATE OR REPLACE VIEW {self.table_name_states} AS
+            SELECT
+                s.time,
+                e.entity_id,
+                s.state,
+                s.value,
+                s.attributes
+            FROM states_raw s
+            JOIN entities e ON s.metadata_id = e.id;
         """))
 
     async def _init_events_table(self, conn):
@@ -439,7 +559,8 @@ class ScribeWriter:
         _LOGGER.debug("Creating table entities if not exists")
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS entities (
-                entity_id TEXT PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
+                entity_id TEXT UNIQUE,
                 unique_id TEXT,
                 platform TEXT,
                 domain TEXT,
@@ -449,6 +570,17 @@ class ScribeWriter:
                 capabilities JSONB
             );
         """))
+        
+        # Populate Cache on startup
+        try:
+             result = await conn.execute(text("SELECT entity_id, id FROM entities"))
+             rows = result.fetchall()
+             for row in rows:
+                 self._entity_id_map[row[0]] = row[1]
+                 self._metadata_id_map[row[1]] = row[0]
+             _LOGGER.debug(f"Loaded {len(self._entity_id_map)} entities into ID cache")
+        except Exception as e:
+             _LOGGER.warning(f"Failed to populate entity cache: {e}")
 
     async def write_entities(self, entities: list[dict]):
         """Write entities to the database (upsert)."""
@@ -722,10 +854,35 @@ class ScribeWriter:
                 # Run CPU-intensive serialization in executor
                 states_data, events_data = await self.hass.async_add_executor_job(_process_batch, batch)
 
+                # Resolve Metadata IDs for states
+                if states_data:
+                    # Collect unique entity IDs
+                    eids = set()
+                    for s in states_data:
+                        if 'entity_id' in s:
+                            eids.add(s['entity_id'])
+                    
+                    # Ensure they exist in DB/Cache
+                    if eids:
+                        await self._ensure_metadata_ids(list(eids))
+                    
+                    # Map to metadata_id
+                    final_states_data = []
+                    for s in states_data:
+                        eid = s.pop('entity_id', None)
+                        if eid and eid in self._entity_id_map:
+                            s['metadata_id'] = self._entity_id_map[eid]
+                            final_states_data.append(s)
+                        else:
+                             # Should not happen after ensure_metadata_ids unless DB error
+                            _LOGGER.warning(f"Skipping state for unknown entity_id: {eid}")
+                    
+                    states_data = final_states_data
+
                 async with self._engine.begin() as conn:
                     if states_data:
                         await conn.execute(
-                            text(f"INSERT INTO {self.table_name_states} (time, entity_id, state, value, attributes) VALUES (:time, :entity_id, :state, :value, :attributes)"),
+                            text(f"INSERT INTO states_raw (time, metadata_id, state, value, attributes) VALUES (:time, :metadata_id, :state, :value, :attributes)"),
                             states_data
                         )
                     if events_data:
@@ -810,10 +967,11 @@ class ScribeWriter:
             return [dict(row) for row in result.mappings()]
 
     async def rename_entity(self, old_entity_id: str, new_entity_id: str):
-        """Rename an entity in the database.
+        """Rename an entity in the database (Metadata only).
         
-        Updates the entity_id in 'entities' table and 'states' table.
-        Note: Updates to compressed chunks in 'states' will fail and are skipped (logged as warning).
+        Updates the entity_id in 'entities' table.
+        The 'states_raw' table uses metadata_id, so no data migration of history is needed!
+        This works instantly even with compressed chunks.
         """
         if not self._engine:
             return
@@ -823,40 +981,28 @@ class ScribeWriter:
         try:
             async with self._engine.begin() as conn:
                 # 1. Update entities table
-                if self.enable_table_entities:
+                # We check if new_entity_id already exists to avoid Unique Violation
+                # If it exists, it's a merge scenario which is complex, we just warn.
+                
+                # Simple case: Rename
+                try:
                     await conn.execute(
                         text("UPDATE entities SET entity_id = :new_id WHERE entity_id = :old_id"),
                         {"new_id": new_entity_id, "old_id": old_entity_id}
                     )
+                except SQLAlchemyError as e:
+                     # Check for unique violation
+                    msg = str(e)
+                    if "unique constraint" in msg.lower():
+                        _LOGGER.warning(f"Cannot rename {old_entity_id} to {new_entity_id}: Target already exists.")
+                    else:
+                        raise e
                 
-                # 2. Update states table (Uncompressed chunks only)
-                if self.record_states:
-                    try:
-                        # We attempt to update everything. TimescaleDB will throw an error if we touch compressed chunks.
-                        # Ideally, we would select only uncompressed chunks, but that logic is complex to maintain.
-                        # Instead, users with compressed data might see this fail if we don't handle it carefully.
-                        # However, partially updating (only uncompressed) in a single transaction that fails 
-                        # usually rolls back the whole thing.
-                        
-                        # Strategy: Try query. If it fails due to compression, log it.
-                        await conn.execute(
-                            text(f"UPDATE {self.table_name_states} SET entity_id = :new_id WHERE entity_id = :old_id"),
-                            {"new_id": new_entity_id, "old_id": old_entity_id}
-                        )
-                    except SQLAlchemyError as e:
-                        # Check for specific TimescaleDB compression error codes if possible, 
-                        # or just catch generic DB errors associated with updates on compressed chunks.
-                        # Usually "cannot update/delete rows from compressed chunk"
-                        msg = str(e)
-                        if "compressed chunk" in msg.lower():
-                             _LOGGER.warning(
-                                f"Could not update compressed history for {old_entity_id}. "
-                                "Old history remains under the old entity_id. "
-                                "Only uncompressed (recent) history would have been migrated if supported, "
-                                "but the transaction was rolled back."
-                            )
-                        else:
-                            raise e
+            # Update cache
+            if old_entity_id in self._entity_id_map:
+                mid = self._entity_id_map.pop(old_entity_id)
+                self._entity_id_map[new_entity_id] = mid
+                self._metadata_id_map[mid] = new_entity_id
 
             _LOGGER.info(f"Renamed entity {old_entity_id} to {new_entity_id} successfully")
 
