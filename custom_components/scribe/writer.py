@@ -351,12 +351,13 @@ class ScribeWriter:
             return
 
         try:
-            # Create tables
-            async with self._engine.begin() as conn:
-                # Check for migration
-                if self.record_states:
+            # 1. Check and Perform Migration (own transaction)
+            if self.record_states:
+                async with self._engine.begin() as conn:
                     await self._check_and_migrate_states(conn)
-
+            
+            # 2. Create tables (own transaction)
+            async with self._engine.begin() as conn:
                 if self.record_states:
                     await self._init_states_table(conn)
                 if self.record_events:
@@ -366,6 +367,7 @@ class ScribeWriter:
                 if self.enable_table_users:
                     await self._init_users_table(conn)
                 if self.enable_table_entities:
+                     # This will also evolve the schema if needed
                     await self._init_entities_table(conn)
                 if self.enable_table_areas:
                     await self._init_areas_table(conn)
@@ -557,6 +559,8 @@ class ScribeWriter:
     async def _init_entities_table(self, conn):
         """Initialize entities table."""
         _LOGGER.debug("Creating table entities if not exists")
+        
+        # 1. Create table if not exists (with ID)
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS entities (
                 id SERIAL PRIMARY KEY,
@@ -571,8 +575,26 @@ class ScribeWriter:
             );
         """))
         
+        # 2. Schema Evolution: Ensure 'id' column exists
+        # We try to add it. If it exists, it throws a specific error we catch.
+        # This is more robust than querying information_schema which can be tricky with visibility.
+        try:
+             _LOGGER.debug("Ensuring 'id' column exists in entities...")
+             await conn.execute(text("ALTER TABLE entities ADD COLUMN IF NOT EXISTS id SERIAL PRIMARY KEY"))
+        except Exception as e:
+             # IF NOT EXISTS should handle it, but if syntax unsupported or other error:
+             _LOGGER.debug(f"Column 'id' might already exist or alteration failed slightly: {e}")
+
+        # 3. Ensure entity_id is UNIQUE
+        try:
+             await conn.execute(text("ALTER TABLE entities ADD CONSTRAINT entities_entity_id_key UNIQUE (entity_id)"))
+        except Exception as e:
+             _LOGGER.debug(f"Constraint entities_entity_id_key might already exist: {e}")
+
         # Populate Cache on startup
         try:
+             # We need to verify 'id' exists before selecting it to avoid "column does not exist" error crashing the whole transaction
+             # Re-check via query catch
              result = await conn.execute(text("SELECT entity_id, id FROM entities"))
              rows = result.fetchall()
              for row in rows:
