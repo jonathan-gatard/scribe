@@ -18,7 +18,9 @@
             "must_record_something": "少なくとも1つの記録オプション（状態またはイベント）を選択する必要があります。"
         },
         "abort": {
-            "already_configured": "Scribeはすでに設定されています。"
+            "already_configured": "Scribeはすでに設定されています。",
+            "single_instance_allowed": "Only one instance of Scribe is allowed. Please remove the existing one first if you want to reconfigure.",
+            "ui_configuration_disabled": "UI configuration is currently disabled to ensure stability. Please configure Scribe via configuration.yaml."
         }
     },
     "options": {

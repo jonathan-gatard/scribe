@@ -22,7 +22,8 @@
         },
         "abort": {
             "already_configured": "Scribe est déjà configuré.",
-            "single_instance_allowed": "Une seule instance de Scribe est autorisée. Veuillez d'abord supprimer l'instance existante si vous souhaitez reconfigurer."
+            "single_instance_allowed": "Une seule instance de Scribe est autorisée. Veuillez d'abord supprimer l'instance existante si vous souhaitez reconfigurer.",
+            "ui_configuration_disabled": "La configuration via l'UI est désactivée pour plus de stabilité. Veuillez configurer Scribe via configuration.yaml."
         }
     },
     "options": {

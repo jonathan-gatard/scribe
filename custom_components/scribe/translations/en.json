@@ -21,7 +21,9 @@
             "must_record_something": "You must select at least one recording option (States or Events)."
         },
         "abort": {
-            "already_configured": "Scribe is already configured."
+            "already_configured": "Scribe is already configured.",
+            "single_instance_allowed": "Only one instance of Scribe is allowed. Please remove the existing one first if you want to reconfigure.",
+            "ui_configuration_disabled": "UI configuration is currently disabled to ensure stability. Please configure Scribe via configuration.yaml."
         }
     },
     "options": {
