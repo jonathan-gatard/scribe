@@ -505,6 +505,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 action = event.data.get("action")
                 entity_id = event.data.get("entity_id")
                 
+                # Handle Rename
+                if action == "update":
+                    old_entity_id = event.data.get("old_entity_id")
+                    if old_entity_id and old_entity_id != entity_id:
+                        _LOGGER.debug(f"Entity renamed: {old_entity_id} -> {entity_id}")
+                        await writer.rename_entity(old_entity_id, entity_id)
+
                 if action in ["create", "update"]:
                     _LOGGER.debug(f"Entity registry update: {action} {entity_id}")
                     try:
