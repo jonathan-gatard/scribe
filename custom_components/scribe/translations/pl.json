@@ -18,7 +18,9 @@
             "must_record_something": "Musisz wybrać co najmniej jedną opcję rejestrowania (Stany lub Zdarzenia)."
         },
         "abort": {
-            "already_configured": "Scribe jest już skonfigurowany."
+            "already_configured": "Scribe jest już skonfigurowany.",
+            "single_instance_allowed": "Dozwolona jest tylko jedna instancja Scribe. Usuń najpierw istniejącą, jeśli chcesz skonfigurować ponownie.",
+            "ui_configuration_disabled": "Konfiguracja interfejsu użytkownika jest obecnie wyłączona w celu zapewnienia stabilności. Proszę skonfigurować Scribe przez configuration.yaml."
         }
     },
     "options": {

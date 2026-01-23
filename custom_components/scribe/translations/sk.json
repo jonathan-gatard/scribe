@@ -18,7 +18,9 @@
             "must_record_something": "Musíte vybrať aspoň jednu možnosť záznamu (Stavy alebo Udalosti)."
         },
         "abort": {
-            "already_configured": "Scribe je už nakonfigurovaný."
+            "already_configured": "Scribe je už nakonfigurovaný.",
+            "single_instance_allowed": "Povolená je iba jedna inštancia Scribe. Ak chcete prekonfigurovať, najprv odstráňte existujúcu.",
+            "ui_configuration_disabled": "Konfigurácia používateľského rozhrania je momentálne zakázaná pre zaistenie stability. Scribe nakonfigurujte prostredníctvom configuration.yaml."
         }
     },
     "options": {

@@ -18,7 +18,9 @@
             "must_record_something": "Du måste välja minst ett inspelningsalternativ (Tillstånd eller Händelser)."
         },
         "abort": {
-            "already_configured": "Scribe är redan konfigurerat."
+            "already_configured": "Scribe är redan konfigurerat.",
+            "single_instance_allowed": "Endast en instans av Scribe är tillåten. Ta bort den befintliga först om du vill konfigurera om.",
+            "ui_configuration_disabled": "UI-konfiguration är för närvarande inaktiverad för att säkerställa stabilitet. Konfigurera Scribe via configuration.yaml."
         }
     },
     "options": {

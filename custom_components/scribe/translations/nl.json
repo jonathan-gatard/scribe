@@ -18,7 +18,9 @@
             "must_record_something": "U moet ten minste één opnameoptie selecteren (Staten of Gebeurtenissen)."
         },
         "abort": {
-            "already_configured": "Scribe is al geconfigureerd."
+            "already_configured": "Scribe is al geconfigureerd.",
+            "single_instance_allowed": "Er is slechts één exemplaar van Scribe toegestaan. Verwijder eerst het bestaande exemplaar als u opnieuw wilt configureren.",
+            "ui_configuration_disabled": "UI-configuratie is momenteel uitgeschakeld om stabiliteit te garanderen. Configureer Scribe via configuration.yaml."
         }
     },
     "options": {

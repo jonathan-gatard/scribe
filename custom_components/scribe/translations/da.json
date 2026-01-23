@@ -18,7 +18,9 @@
             "must_record_something": "Du skal vælge mindst én optagemulighed (Tilstande eller Begivenheder)."
         },
         "abort": {
-            "already_configured": "Scribe er allerede konfigureret."
+            "already_configured": "Scribe er allerede konfigureret.",
+            "single_instance_allowed": "Kun én instans af Scribe er tilladt. Fjern venligst den eksisterende først, hvis du vil rekonfigurere.",
+            "ui_configuration_disabled": "UI-konfiguration er i øjeblikket deaktiveret for at sikre stabilitet. Konfigurer venligst Scribe via configuration.yaml."
         }
     },
     "options": {

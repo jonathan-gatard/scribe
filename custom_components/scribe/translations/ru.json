@@ -18,7 +18,9 @@
             "must_record_something": "Вы должны выбрать хотя бы одну опцию записи (Состояния или События)."
         },
         "abort": {
-            "already_configured": "Scribe уже настроен."
+            "already_configured": "Scribe уже настроен.",
+            "single_instance_allowed": "Разрешен только один экземпляр Scribe. Пожалуйста, удалите существующий, если хотите перенастроить.",
+            "ui_configuration_disabled": "Конфигурация через UI в настоящее время отключена для обеспечения стабильности. Пожалуйста, настройте Scribe через configuration.yaml."
         }
     },
     "options": {
