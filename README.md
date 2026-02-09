@@ -23,7 +23,9 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 
 - 🚀 **Async-First Architecture**: Built on `asyncpg` for non-blocking, high-throughput writes.
 - 📦 **TimescaleDB Native**: Automatically manages Hypertables and Compression Policies.
-- 📊 **Granular Statistics**: Optional sensors for monitoring chunk counts, compression ratios, and I/O performance.
+- 🚀 **Advanced Migration**: Transparently migrates legacy `states` data to a metadata-optimized `states_raw` hypertable.
+- 🔄 **Backward Compatibility**: Keeps existing Grafana dashboards working through a high-performance `states` view.
+- 📊 **Granular Statistics**: Optional sensors for monitoring chunk counts, compression ratios (up to 97% saved!), and I/O performance.
 - 🔒 **Secure**: Full SSL/TLS support.
 - 📈 **States & Events**: Records all state changes and events to `states` and `events` tables.
 - 👥 **User Context**: Automatically syncs Home Assistant users to the database for rich context.
@@ -165,9 +167,16 @@ scribe:
 
 ## Migration
 
-Scribe provided helper scripts to backfill data from various sources.
+### Scribe v2.13.0+ Automatic Migration
 
-### InfluxDB Migration
+Starting from version 2.13.0, Scribe automatically migrates your data to a more efficient schema:
+- **`states_raw`**: This is the new primary hypertable. It uses `metadata_id` (integers) instead of `entity_id` (strings) for significant performance gains and storage reduction.
+- **`states` View**: Scribe creates a view named `states` that perfectly mimics the old table structure. Your existing Grafana dashboards and SQL queries will continue to work without any changes.
+- **Automatic Compression**: Scribe automatically enables TimescaleDB compression on `states_raw`. Data older than 7 days (default) is compressed, typically achieving **95% to 98% storage savings**.
+
+The migration happens automatically in the background when you update. For very large databases, it might take some time to complete, but it is non-blocking for Home Assistant.
+
+### External Data Migration
 
 <details>
 <summary><b>Show InfluxDB Migration Guide</b></summary>
@@ -270,11 +279,13 @@ Storage usage in bytes (updated every `stats_size_interval` minutes).
 
 | Sensor | Description |
 | :--- | :--- |
-| <img src="https://api.iconify.design/mdi:database.svg?color=%232196F3" width="15" /> `sensor.scribe_states_total_size` | Total disk size of the states table. |
-| <img src="https://api.iconify.design/mdi:package-variant.svg?color=%232196F3" width="15" /> `sensor.scribe_states_compressed_size` | Size of compressed state data. |
-| <img src="https://api.iconify.design/mdi:package-variant-closed.svg?color=%232196F3" width="15" /> `sensor.scribe_states_uncompressed_size` | Size of uncompressed state data. |
+| <img src="https://api.iconify.design/mdi:database.svg?color=%232196F3" width="15" /> `sensor.scribe_states_total_size` | Total disk size (includes compressed data + recent chunks + indices). |
+| <img src="https://api.iconify.design/mdi:database-search.svg?color=%232196F3" width="15" /> `sensor.scribe_states_original_size` | **Theoretical size** if data was not compressed (e.g. 11 GB). |
+| <img src="https://api.iconify.design/mdi:package-variant.svg?color=%232196F3" width="15" /> `sensor.scribe_states_compressed_size` | Physical size of the compressed data chunks. |
+| <img src="https://api.iconify.design/mdi:package-variant-closed.svg?color=%232196F3" width="15" /> `sensor.scribe_states_uncompressed_size` | Size of recent data not yet compressed (or pending indices). |
 | <img src="https://api.iconify.design/mdi:percent.svg?color=%232196F3" width="15" /> `sensor.scribe_states_compression_ratio` | Compression ratio for states (%). |
 | <img src="https://api.iconify.design/mdi:database.svg?color=%232196F3" width="15" /> `sensor.scribe_events_total_size` | Total disk size of the events table. |
+| <img src="https://api.iconify.design/mdi:database-search.svg?color=%232196F3" width="15" /> `sensor.scribe_events_original_size` | Theoretical size of events before compression. |
 | <img src="https://api.iconify.design/mdi:package-variant.svg?color=%232196F3" width="15" /> `sensor.scribe_events_compressed_size` | Size of compressed event data. |
 | <img src="https://api.iconify.design/mdi:package-variant-closed.svg?color=%232196F3" width="15" /> `sensor.scribe_events_uncompressed_size` | Size of uncompressed event data. |
 | <img src="https://api.iconify.design/mdi:percent.svg?color=%232196F3" width="15" /> `sensor.scribe_events_compression_ratio` | Compression ratio for events (%). |
