@@ -14,11 +14,23 @@ async def migrate_database(
     chunk_time_interval: str = "7 days",
     compress_after: str = "7 days"
 ):
-    """Run all database migrations."""
-    
-    # Give HA time to fully start AND finish bootstrap
-    _LOGGER.info("⏳ Waiting 60 seconds for Home Assistant to complete bootstrap...")
-    await asyncio.sleep(60)
+    # Quickly check if migration is finished to skip the 60s delay
+    skip_delay = False
+    try:
+        async with engine.connect() as conn:
+            # If states_raw exists, we skip the initial bootstrap delay.
+            # The migration logic below is idempotent and will handle any pending tasks.
+            res = await conn.execute(text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'states_raw')"))
+            if res.scalar():
+                skip_delay = True
+    except Exception:
+        skip_delay = False
+
+    if skip_delay:
+        _LOGGER.debug("✅ states_raw detected and migrated, skipping 60s startup delay.")
+    else:
+        _LOGGER.info("⏳ Migration or initialization needed. Waiting 60 seconds for Home Assistant to complete bootstrap...")
+        await asyncio.sleep(60)
     
     _LOGGER.info("🔧 Starting background database migration...")
     

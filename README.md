@@ -165,16 +165,9 @@ scribe:
 
 ## Migration
 
-### Scribe v2.13.0+ Automatic Migration
+Scribe provided helper scripts to backfill data from various sources.
 
-Starting from version 2.13.0, Scribe automatically migrates your data to a more efficient schema:
-- **`states_raw`**: This is the new primary hypertable. It uses `metadata_id` (integers) instead of `entity_id` (strings) for significant performance gains and storage reduction.
-- **`states` View**: Scribe creates a view named `states` that perfectly mimics the old table structure. Your existing Grafana dashboards and SQL queries will continue to work without any changes.
-- **Automatic Compression**: Scribe automatically enables TimescaleDB compression on `states_raw`. Data older than 7 days (default) is compressed, typically achieving **95% to 98% storage savings**.
-
-The migration happens automatically in the background when you update. For very large databases, it might take some time to complete, but it is non-blocking for Home Assistant.
-
-### External Data Migration
+### InfluxDB Migration
 
 <details>
 <summary><b>Show InfluxDB Migration Guide</b></summary>
