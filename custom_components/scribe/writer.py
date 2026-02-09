@@ -1108,10 +1108,25 @@ class ScribeWriter:
             except Exception as e:
                 _LOGGER.debug(f"Failed to get states compressed size: {e}")
 
+            # Get compression stats for the ratio sensors
+            before_bytes = 0
+            after_bytes = 0
+            try:
+                async with self._engine.connect() as conn:
+                    res_ratio = await conn.execute(text(f"SELECT before_compression_total_bytes, after_compression_total_bytes FROM hypertable_compression_stats('states_raw')"))
+                    row_ratio = res_ratio.fetchone()
+                    if row_ratio:
+                        before_bytes = row_ratio[0] or 0
+                        after_bytes = row_ratio[1] or 0
+            except Exception as e:
+                _LOGGER.debug(f"Failed to get states compression ratio stats: {e}")
+
             return {
                 "states_total_size": total_bytes,
                 "states_compressed_size": compressed_bytes,
-                "states_uncompressed_size": max(0, total_bytes - compressed_bytes)
+                "states_uncompressed_size": max(0, total_bytes - compressed_bytes),
+                "states_before_compression_total_bytes": before_bytes,
+                "states_after_compression_total_bytes": after_bytes
             }
 
         async def get_events_chunk_stats():
@@ -1158,10 +1173,25 @@ class ScribeWriter:
             except Exception as e:
                 _LOGGER.debug(f"Failed to get events compressed size: {e}")
 
+            # Get compression stats for the ratio sensors
+            before_bytes = 0
+            after_bytes = 0
+            try:
+                async with self._engine.connect() as conn:
+                    res_ratio = await conn.execute(text(f"SELECT before_compression_total_bytes, after_compression_total_bytes FROM hypertable_compression_stats('{self.table_name_events}')"))
+                    row_ratio = res_ratio.fetchone()
+                    if row_ratio:
+                        before_bytes = row_ratio[0] or 0
+                        after_bytes = row_ratio[1] or 0
+            except Exception as e:
+                _LOGGER.debug(f"Failed to get events compression ratio stats: {e}")
+
             return {
                 "events_total_size": total_bytes,
                 "events_compressed_size": compressed_bytes,
-                "events_uncompressed_size": max(0, total_bytes - compressed_bytes)
+                "events_uncompressed_size": max(0, total_bytes - compressed_bytes),
+                "events_before_compression_total_bytes": before_bytes,
+                "events_after_compression_total_bytes": after_bytes
             }
 
         async def get_states_compression_stats():
