@@ -35,10 +35,17 @@ async def writer(hass, mock_engine):
 @pytest.mark.asyncio
 async def test_writer_init_db(writer, mock_engine, mock_db_connection):
     """Test database initialization."""
-    import custom_components.scribe.writer
-    print(f"DEBUG: create_async_engine is {custom_components.scribe.writer.create_async_engine}")
-    
-    await writer.start()
+    # Mock migration
+    # writer.py does: from . import migration -> usage: migration.migrate_database()
+    # So we patch the function in the module where it is defined, but accessed via writer module?
+    # Actually, verify if writer.py has 'migration' in its namespace.
+    # It does. So we patch 'custom_components.scribe.writer.migration.migrate_database'
+    with patch("custom_components.scribe.writer.migration.migrate_database") as mock_migrate:
+        await writer.start()
+        await writer.hass.async_block_till_done()
+        
+        # Verify migration was scheduled
+        mock_migrate.assert_called_once()
     
     # Verify engine creation
     assert writer._engine == mock_engine

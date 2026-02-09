@@ -22,6 +22,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from homeassistant.core import HomeAssistant
 
+from . import migration
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -223,6 +225,26 @@ class ScribeWriter:
 
             _LOGGER.debug("Database initialization completed")
             
+            # Register listener to launch migration AFTER HA finishes bootstrap
+            async def _launch_migration(event):
+                """Launch migration after HA is fully started."""
+                _LOGGER.debug("HA fully started, launching background migration")
+                self.hass.async_create_task(
+                    migration.migrate_database(
+                        self.hass, 
+                        self._engine, 
+                        self.record_states, 
+                        self.enable_table_entities,
+                        self.chunk_interval,
+                        self.compress_after
+                    )
+                )
+            
+            # Listen for HA started event (fires AFTER bootstrap completes)
+            from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+            self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _launch_migration)
+            _LOGGER.info("Migration will start after Home Assistant finishes bootstrap")
+            
             # Fetch initial counts
             try:
                 await self._get_initial_counts()
@@ -419,49 +441,16 @@ class ScribeWriter:
             
             if states_exists and not states_raw_exists:
                 _LOGGER.warning("Detected legacy 'states' table. Starting migration to 'states_raw'...")
+                _LOGGER.info("1/2 Renaming 'states' to 'states_legacy'. Data migration will happen in background.")
                 
                 # 1. Rename old table
+                # This is fast. The rest (creating new tables) happens in subsequent init_db steps.
+                # Data migration (INSERT SELECT) is handled by migration.migrate_database background task.
                 await conn.execute(text("ALTER TABLE states RENAME TO states_legacy"))
                 
-                # 2. Ensure Entities Table Exists (it should be created by subsequent init, but we need it now)
-                await self._init_entities_table(conn)
-                
-                # 3. Populate Entities from legacy data
-                _LOGGER.info("Migrating entities from legacy states...")
-                await conn.execute(text("""
-                    INSERT INTO entities (entity_id)
-                    SELECT DISTINCT entity_id FROM states_legacy
-                    ON CONFLICT (entity_id) DO NOTHING
-                """))
-                
-                # 4. Create states_raw (Must exist for insertion)
-                await self._init_states_table(conn)
-                
-                # 5. Migrate Data
-                _LOGGER.info("Migrating state history (this may take a while)...")
-                # Note: We do a direct INSERT SELECT. For huge tables, this might timeout if not careful.
-                # However, asyncpg/SQLAlchemy usually handles long running queries fine if the server doesn't kill it.
-                await conn.execute(text("""
-                    INSERT INTO states_raw (time, metadata_id, state, value, attributes)
-                    SELECT 
-                        s.time, 
-                        e.id, 
-                        s.state, 
-                        s.value, 
-                        s.attributes
-                    FROM states_legacy s
-                    JOIN entities e ON s.entity_id = e.entity_id
-                """))
-                
-                # 6. Cleanup
-                _LOGGER.info("Dropping legacy states table...")
-                await conn.execute(text("DROP TABLE states_legacy"))
-                
-                _LOGGER.info("Migration completed successfully!")
-                
         except Exception as e:
-            _LOGGER.error(f"Migration failed: {e}")
-            # We don't raise here to allow startup to continue (might be broken state though)
+            _LOGGER.error(f"Migration check failed: {e}")
+            # We don't raise here to allow startup to continue
 
     async def _init_states_table(self, conn):
         """Initialize states_raw table and View."""
@@ -570,6 +559,9 @@ class ScribeWriter:
     async def _init_entities_table(self, conn):
         """Initialize entities table."""
         _LOGGER.debug("Creating table entities if not exists")
+        
+        # Ensure schema is up to date (migrate from old text-PK schema if needed)
+        await migration.migrate_entities_table(conn)
         
         # 1. Create table if not exists (with ID and all constraints)
         await conn.execute(text("""
