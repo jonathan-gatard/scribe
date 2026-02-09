@@ -1070,7 +1070,7 @@ class ScribeWriter:
                             SUM(CASE WHEN is_compressed THEN 1 ELSE 0 END) AS compressed_chunks,
                             SUM(CASE WHEN NOT is_compressed THEN 1 ELSE 0 END) AS uncompressed_chunks
                         FROM timescaledb_information.chunks
-                        WHERE hypertable_name = '{self.table_name_states}'
+                        WHERE hypertable_name = 'states_raw'
                     """))
                     row = res.fetchone()
                     if row:
@@ -1090,7 +1090,7 @@ class ScribeWriter:
             try:
                 # 1. Get Total Size (Compressed + Uncompressed)
                 async with self._engine.connect() as conn:
-                    res_total = await conn.execute(text(f"SELECT total_bytes FROM hypertable_detailed_size('{self.table_name_states}')"))
+                    res_total = await conn.execute(text(f"SELECT total_bytes FROM hypertable_detailed_size('states_raw')"))
                     row_total = res_total.fetchone()
                     total_bytes = (row_total[0] if row_total else 0) or 0
             except Exception as e:
@@ -1099,7 +1099,7 @@ class ScribeWriter:
             try:
                 # 2. Get Compressed Size
                 async with self._engine.connect() as conn:
-                    res_comp = await conn.execute(text(f"SELECT after_compression_total_bytes FROM hypertable_compression_stats('{self.table_name_states}')"))
+                    res_comp = await conn.execute(text(f"SELECT after_compression_total_bytes FROM hypertable_compression_stats('states_raw')"))
                     row_comp = res_comp.fetchone()
                     compressed_bytes = (row_comp[0] if row_comp else 0) or 0
             except Exception as e:
