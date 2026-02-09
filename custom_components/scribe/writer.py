@@ -463,8 +463,8 @@ class ScribeWriter:
         """Initialize states_raw table and View."""
         
         # 1. Create states_raw
-        _LOGGER.debug(f"Creating table states_raw if not exists")
-        await conn.execute(text(f"""
+        _LOGGER.debug("Creating table states_raw if not exists")
+        await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS states_raw (
                 time TIMESTAMPTZ NOT NULL,
                 metadata_id INTEGER NOT NULL,
