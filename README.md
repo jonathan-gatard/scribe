@@ -23,8 +23,6 @@ Scribe is built differently. Unlike other integrations that rely on synchronous 
 
 - 🚀 **Async-First Architecture**: Built on `asyncpg` for non-blocking, high-throughput writes.
 - 📦 **TimescaleDB Native**: Automatically manages Hypertables and Compression Policies.
-- 🚀 **Advanced Migration**: Transparently migrates legacy `states` data to a metadata-optimized `states_raw` hypertable.
-- 🔄 **Backward Compatibility**: Keeps existing Grafana dashboards working through a high-performance `states` view.
 - 📊 **Granular Statistics**: Optional sensors for monitoring chunk counts, compression ratios (up to 97% saved!), and I/O performance.
 - 🔒 **Secure**: Full SSL/TLS support.
 - 📈 **States & Events**: Records all state changes and events to `states` and `events` tables.
