@@ -581,6 +581,9 @@ class ScribeWriter:
             );
         """))
         
+        # Index for JOIN performance with states_raw
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS entities_entity_id_idx ON entities (entity_id)"))
+        
         # Populate Cache on startup
         try:
              result = await conn.execute(text("SELECT entity_id, id FROM entities"))
