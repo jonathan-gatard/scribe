@@ -1,7 +1,6 @@
 """Tests for migration module."""
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from sqlalchemy import text
 from custom_components.scribe import migration
 
 class AsyncContextManagerMock:
