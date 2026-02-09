@@ -151,12 +151,12 @@ class ScribeSizeSensor(ScribeCoordinatorSensor):
     @property
     def native_value(self):
         bytes_val = self._get_raw_value()
-        if bytes_val < 1048576: # < 1 MB
-            return round(bytes_val / 1024)
-        elif bytes_val < 1073741824: # < 1 GB
-            return round(bytes_val / 1024 / 1024, 1)
-        else: # >= 1 GB
-            return round(bytes_val / 1024 / 1024 / 1024, 2)
+        if bytes_val < 1048576: # < 1 MiB
+            return round(bytes_val / 1024, 1)
+        elif bytes_val < 1073741824: # < 1 GiB
+            return round(bytes_val / 1048576, 1)
+        else: # >= 1 GiB
+            return round(bytes_val / 1073741824, 2)
 
     @property
     def native_unit_of_measurement(self):
@@ -171,12 +171,9 @@ class ScribeSizeSensor(ScribeCoordinatorSensor):
     @property
     def suggested_display_precision(self):
         bytes_val = self._get_raw_value()
-        if bytes_val < 1048576:
-            return 0
-        elif bytes_val < 1073741824:
+        if bytes_val < 1073741824:
             return 1
-        else:
-            return 2
+        return 2
 
     @property
     def suggested_unit_of_measurement(self):
