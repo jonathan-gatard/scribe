@@ -37,13 +37,17 @@ async def test_migrate_database_calls_sub_migrations(hass, mock_engine):
     """Test that migrate_database calls sub-migrations."""
     engine, _, _ = mock_engine
     
-    with patch("custom_components.scribe.migration._migrate_states_raw_constraints", new_callable=AsyncMock) as mock_states, \
+    with patch("custom_components.scribe.migration._migrate_states_raw_constraints", new_callable=AsyncMock) as mock_constraints, \
+         patch("custom_components.scribe.migration.migrate_states_data", new_callable=AsyncMock) as mock_data, \
+         patch("custom_components.scribe.migration._convert_to_hypertable", new_callable=AsyncMock) as mock_hyper, \
          patch("custom_components.scribe.migration._migrate_events_pk", new_callable=AsyncMock) as mock_events, \
          patch("asyncio.sleep", new_callable=AsyncMock): # Skip sleep
-        
+    
         await migration.migrate_database(hass, engine, True, True)
         
-        mock_states.assert_called_once_with(engine)
+        mock_constraints.assert_called_once_with(engine, '7 days', '7 days')
+        mock_data.assert_called_once_with(engine)
+        mock_hyper.assert_called_once_with(engine, '7 days', '7 days')
         mock_events.assert_called_once_with(engine)
 
 @pytest.mark.asyncio
@@ -98,8 +102,9 @@ async def test_migrate_events_pk_already_done(mock_engine):
     engine, connection, result = mock_engine
     
     # 1. Check table events exists -> True
-    # 2. Check column id exists -> True
-    result.fetchone.side_effect = [[1], [1]]
+    # 2. Check is hypertable -> False
+    # 3. Check column id exists -> True
+    result.fetchone.side_effect = [[1], None, [1]]
     
     await migration._migrate_events_pk(engine)
     
@@ -116,8 +121,9 @@ async def test_migrate_events_pk_adds_column(mock_engine):
     engine, connection, result = mock_engine
     
     # 1. Check table events exists -> True
-    # 2. Check column id exists -> None
-    result.fetchone.side_effect = [[1], None]
+    # 2. Check is hypertable -> False
+    # 3. Check column id exists -> None
+    result.fetchone.side_effect = [[1], None, None]
     
     await migration._migrate_events_pk(engine)
     

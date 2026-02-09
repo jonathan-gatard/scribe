@@ -42,6 +42,10 @@ async def test_writer_init_db(writer, mock_engine, mock_db_connection):
     # It does. So we patch 'custom_components.scribe.writer.migration.migrate_database'
     with patch("custom_components.scribe.writer.migration.migrate_database") as mock_migrate:
         await writer.start()
+        
+        # Fire HA started event to trigger migration
+        from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+        writer.hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
         await writer.hass.async_block_till_done()
         
         # Verify migration was scheduled
