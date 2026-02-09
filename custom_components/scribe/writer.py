@@ -225,35 +225,9 @@ class ScribeWriter:
 
             _LOGGER.debug("Database initialization completed")
             
-            # Register listener to launch migration AFTER HA finishes bootstrap
-            async def _launch_migration(event):
-                """Launch migration after HA is fully started."""
-                _LOGGER.debug("HA fully started, launching background migration")
-                self.hass.async_create_task(
-                    migration.migrate_database(
-                        self.hass, 
-                        self._engine, 
-                        self.record_states, 
-                        self.enable_table_entities,
-                        self.chunk_interval,
-                        self.compress_after
-                    )
-                )
-            
-            # Listen for HA started event (fires AFTER bootstrap completes)
-            from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-            self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _launch_migration)
-            _LOGGER.info("Migration will start after Home Assistant finishes bootstrap")
-            
-            # Fetch initial counts
-            try:
-                await self._get_initial_counts()
-            except Exception as e:
-                 _LOGGER.warning(f"Failed to fetch initial counts: {e}")
-            
-            # Start Loop
+            # Migration and Loop launch (background)
             self._task = asyncio.create_task(self._run())
-            _LOGGER.info("ScribeWriter started successfully")
+            _LOGGER.info("ScribeWriter started successfully (initialization continuing in background)")
 
         except Exception as e:
              _LOGGER.error(f"Unexpected error starting ScribeWriter: {e}", exc_info=True)
@@ -339,6 +313,32 @@ class ScribeWriter:
     async def _run(self):
         """Main loop."""
         _LOGGER.debug("ScribeWriter loop started")
+        
+        # 1. Register listener to launch migration AFTER HA finishes bootstrap
+        # We do this here as well to be safe, but only if not already done
+        async def _launch_migration(event):
+            """Launch migration after HA is fully started."""
+            _LOGGER.debug("HA fully started, launching background migration task")
+            self.hass.async_create_task(
+                migration.migrate_database(
+                    self.hass, 
+                    self._engine, 
+                    self.record_states, 
+                    self.enable_table_entities,
+                    self.chunk_interval,
+                    self.compress_after
+                )
+            )
+        
+        from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+        self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _launch_migration)
+
+        # 2. Fetch initial counts (background - might take a while on large DBs)
+        try:
+            await self._get_initial_counts()
+        except Exception as e:
+             _LOGGER.warning(f"Failed to fetch initial (background) counts: {e}")
+
         while self._running:
             try:
                 await asyncio.sleep(self.flush_interval)

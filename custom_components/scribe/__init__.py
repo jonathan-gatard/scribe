@@ -256,115 +256,135 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Start the writer task (async)
         await writer.start()
 
-        # Sync Users
-        if writer.enable_table_users:
-            try:
-                users_list = await hass.auth.async_get_users()
-                _LOGGER.debug(f"Syncing users. Total users in hass.auth: {len(users_list)}")
-                users = []
-                for user in users_list:
-                    users.append({
-                        "user_id": user.id,
-                        "name": user.name,
-                        "is_owner": user.is_owner,
-                        "is_active": user.is_active,
-                        "system_generated": user.system_generated,
-                        "group_ids": json.dumps([g.id for g in user.groups], default=str)
-                    })
-                
-                if users:
-                    _LOGGER.debug(f"Calling writer.write_users with {len(users)} users")
-                    await writer.write_users(users)
-                else:
-                    _LOGGER.warning("No users found to sync!")
+        # Sync Metadata and Refresh Coordinators in background to prevent bootstrap timeout
+        async def _async_late_setup():
+            """Perform metadata sync and coordinator refresh in background."""
+            _LOGGER.debug("Starting background Scribe setup tasks...")
+
+            # Sync Users
+            if writer.enable_table_users:
+                try:
+                    users_list = await hass.auth.async_get_users()
+                    _LOGGER.debug(f"Syncing users. Total users in hass.auth: {len(users_list)}")
+                    users = []
+                    for user in users_list:
+                        users.append({
+                            "user_id": user.id,
+                            "name": user.name,
+                            "is_owner": user.is_owner,
+                            "is_active": user.is_active,
+                            "system_generated": user.system_generated,
+                            "group_ids": json.dumps([g.id for g in user.groups], default=str)
+                        })
                     
-            except Exception as e:
-                _LOGGER.error(f"Error syncing users: {e}", exc_info=True)
+                    if users:
+                        _LOGGER.debug(f"Calling writer.write_users with {len(users)} users")
+                        await writer.write_users(users)
+                    else:
+                        _LOGGER.warning("No users found to sync!")
+                        
+                except Exception as e:
+                    _LOGGER.error(f"Error syncing users: {e}", exc_info=True)
 
-        # Sync Entities
-        if writer.enable_table_entities:
-            try:
-                registry = er.async_get(hass)
-                entities = []
-                for entity in registry.entities.values():
-                    entities.append({
-                        "entity_id": entity.entity_id,
-                        "unique_id": entity.unique_id,
-                        "platform": entity.platform,
-                        "domain": entity.domain,
-                        "name": entity.name or entity.original_name,
-                        "device_id": entity.device_id,
-                        "area_id": entity.area_id,
-                        "capabilities": json.dumps(entity.capabilities, default=str) if entity.capabilities else None
-                    })
-                
-                if entities:
-                    _LOGGER.debug(f"Syncing {len(entities)} entities to database")
-                    await writer.write_entities(entities)
-            except Exception as e:
-                _LOGGER.error(f"Error syncing entities: {e}", exc_info=True)
-
-        # Sync Areas
-        if writer.enable_table_areas:
-            try:
-                area_reg = ar.async_get(hass)
-                areas = []
-                for area in area_reg.areas.values():
-                    areas.append({
-                        "area_id": area.id,
-                        "name": area.name,
-                        "picture": area.picture
-                    })
-                if areas:
-                    _LOGGER.debug(f"Syncing {len(areas)} areas to database")
-                    await writer.write_areas(areas)
-            except Exception as e:
-                _LOGGER.error(f"Error syncing areas: {e}", exc_info=True)
-
-        # Sync Devices
-        if writer.enable_table_devices:
-            try:
-                device_reg = dr.async_get(hass)
-                devices = []
-                for device in device_reg.devices.values():
-                    # Get primary config entry
-                    primary_entry = next(iter(device.config_entries), None) if device.config_entries else None
+            # Sync Entities
+            if writer.enable_table_entities:
+                try:
+                    registry = er.async_get(hass)
+                    entities = []
+                    for entity in registry.entities.values():
+                        entities.append({
+                            "entity_id": entity.entity_id,
+                            "unique_id": entity.unique_id,
+                            "platform": entity.platform,
+                            "domain": entity.domain,
+                            "name": entity.name or entity.original_name,
+                            "device_id": entity.device_id,
+                            "area_id": entity.area_id,
+                            "capabilities": json.dumps(entity.capabilities, default=str) if entity.capabilities else None
+                        })
                     
-                    devices.append({
-                        "device_id": device.id,
-                        "name": device.name,
-                        "name_by_user": device.name_by_user,
-                        "model": device.model,
-                        "manufacturer": device.manufacturer,
-                        "sw_version": device.sw_version,
-                        "area_id": device.area_id,
-                        "primary_config_entry": primary_entry
-                    })
-                if devices:
-                    _LOGGER.debug(f"Syncing {len(devices)} devices to database")
-                    await writer.write_devices(devices)
-            except Exception as e:
-                _LOGGER.error(f"Error syncing devices: {e}", exc_info=True)
+                    if entities:
+                        _LOGGER.debug(f"Syncing {len(entities)} entities to database")
+                        await writer.write_entities(entities)
+                except Exception as e:
+                    _LOGGER.error(f"Error syncing entities: {e}", exc_info=True)
 
-        # Sync Integrations (Config Entries)
-        if writer.enable_table_integrations:
-            try:
-                integrations = []
-                for config_entry in hass.config_entries.async_entries():
-                    integrations.append({
-                        "entry_id": config_entry.entry_id,
-                        "domain": config_entry.domain,
-                        "title": config_entry.title,
-                        "state": config_entry.state.value if hasattr(config_entry.state, "value") else str(config_entry.state),
-                        "source": config_entry.source
-                    })
-                if integrations:
-                    _LOGGER.debug(f"Syncing {len(integrations)} integrations to database")
-                    await writer.write_integrations(integrations)
-            except Exception as e:
-                _LOGGER.error(f"Error syncing integrations: {e}", exc_info=True)
-        
-        # Setup Data Update Coordinators for statistics
+            # Sync Areas
+            if writer.enable_table_areas:
+                try:
+                    area_reg = ar.async_get(hass)
+                    areas = []
+                    for area in area_reg.areas.values():
+                        areas.append({
+                            "area_id": area.id,
+                            "name": area.name,
+                            "picture": area.picture
+                        })
+                    if areas:
+                        _LOGGER.debug(f"Syncing {len(areas)} areas to database")
+                        await writer.write_areas(areas)
+                except Exception as e:
+                    _LOGGER.error(f"Error syncing areas: {e}", exc_info=True)
+
+            # Sync Devices
+            if writer.enable_table_devices:
+                try:
+                    device_reg = dr.async_get(hass)
+                    devices = []
+                    for device in device_reg.devices.values():
+                        # Get primary config entry
+                        primary_entry = next(iter(device.config_entries), None) if device.config_entries else None
+                        
+                        devices.append({
+                            "device_id": device.id,
+                            "name": device.name,
+                            "name_by_user": device.name_by_user,
+                            "model": device.model,
+                            "manufacturer": device.manufacturer,
+                            "sw_version": device.sw_version,
+                            "area_id": device.area_id,
+                            "primary_config_entry": primary_entry
+                        })
+                    if devices:
+                        _LOGGER.debug(f"Syncing {len(devices)} devices to database")
+                        await writer.write_devices(devices)
+                except Exception as e:
+                    _LOGGER.error(f"Error syncing devices: {e}", exc_info=True)
+
+            # Sync Integrations (Config Entries)
+            if writer.enable_table_integrations:
+                try:
+                    integrations = []
+                    for config_entry in hass.config_entries.async_entries():
+                        integrations.append({
+                            "entry_id": config_entry.entry_id,
+                            "domain": config_entry.domain,
+                            "title": config_entry.title,
+                            "state": config_entry.state.value if hasattr(config_entry.state, "value") else str(config_entry.state),
+                            "source": config_entry.source
+                        })
+                    if integrations:
+                        _LOGGER.debug(f"Syncing {len(integrations)} integrations to database")
+                        await writer.write_integrations(integrations)
+                except Exception as e:
+                    _LOGGER.error(f"Error syncing integrations: {e}", exc_info=True)
+
+            # Refresh coordinators
+            if chunk_coordinator:
+                try:
+                    await chunk_coordinator.async_refresh()
+                except Exception as e:
+                    _LOGGER.error(f"Failed to refresh chunk coordinator: {e}")
+            
+            if size_coordinator:
+                try:
+                    await size_coordinator.async_refresh()
+                except Exception as e:
+                    _LOGGER.error(f"Failed to refresh size coordinator: {e}")
+
+            _LOGGER.debug("Background Scribe setup tasks completed")
+
+        # Setup Data Update Coordinators for statistics (Synchronous creation)
         from .coordinator import ScribeDataUpdateCoordinator
         
         chunk_coordinator = None
@@ -376,27 +396,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         if enable_stats_chunk:
             try:
-                chunk_interval = options.get(CONF_STATS_CHUNK_INTERVAL, config.get(CONF_STATS_CHUNK_INTERVAL, DEFAULT_STATS_CHUNK_INTERVAL))
+                chunk_interval_min = options.get(CONF_STATS_CHUNK_INTERVAL, config.get(CONF_STATS_CHUNK_INTERVAL, DEFAULT_STATS_CHUNK_INTERVAL))
                 chunk_coordinator = ScribeDataUpdateCoordinator(
                     hass, 
                     writer, 
-                    update_interval_minutes=chunk_interval,
+                    update_interval_minutes=chunk_interval_min,
                     stats_type="chunk"
                 )
-                await chunk_coordinator.async_config_entry_first_refresh()
             except Exception as e:
                 _LOGGER.error(f"Failed to setup chunk coordinator: {e}", exc_info=True)
         
         if enable_stats_size:
             try:
-                size_interval = options.get(CONF_STATS_SIZE_INTERVAL, config.get(CONF_STATS_SIZE_INTERVAL, DEFAULT_STATS_SIZE_INTERVAL))
+                size_interval_min = options.get(CONF_STATS_SIZE_INTERVAL, config.get(CONF_STATS_SIZE_INTERVAL, DEFAULT_STATS_SIZE_INTERVAL))
                 size_coordinator = ScribeDataUpdateCoordinator(
                     hass, 
                     writer, 
-                    update_interval_minutes=size_interval,
+                    update_interval_minutes=size_interval_min,
                     stats_type="size"
                 )
-                await size_coordinator.async_config_entry_first_refresh()
             except Exception as e:
                 _LOGGER.error(f"Failed to setup size coordinator: {e}", exc_info=True)
 
@@ -406,6 +424,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "chunk_coordinator": chunk_coordinator,
             "size_coordinator": size_coordinator,
         }
+
+        # Launch background metadata sync and coordinator refreshes
+        hass.async_create_task(_async_late_setup())
 
         # Forward setup to platforms (Sensor, Binary Sensor)
         await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "binary_sensor"])
