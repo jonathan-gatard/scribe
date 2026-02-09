@@ -17,6 +17,7 @@ def mock_db_connection():
     """Mock database connection."""
     mock_conn = AsyncMock()
     mock_conn.execute = AsyncMock()
+    mock_conn.execute.return_value = MagicMock()
     mock_conn.begin = AsyncMock()
     # Mock context manager for begin()
     mock_conn.begin.return_value.__aenter__.return_value = mock_conn

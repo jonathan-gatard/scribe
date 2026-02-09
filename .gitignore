@@ -2,6 +2,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 tuto/
-.venv/
+venv/
 PROCESS.md
 migration/.env
+*.log

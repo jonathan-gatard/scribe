@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict
 from collections import deque
 import json
+import math
 
 from homeassistant.helpers.json import JSONEncoder
 
@@ -551,6 +552,12 @@ class ScribeWriter:
                         system_generated = EXCLUDED.system_generated,
                         group_ids = EXCLUDED.group_ids;
                 """)
+                
+                # Sanitize group_ids just in case
+                for user in users:
+                    if user.get("group_ids"):
+                        user["group_ids"] = self._sanitize_obj(user["group_ids"])
+
                 await conn.execute(stmt, users)
                 _LOGGER.debug("Users written successfully")
         except Exception as e:
@@ -632,6 +639,12 @@ class ScribeWriter:
                         area_id = EXCLUDED.area_id,
                         capabilities = EXCLUDED.capabilities;
                 """)
+                
+                # Sanitize capabilities to handle Infinity/NaN
+                for entity in entities:
+                    if entity.get("capabilities"):
+                        entity["capabilities"] = self._sanitize_obj(entity["capabilities"])
+                        
                 await conn.execute(stmt, entities)
                 _LOGGER.debug("Entities written successfully")
         except Exception as e:
@@ -807,6 +820,10 @@ class ScribeWriter:
         try:
             if depth > 100:
                 return str(obj)
+
+            if isinstance(obj, float):
+                if math.isinf(obj) or math.isnan(obj):
+                    return None
 
             if isinstance(obj, str):
                 if "\0" in obj:

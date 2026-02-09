@@ -54,12 +54,19 @@ async def test_writer_init_db(writer, mock_engine, mock_db_connection):
     assert mock_db_connection.execute.call_count >= 4 
     
     # Check for specific SQL fragments in calls
-    assert any("CREATE TABLE IF NOT EXISTS states" in c for c in calls)
+    # Check for specific SQL fragments in calls
+    # v2.12.8 creates states_raw and a view for states
+    assert any("CREATE TABLE IF NOT EXISTS states_raw" in c for c in calls)
+    assert any("CREATE OR REPLACE VIEW states" in c for c in calls)
     assert any("CREATE TABLE IF NOT EXISTS events" in c for c in calls)
-    assert any("create_hypertable('states'" in c for c in calls)
+    
+    # Hypertable is on states_raw now
+    assert any("create_hypertable('states_raw'" in c for c in calls)
     assert any("create_hypertable('events'" in c for c in calls)
     
     # Check for initial count queries
+    # SELECT count(*) FROM states (view) or states_raw?
+    # writer.py: SELECT count(*) FROM {self.table_name_states} -> "states" view
     assert any("SELECT count(*) FROM states" in c for c in calls)
     assert any("SELECT count(*) FROM events" in c for c in calls)
 
@@ -83,8 +90,11 @@ async def test_writer_enqueue_flush(writer, mock_db_connection):
     # Reset side_effect for flush (or just ensure it works)
     mock_db_connection.execute.side_effect = None
     
+    # Pre-populate map
+    writer._entity_id_map["sensor.test"] = 1
+    
     # Enqueue items
-    writer.enqueue({"type": "state", "data": 1})
+    writer.enqueue({"type": "state", "entity_id": "sensor.test", "data": 1})
     assert len(writer._queue) == 1
     
     # Enqueue second item - this should trigger auto-flush task
@@ -125,8 +135,11 @@ async def test_writer_no_buffer_on_failure(writer, mock_engine, mock_db_connecti
     # Mock connection failure during flush
     mock_db_connection.execute.side_effect = Exception("Connection failed")
     
+    # Pre-populate map
+    writer._entity_id_map["sensor.test"] = 1
+    
     # Enqueue item
-    writer.enqueue({"type": "state", "data": 1})
+    writer.enqueue({"type": "state", "entity_id": "sensor.test", "data": 1})
     
     # Flush
     await writer._flush()
@@ -145,8 +158,11 @@ async def test_writer_buffer_on_failure(writer, mock_engine, mock_db_connection)
     # Mock connection failure during flush
     mock_db_connection.execute.side_effect = Exception("Connection failed")
     
+    # Pre-populate map
+    writer._entity_id_map["sensor.test"] = 1
+    
     # Enqueue item
-    writer.enqueue({"type": "state", "data": 1})
+    writer.enqueue({"type": "state", "entity_id": "sensor.test", "data": 1})
     
     # Flush
     await writer._flush()
@@ -162,13 +178,16 @@ async def test_writer_max_queue_size(writer):
     writer._queue = deque(maxlen=writer.max_queue_size) # Re-init deque with new maxlen
     writer.batch_size = 100 # Prevent auto-flush
     
+    # Pre-populate map
+    writer._entity_id_map["sensor.test"] = 1
+    
     # Fill queue
-    writer.enqueue({"type": "state", "data": 1})
-    writer.enqueue({"type": "state", "data": 2})
+    writer.enqueue({"type": "state", "entity_id": "sensor.test", "data": 1})
+    writer.enqueue({"type": "state", "entity_id": "sensor.test", "data": 2})
     assert len(writer._queue) == 2
     
     # Add one more, should be dropped
-    writer.enqueue({"type": "state", "data": 3})
+    writer.enqueue({"type": "state", "entity_id": "sensor.test", "data": 3})
     assert len(writer._queue) == 2
     # dropped_events is not incremented by deque automatically, only if we manually check
     # But enqueue checks len vs max_queue_size?
@@ -370,9 +389,12 @@ async def test_writer_buffer_full_drop_oldest(writer):
     writer._queue = deque(maxlen=writer.max_queue_size) # Re-init deque
     writer.batch_size = 10 # Prevent auto-flush
     
+    # Pre-populate map
+    writer._entity_id_map["sensor.test"] = 1
+    
     # Fill queue
-    writer.enqueue({"type": "state", "data": 1})
-    writer.enqueue({"type": "state", "data": 2})
+    writer.enqueue({"type": "state", "entity_id": "sensor.test", "data": 1})
+    writer.enqueue({"type": "state", "entity_id": "sensor.test", "data": 2})
     
     # Mock flush failure to trigger buffering logic
     writer._engine = MagicMock()
@@ -382,7 +404,7 @@ async def test_writer_buffer_full_drop_oldest(writer):
     
     async def mock_enter(*args, **kwargs):
         # Simulate concurrent add
-        writer.enqueue({"type": "state", "data": 3})
+        writer.enqueue({"type": "state", "entity_id": "sensor.test", "data": 3})
         raise Exception("Flush Error")
         
     mock_cm.__aenter__ = AsyncMock(side_effect=mock_enter)
@@ -446,6 +468,9 @@ async def test_writer_sanitizes_null_bytes(writer, mock_db_connection):
     # Note: writers uses datetime in queue
     now = datetime(2023, 10, 27, 10, 0, 0, tzinfo=timezone.utc)
     
+    # Pre-populate entity map to avoid lookup failure
+    writer._entity_id_map["sensor.dirty"] = 1
+    
     dirty_state = {
         "time": now,
         "entity_id": "sensor.dirty",
@@ -474,3 +499,68 @@ async def test_writer_sanitizes_null_bytes(writer, mock_db_connection):
     assert item["state"] == "badvalue"
     assert "\u0000" not in item["attributes"]
     assert item["attributes"] == '{"key": "null"}'
+
+@pytest.mark.asyncio
+async def test_writer_sanitizes_infinity(writer, mock_db_connection):
+    """Test that Infinity and NaN are converted to None."""
+    await writer.start()
+    
+    # Enqueue data with Infinity and NaN
+    now = datetime(2023, 10, 27, 10, 0, 0, tzinfo=timezone.utc)
+    
+    # Pre-populate entity map
+    writer._entity_id_map["sensor.infinity"] = 1
+    
+    dirty_state = {
+        "time": now,
+        "entity_id": "sensor.infinity",
+        "state": "inf",
+        "value": float("inf"),
+        "attributes": {
+            "pos_inf": float("inf"), 
+            "neg_inf": float("-inf"),
+            "nan": float("nan"),
+            "nested": [float("inf")]
+        },
+        "type": "state"
+    }
+    writer.enqueue(dirty_state)
+    
+    await writer._flush()
+    
+    assert mock_db_connection.execute.called
+    call_args = mock_db_connection.execute.call_args
+    # call_args[0] are positional args: (statement, parameters)
+    params = call_args[0][1] 
+    item = params[0]
+    
+    # Value (float) should be None if it was infinity/nan, 
+    # BUT writer.py logic:
+    # 1. _sanitize_obj is called on the batch items
+    # 2. For 'state' type:
+    #    if isinstance(x.get('attributes'), dict):
+    #       x['attributes'] = json.dumps(x['attributes'], default=str)
+    
+    # Wait, the 'value' field in the DB is DOUBLE PRECISION. 
+    # Postgres supports 'Infinity' for DOUBLE PRECISION columns?
+    # NO, the issue reported was "invalid input syntax for type json".
+    # The ERROR in the bug report was regarding `capabilities` which is JSONB.
+    # The user suggested: "Infinity is no valid JSON value in PostgreSQL."
+    
+    # My fix in writer.py sanitizes the WHOLE object recursively via _sanitize_obj.
+    # So `value` (which is a top level key in the state dict) will also be sanitized to None if it is Infinity.
+    
+    # Check top level value
+    assert item["value"] is None
+    
+    # Check attributes - they are dumped to a string
+    attributes_str = item["attributes"]
+    # We can parse it back to check
+    import json
+    attributes = json.loads(attributes_str)
+    
+    assert attributes["pos_inf"] is None
+    assert attributes["neg_inf"] is None
+    assert attributes["nan"] is None
+    assert attributes["nested"][0] is None
+
