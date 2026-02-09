@@ -473,7 +473,7 @@ class ScribeWriter:
                 attributes JSONB
             );
         """))
-        await conn.execute(text(f"""
+        await conn.execute(text("""
             CREATE INDEX IF NOT EXISTS states_raw_meta_time_idx 
             ON states_raw (metadata_id, time DESC);
         """))
@@ -921,7 +921,7 @@ class ScribeWriter:
                 async with self._engine.begin() as conn:
                     if states_data:
                         await conn.execute(
-                            text(f"INSERT INTO states_raw (time, metadata_id, state, value, attributes) VALUES (:time, :metadata_id, :state, :value, :attributes)"),
+                            text("INSERT INTO states_raw (time, metadata_id, state, value, attributes) VALUES (:time, :metadata_id, :state, :value, :attributes)"),
                             states_data
                         )
                     if events_data:
@@ -1048,26 +1048,7 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.error(f"Failed to rename entity {old_entity_id} to {new_entity_id}: {e}")
 
-        if not self._engine:
-            raise RuntimeError("Database not connected")
 
-        # Security: Enforce Read-Only Transaction
-        _LOGGER.debug(f"Executing query (Read-Only): {sql}")
-        try:
-            async with self._engine.connect() as conn:
-                # set transaction to read only
-                await conn.begin()
-                await conn.execute(text("SET LOCAL TRANSACTION READ ONLY"))
-                
-                try:
-                    result = await conn.execute(text(sql))
-                    # Convert rows to list of dicts
-                    return [dict(row._mapping) for row in result]
-                finally:
-                    await conn.rollback()
-        except Exception as e:
-            _LOGGER.error(f"Error executing query: {e}")
-            raise e
 
     async def get_db_stats(self, stats_type: str = "all"):
         """Fetch database statistics using TimescaleDB chunks view.
