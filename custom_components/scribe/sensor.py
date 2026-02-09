@@ -80,9 +80,11 @@ async def async_setup_entry(
             ScribeEventsCompressedSizeSensor(size_coordinator, entry),
             ScribeEventsUncompressedSizeSensor(size_coordinator, entry),
             # Ratio
-            # Ratio
             ScribeStatesCompressionRatioSensor(size_coordinator, entry),
             ScribeEventsCompressionRatioSensor(size_coordinator, entry),
+            # Original Size
+            ScribeStatsOriginalSizeSensor(size_coordinator, entry),
+            ScribeEventsOriginalSizeSensor(size_coordinator, entry),
         ])
     
     async_add_entities(entities)
@@ -208,6 +210,14 @@ class ScribeStatsUncompressedSizeSensor(ScribeSizeSensor):
         self._attr_icon = "mdi:package-variant-closed"
 
 
+class ScribeStatsOriginalSizeSensor(ScribeSizeSensor):
+    """Sensor for States original size (before compression)."""
+    
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator, entry, "states_before_compression_total_bytes", "States Original Size")
+        self._attr_icon = "mdi:database-search"
+
+
 class ScribeStatsTotalChunksSensor(ScribeCoordinatorSensor):
     """Sensor for States total chunks."""
     
@@ -282,6 +292,14 @@ class ScribeEventsUncompressedSizeSensor(ScribeSizeSensor):
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry, "events_uncompressed_size", "Events Uncompressed Size")
         self._attr_icon = "mdi:package-variant-closed"
+
+
+class ScribeEventsOriginalSizeSensor(ScribeSizeSensor):
+    """Sensor for Events original size (before compression)."""
+    
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator, entry, "events_before_compression_total_bytes", "Events Original Size")
+        self._attr_icon = "mdi:database-search"
 
 
 class ScribeEventsTotalChunksSensor(ScribeCoordinatorSensor):
