@@ -1049,7 +1049,28 @@ class ScribeWriter:
             _LOGGER.error(f"Failed to rename entity {old_entity_id} to {new_entity_id}: {e}")
 
 
+    async def query(self, sql: str):
+        """Execute a read-only query against the database."""
+        if not self._engine:
+            raise RuntimeError("Database not connected")
 
+        # Security: Enforce Read-Only Transaction
+        _LOGGER.debug("Executing query (Read-Only): %s", sql)
+        try:
+            async with self._engine.connect() as conn:
+                # set transaction to read only
+                await conn.begin()
+                await conn.execute(text("SET LOCAL TRANSACTION READ ONLY"))
+                
+                try:
+                    result = await conn.execute(text(sql))
+                    # Convert rows to list of dicts
+                    return [dict(row._mapping) for row in result]
+                finally:
+                    await conn.rollback()
+        except Exception as e:
+            _LOGGER.error("Error executing query: %s", e)
+            raise e
     async def get_db_stats(self, stats_type: str = "all"):
         """Fetch database statistics using TimescaleDB chunks view.
         
