@@ -992,18 +992,7 @@ class ScribeWriter:
             _LOGGER.error(f"Critical error in _flush: {e}", exc_info=True)
 
 
-    async def query(self, sql: str) -> list[dict]:
-        """Execute a read-only SQL query."""
-        if not self._engine:
-            raise ValueError("Database not connected")
-            
-        sql = sql.strip()
-        if not sql.lower().startswith("select"):
-            raise ValueError("Only SELECT queries are allowed")
-            
-        async with self._engine.connect() as conn:
-            result = await conn.execute(text(sql))
-            return [dict(row) for row in result.mappings()]
+
 
     async def rename_entity(self, old_entity_id: str, new_entity_id: str):
         """Rename an entity in the database (Metadata only).
