@@ -29,7 +29,7 @@ async def async_setup_entry(
         ScribeConnectionBinarySensor(writer, entry),
     ]
     
-    async_add_entities(entities, True)
+    async_add_entities(entities)
 
 class ScribeConnectionBinarySensor(BinarySensorEntity):
     """Binary sensor for DB connection status.

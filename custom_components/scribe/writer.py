@@ -216,21 +216,24 @@ class ScribeWriter:
                     _LOGGER.error(f"Failed to create engine: {e}", exc_info=True)
                     return
 
-            # Initialize DB
-            _LOGGER.debug("Starting database initialization...")
-            try:
-                await self.init_db()
-            except Exception as e:
-                 _LOGGER.error(f"Failed to initialize database: {e}", exc_info=True)
+            # Perform initialization in background to avoid blocking bootstrap
+            async def _async_init_bg():
+                try:
+                    _LOGGER.debug("Starting background database initialization...")
+                    await self.init_db()
+                    _LOGGER.debug("Database initialization completed")
+                    
+                    # Loop launch (background)
+                    self._task = asyncio.create_task(self._run())
+                    _LOGGER.info("ScribeWriter started successfully")
+                except Exception as e:
+                    _LOGGER.error(f"Background initialization failed: {e}", exc_info=True)
+                    self._connected = False
 
-            _LOGGER.debug("Database initialization completed")
-            
-            # Migration and Loop launch (background)
-            self._task = asyncio.create_task(self._run())
-            _LOGGER.info("ScribeWriter started successfully (initialization continuing in background)")
+            self.hass.async_create_task(_async_init_bg())
 
         except Exception as e:
-             _LOGGER.error(f"Unexpected error starting ScribeWriter: {e}", exc_info=True)
+            _LOGGER.error(f"Unexpected error starting ScribeWriter: {e}", exc_info=True)
 
     async def _get_initial_counts(self):
         """Fetch initial row counts from database."""

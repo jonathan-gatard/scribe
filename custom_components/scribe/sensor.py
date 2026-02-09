@@ -85,7 +85,7 @@ async def async_setup_entry(
             ScribeEventsCompressionRatioSensor(size_coordinator, entry),
         ])
     
-    async_add_entities(entities, True)
+    async_add_entities(entities)
 
 class ScribeSensor(SensorEntity):
     """Base class for Scribe sensors.
