@@ -359,23 +359,27 @@ class ScribeWriter:
             
             # 2. Create tables (own transaction)
             async with self._engine.begin() as conn:
-                if self.record_states:
-                    await self._init_states_table(conn)
-                if self.record_events:
-                    await self._init_events_table(conn)
+                # Initialize entities FIRST (states view depends on it)
+                if self.enable_table_entities:
+                     # This will also evolve the schema if needed
+                    await self._init_entities_table(conn)
                 
                 # Always init users table
                 if self.enable_table_users:
                     await self._init_users_table(conn)
-                if self.enable_table_entities:
-                     # This will also evolve the schema if needed
-                    await self._init_entities_table(conn)
+                
                 if self.enable_table_areas:
                     await self._init_areas_table(conn)
                 if self.enable_table_devices:
                     await self._init_devices_table(conn)
                 if self.enable_table_integrations:
                     await self._init_integrations_table(conn)
+                
+                # Initialize states and events AFTER entities table exists
+                if self.record_states:
+                    await self._init_states_table(conn)
+                if self.record_events:
+                    await self._init_events_table(conn)
 
             # Hypertable & Compression (each operation in its own transaction)
             if self.record_states:
