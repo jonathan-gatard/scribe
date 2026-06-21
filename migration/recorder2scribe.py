@@ -1,5 +1,5 @@
 """
-Migrate data from a Home Assistant recorder database stored in PostgreSQL to scribe.
+Migrate data from a Home Assistant recorder database stored in PostgreSQL or SQLite to scribe.
 
 Currently, only the `states` table is migrated. Duplicate state entries (e.g.,
 entries whose timestamp and entity_id are identical) are skipped. This enables
@@ -13,6 +13,7 @@ variables.
 import os
 import sys
 import logging
+import sqlite3
 import psycopg2
 from psycopg2.extras import execute_values
 from datetime import datetime, timedelta, timezone
@@ -47,12 +48,19 @@ def get_env_var(name, default=None, required=False):
         sys.exit(1)
     return val
 
-# Recorder (Postgres)
-RECORDER_HOST = get_env_var("RECORDER_HOST", "localhost")
-RECORDER_PORT = get_env_var("RECORDER_PORT", "5432")
-RECORDER_DB = get_env_var("RECORDER_DB", "homeassistant")
-RECORDER_USER = get_env_var("RECORDER_USER", "homeassistant")
-RECORDER_PASS = get_env_var("RECORDER_PASS", required=True)
+# Recorder
+RECORDER_TYPE = get_env_var("RECORDER_TYPE", "sqlite")
+if RECORDER_TYPE == "sqlite":
+    RECORDER_DB_PATH = get_env_var("RECORDER_DB_PATH", required=True)
+elif RECORDER_TYPE == "postgres":
+    RECORDER_HOST = get_env_var("RECORDER_HOST", "localhost")
+    RECORDER_PORT = get_env_var("RECORDER_PORT", "5432")
+    RECORDER_DB = get_env_var("RECORDER_DB", "homeassistant")
+    RECORDER_USER = get_env_var("RECORDER_USER", "homeassistant")
+    RECORDER_PASS = get_env_var("RECORDER_PASS", required=True)
+else:
+    logging.error("RECORDER_TYPE must be 'sqlite' or 'postgres'")
+    sys.exit(1)
 
 # Scribe (Postgres)
 SCRIBE_HOST = get_env_var("SCRIBE_HOST", "localhost")
@@ -121,18 +129,28 @@ def migrate():
 
     preflight_scribe_schema(pg_cur_scribe)
 
-    # 2. Connect to Postgres (Recorder)
-    try:
-        pg_conn_recorder = psycopg2.connect(
-            host=RECORDER_HOST, port=RECORDER_PORT, database=RECORDER_DB, user=RECORDER_USER, password=RECORDER_PASS
-        )
-        pg_cur_recorder = pg_conn_recorder.cursor()
-        logging.info("Connected to Recorder (PostgreSQL).")
-    except Exception as e:
-        sys.exit(f"Failed to connect to Recorder Postgres: {e}")
+    # 2. Connect to Recorder
+    if RECORDER_TYPE == "postgres":
+        try:
+            conn_recorder = psycopg2.connect(
+                host=RECORDER_HOST, port=RECORDER_PORT, database=RECORDER_DB, user=RECORDER_USER, password=RECORDER_PASS
+            )
+            cur_recorder = conn_recorder.cursor()
+            logging.info("Connected to Recorder (PostgreSQL).")
+        except Exception as e:
+            sys.exit(f"Failed to connect to Recorder Postgres: {e}")
+        placeholder = "%s"
+    else:
+        try:
+            conn_recorder = sqlite3.connect(RECORDER_DB_PATH)
+            cur_recorder = conn_recorder.cursor()
+            logging.info("Connected to Recorder (SQLite).")
+        except Exception as e:
+            sys.exit(f"Failed to connect to Recorder SQLite: {e}")
+        placeholder = "?"
 
-    pg_cur_recorder.execute("SELECT schema_version FROM schema_changes ORDER BY change_id DESC LIMIT 1")
-    result = pg_cur_recorder.fetchone()
+    cur_recorder.execute("SELECT schema_version FROM schema_changes ORDER BY change_id DESC LIMIT 1")
+    result = cur_recorder.fetchone()
     if result is None or result[0] < MINIMUM_RECORDER_SCHEMA_VERSION:
         sys.exit(f"Schema version {result[0]} is less than minimum supported schema version {MINIMUM_RECORDER_SCHEMA_VERSION}."
                   " Wait for the recorder database migration to finish before reattempting conversion.")
@@ -172,15 +190,16 @@ def migrate():
 
         try:
             # Query Recorder
-            pg_cur_recorder.execute("""
+            query = f"""
                 SELECT m.entity_id, s.state, s.last_updated_ts, a.shared_attrs
                     FROM states AS s
                     JOIN states_meta AS m ON s.metadata_id = m.metadata_id
                     LEFT JOIN state_attributes AS a ON a.attributes_id = s.attributes_id
-                WHERE last_updated_ts >= %s AND last_updated_ts < %s
-            """, (current_start.timestamp(), current_end.timestamp()))
+                WHERE last_updated_ts >= {placeholder} AND last_updated_ts < {placeholder}
+            """
+            cur_recorder.execute(query, (current_start.timestamp(), current_end.timestamp()))
 
-            for row in pg_cur_recorder:
+            for row in cur_recorder:
                 pg_metadata_id = ensure_metadata_id(pg_cur_scribe, clean_null_bytes(row[0]))
                 val = row[1]
                 ts = datetime.fromtimestamp(row[2], tz=timezone.utc)
@@ -224,8 +243,8 @@ def migrate():
 
     pg_cur_scribe.close()
     pg_conn_scribe.close()
-    pg_cur_recorder.close()
-    pg_conn_recorder.close()
+    cur_recorder.close()
+    conn_recorder.close()
 
 if __name__ == "__main__":
     migrate()
