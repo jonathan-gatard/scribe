@@ -35,11 +35,24 @@ def _table_exists(cur, table: str) -> bool:
     return cur.fetchone() is not None
 
 
+def _as_column_list(agg) -> list[str]:
+    """Normalize a Postgres ``array_agg`` result to a list of column names.
+
+    psycopg2 usually adapts a Postgres array to a Python ``list``, but on some
+    versions/platforms it returns the raw array literal (e.g. ``"{id,name}"``)
+    instead. Handle both so the preflight never fails on a schema that is
+    actually correct.
+    """
+    if isinstance(agg, str):
+        return [col.strip() for col in agg.strip("{}").split(",") if col.strip()]
+    return list(agg)
+
+
 def _unique_constraint_columns(cur, table: str) -> list[list[str]]:
     """Return one sorted column-list per PRIMARY KEY / UNIQUE constraint on `table`."""
     cur.execute(
         """
-        SELECT array_agg(kcu.column_name ORDER BY kcu.column_name) AS cols
+        SELECT array_agg(kcu.column_name::text ORDER BY kcu.column_name) AS cols
         FROM information_schema.table_constraints tc
         JOIN information_schema.key_column_usage kcu
           ON tc.constraint_name = kcu.constraint_name
@@ -50,7 +63,7 @@ def _unique_constraint_columns(cur, table: str) -> list[list[str]]:
         """,
         (table,),
     )
-    return [list(row[0]) for row in cur.fetchall()]
+    return [_as_column_list(row[0]) for row in cur.fetchall()]
 
 
 def preflight_scribe_schema(scribe_cur) -> None:

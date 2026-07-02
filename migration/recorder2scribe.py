@@ -49,7 +49,7 @@ def get_env_var(name, default=None, required=False):
     return val
 
 # Recorder
-RECORDER_TYPE = get_env_var("RECORDER_TYPE", "sqlite")
+RECORDER_TYPE = get_env_var("RECORDER_TYPE", "postgres")
 if RECORDER_TYPE == "sqlite":
     RECORDER_DB_PATH = get_env_var("RECORDER_DB_PATH", required=True)
 elif RECORDER_TYPE == "postgres":
