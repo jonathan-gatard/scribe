@@ -1,0 +1,10 @@
+{
+    "services": {
+        "flush": {
+            "service": "mdi:database-arrow-right"
+        },
+        "query": {
+            "service": "mdi:database-search"
+        }
+    }
+}
