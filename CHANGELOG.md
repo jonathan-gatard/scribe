@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.4] - 2026-08-03
+
+### Added
+- **`lovelace_scribe_card.yaml`**: the dashboard as a single `vertical-stack` card, pasteable into "Add card" → "Manual". Unlike the view variant it works in any view type, including Sections views.
+
+### Fixed
+- **"No card type configured" when adding the dashboard (#45)**: the README said to click "the **+** button to add a new View", but in current Home Assistant that button is *Add card*. `lovelace_scribe_view.yaml` is a view config (`title` / `icon` / `cards`), which a card editor rejects because it has no root `type:` key. The dashboard section now documents the card and the view variants separately, with the correct UI path for each. Reported by @shaver.
+
 ## [3.6.2] - 2026-05-13
 
 ### Fixed

@@ -381,14 +381,27 @@ Please [open an issue](https://github.com/jonathan-gtd/scribe/issues) on GitHub 
 
 ## Dashboard / View
 
-A pre-configured Lovelace view containing all useful Scribe sensors (Database Statistics, Compression Ratios, I/O Performance) is available in this repository.
+A pre-configured Lovelace layout containing all useful Scribe sensors (Database Statistics, Compression Ratios, I/O Performance) is available in this repository, in two flavours:
 
-**To add it to your Home Assistant dashboard:**
+| File | What it is | Where to paste it |
+| --- | --- | --- |
+| [`lovelace_scribe_card.yaml`](lovelace_scribe_card.yaml) | A **single card** (`type: vertical-stack`) | The card YAML editor ("Add card" → "Manual") |
+| [`lovelace_scribe_view.yaml`](lovelace_scribe_view.yaml) | A **whole view** (`title` / `icon` / `cards`) | The view YAML editor |
+
+> ⚠️ These two are not interchangeable. Pasting the *view* file into a *card* editor fails with **"No card type configured"**, because a card config must start with a `type:` key.
+
+**Option A — add it as a card (easiest, works in every view type):**
 
 1.  Open your dashboard and click "Edit Dashboard" (pencil icon).
-2.  Click the **+** button to add a new View.
-3.  Select **YAML Mode** (or "Edit in YAML").
-4.  Copy the content of [`lovelace_scribe_view.yaml`](lovelace_scribe_view.yaml) and paste it into the editor.
+2.  Click **+ Add card** and scroll to the bottom of the card picker to select **Manual**.
+3.  Copy the content of [`lovelace_scribe_card.yaml`](lovelace_scribe_card.yaml), replace everything in the editor with it, and click **Save**.
+
+**Option B — add it as a dedicated view:**
+
+1.  Open your dashboard and click "Edit Dashboard" (pencil icon).
+2.  Click the **+** button *in the top tab bar* (next to your existing view names) to add a new View — not the "Add card" button.
+3.  In the view dialog, open the ⋮ menu (or the "Show code editor" button) and choose **Edit in YAML**.
+4.  Copy the content of [`lovelace_scribe_view.yaml`](lovelace_scribe_view.yaml), replace everything in the editor with it, and click **Save**.
 
 
 
