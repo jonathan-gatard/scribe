@@ -5,6 +5,8 @@ on:
     branches: [ master, main ]
   pull_request:
     branches: [ master, main ]
+  # Lets release.yaml run this workflow as a gating job before publishing.
+  workflow_call:
 
 jobs:
   test:

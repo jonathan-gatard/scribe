@@ -6,14 +6,41 @@ on:
       - 'v*'
 
 jobs:
+  # Pushing a tag is the publishing act: nothing else gates the release,
+  # so the full test suite must pass on the tagged ref first.
+  test:
+    name: Test tagged ref
+    uses: ./.github/workflows/tests.yaml
+
   release:
     name: Create Release
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Check manifest version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          MANIFEST_VERSION="$(python3 -c "import json; print(json.load(open('custom_components/scribe/manifest.json'))['version'])")"
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Tag is v${TAG_VERSION} but manifest.json says ${MANIFEST_VERSION}. Bump the manifest before tagging."
+            exit 1
+          fi
+
+      # Tags like v3.7.0b1 / v3.7.0rc1 become GitHub pre-releases: HACS only
+      # offers them to users who enabled beta versions for the repository.
+      - name: Detect pre-release
+        id: prerelease
+        run: |
+          if [[ "${GITHUB_REF_NAME}" =~ (a|b|rc)[0-9]+$ ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Zip Scribe Component
         run: |
@@ -25,4 +52,4 @@ jobs:
         with:
           files: custom_components/scribe.zip
           generate_release_notes: true
-
+          prerelease: ${{ steps.prerelease.outputs.prerelease }}

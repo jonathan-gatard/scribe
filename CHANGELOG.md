@@ -8,7 +8,11 @@ All notable changes to this project will be documented in this file.
 - **`lovelace_scribe_card.yaml`**: the dashboard as a single `vertical-stack` card, pasteable into "Add card" → "Manual". Unlike the view variant it works in any view type, including Sections views.
 
 ### Fixed
+- **Entity renames no longer silently lost on collision**: when an entity was renamed to an entity_id that already existed in the `entities` table (typically a stale row left behind by a device that was removed and re-added), `rename_entity` hit a `UniqueViolationError`, logged a warning and gave up — the entity kept writing under its old name and its history split. Scribe now checks whether the occupant still resolves in Home Assistant's live entity registry (via `unique_id`/`domain`/`platform`). If it is provably dead, the orphan row is reused: its `states_raw` history is merged into the renamed entity's `metadata_id` and its metadata row deleted, yielding one continuous history under the new name. If the occupant is still alive — or its registry coordinates are incomplete, making death unprovable — the rename is refused and nothing is modified. Covered by a new test suite (`tests/test_rename_entity.py`).
 - **"No card type configured" when adding the dashboard (#45)**: the README said to click "the **+** button to add a new View", but in current Home Assistant that button is *Add card*. `lovelace_scribe_view.yaml` is a view config (`title` / `icon` / `cards`), which a card editor rejects because it has no root `type:` key. The dashboard section now documents the card and the view variants separately, with the correct UI path for each. Reported by @shaver.
+
+### Changed
+- **Releases are now gated by CI**: pushing a `v*` tag runs the full test suite before the GitHub release is created, and the workflow fails if `manifest.json`'s version doesn't match the tag. Tags ending in `aN`/`bN`/`rcN` (e.g. `v3.7.0b1`) are published as GitHub pre-releases, which HACS only offers to users who opted into beta versions.
 
 ## [3.6.2] - 2026-05-13
 

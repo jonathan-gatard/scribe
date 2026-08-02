@@ -23,6 +23,7 @@ from datetime import date, datetime as dt_datetime
 import asyncpg
 
 from homeassistant.helpers.json import JSONEncoder
+from homeassistant.helpers import entity_registry as er
 from homeassistant.core import HomeAssistant
 
 # NOTE: 'migration' is imported lazily (inside methods) to avoid circular imports.
@@ -1321,38 +1322,140 @@ class ScribeWriter:
     # ------------------------------------------------------------------
 
     async def rename_entity(self, old_entity_id: str, new_entity_id: str):
-        """Rename an entity in the database (Metadata only).
+        """Rename an entity in the database (metadata only).
 
-        Updates the entity_id in 'entities' table.
-        The 'states_raw' table uses metadata_id, so no data migration of history is needed!
+        ``states_raw`` references entities through the surrogate ``metadata_id``
+        (a foreign key to ``entities.id``), so a rename is a single cheap UPDATE on
+        the small ``entities`` table — no history rows are moved or rewritten, and we
+        never touch the compressed ``states_raw`` hypertable.
+
+        Collision handling: the target ``new_entity_id`` may already exist in
+        ``entities``. That row is **not** automatically assumed to be dead — with
+        entity_id "musical chairs" (A → clim while B leaves clim) or a Scribe event
+        backlog, it can still belong to a *live* entity, and clobbering it would
+        corrupt/misroute that entity's data. So we only take the name over when the
+        occupant is a *provably dead orphan*: its registry coordinates
+        (``unique_id``, ``domain``, ``platform``) are all known and resolve to
+        nothing in Home Assistant's live entity registry. In that case the orphan is
+        *reused*: its ``states_raw`` rows are folded into the renamed entity's
+        ``metadata_id`` and its ``entities`` row is deleted, so the renamed entity
+        carries one continuous history under the new name (typical case: the same
+        physical device re-added with a new ``unique_id``). This is the one path
+        that rewrites ``states_raw`` rows — proportional to the orphan's history
+        size, inside the rename transaction.
+        If the occupant is still live — or we cannot prove it is dead (missing
+        ``unique_id``/``domain``/``platform``) — we refuse and leave everything
+        untouched (safe no-op).
         """
         if not self._pool:
             return
 
         _LOGGER.info("[writer.rename_entity] Renaming entity %s -> %s", old_entity_id, new_entity_id)
 
+        merged_orphan_rows = None
         try:
             async with self._pool.acquire() as conn:
                 async with conn.transaction():
                     try:
-                        await conn.execute(
-                            "UPDATE entities SET entity_id = $1 WHERE entity_id = $2",
-                            new_entity_id, old_entity_id
-                        )
+                        # Fast path — target name is free. Wrapped in a SAVEPOINT so a
+                        # unique-violation does not abort the surrounding transaction
+                        # (Postgres marks a tx as failed after any error).
+                        async with conn.transaction():
+                            await conn.execute(
+                                "UPDATE entities SET entity_id = $1 WHERE entity_id = $2",
+                                new_entity_id, old_entity_id,
+                            )
                     except asyncpg.UniqueViolationError:
-                        _LOGGER.warning(
-                            "[writer.rename_entity] Cannot rename %s -> %s: target entity_id already exists in 'entities' table (UniqueViolationError).",
-                            old_entity_id, new_entity_id,
+                        # The destination name is occupied in Scribe. Only take it over
+                        # if that row is a PROVABLY DEAD orphan; never clobber a row that
+                        # may still belong to a live entity (id "musical chairs" / event
+                        # backlog), which would corrupt that entity's data.
+                        occ = await conn.fetchrow(
+                            "SELECT id, unique_id, domain, platform FROM entities WHERE entity_id = $1",
+                            new_entity_id,
                         )
-                        return
+                        if occ is None:
+                            # Freed between the failed UPDATE and now — just rename.
+                            await conn.execute(
+                                "UPDATE entities SET entity_id = $1 WHERE entity_id = $2",
+                                new_entity_id, old_entity_id,
+                            )
+                        else:
+                            # Death is only provable when all three registry
+                            # coordinates are known — a partial row (e.g. created by
+                            # _ensure_metadata_ids before the registry sync filled it
+                            # in) could resolve to nothing while its entity is alive.
+                            occupant_live_eid = None
+                            provable = occ["unique_id"] and occ["domain"] and occ["platform"]
+                            if provable:
+                                reg = er.async_get(self.hass)
+                                occupant_live_eid = reg.async_get_entity_id(
+                                    occ["domain"], occ["platform"], occ["unique_id"],
+                                )
+                            if occupant_live_eid is not None or not provable:
+                                # Occupant is still live, or cannot be proven dead:
+                                # refuse. Nothing is modified (safe no-op).
+                                _LOGGER.error(
+                                    "[writer.rename_entity] Refusing %s -> %s: destination is "
+                                    "not a provably-dead orphan (live_entity=%s, unique_id=%s, "
+                                    "domain=%s, platform=%s). "
+                                    "Left unchanged to avoid corrupting a live entity.",
+                                    old_entity_id, new_entity_id, occupant_live_eid,
+                                    occ["unique_id"], occ["domain"], occ["platform"],
+                                )
+                                return
+                            # Provably dead orphan: reuse it. Fold its history into
+                            # the renamed entity's metadata_id, drop its row, then
+                            # rename — one continuous history under the new name.
+                            live = await conn.fetchrow(
+                                "SELECT id FROM entities WHERE entity_id = $1",
+                                old_entity_id,
+                            )
+                            if live is None:
+                                # The UniqueViolation proved this row existed moments
+                                # ago; only a concurrent delete can land here.
+                                _LOGGER.warning(
+                                    "[writer.rename_entity] Source %s vanished during "
+                                    "rename to %s; nothing to do.",
+                                    old_entity_id, new_entity_id,
+                                )
+                                return
+                            status = await conn.execute(
+                                "UPDATE states_raw SET metadata_id = $1 WHERE metadata_id = $2",
+                                live["id"], occ["id"],
+                            )
+                            try:
+                                merged_orphan_rows = int(str(status).rsplit(" ", 1)[-1])
+                            except (ValueError, IndexError):
+                                merged_orphan_rows = -1
+                            await conn.execute(
+                                "DELETE FROM entities WHERE id = $1", occ["id"],
+                            )
+                            await conn.execute(
+                                "UPDATE entities SET entity_id = $1 WHERE entity_id = $2",
+                                new_entity_id, old_entity_id,
+                            )
 
-            # Update cache
-            if old_entity_id in self._entity_id_map:
-                mid = self._entity_id_map.pop(old_entity_id)
-                self._entity_id_map[new_entity_id] = mid
-                self._metadata_id_map[mid] = new_entity_id
+            # Invalidate the touched cache entries; they are re-resolved lazily from
+            # the DB on the next write (rename is rare, so the extra lookup is free).
+            for eid in (old_entity_id, new_entity_id):
+                mid = self._entity_id_map.pop(eid, None)
+                if mid is not None:
+                    self._metadata_id_map.pop(mid, None)
 
-            _LOGGER.info("[writer.rename_entity] Renamed entity %s -> %s successfully", old_entity_id, new_entity_id)
+            if merged_orphan_rows is not None:
+                _LOGGER.warning(
+                    "[writer.rename_entity] Renamed entity %s -> %s: destination was a "
+                    "dead orphan; reused it by merging %s history rows into the "
+                    "renamed entity and deleting the orphan metadata row.",
+                    old_entity_id, new_entity_id,
+                    "an unknown number of" if merged_orphan_rows < 0 else merged_orphan_rows,
+                )
+            else:
+                _LOGGER.info(
+                    "[writer.rename_entity] Renamed entity %s -> %s successfully",
+                    old_entity_id, new_entity_id,
+                )
 
         except Exception as e:
             _LOGGER.error(
