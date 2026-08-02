@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.6.4] - 2026-08-03
+## [Unreleased]
 
 ### Added
 - **`lovelace_scribe_card.yaml`**: the dashboard as a single `vertical-stack` card, pasteable into "Add card" → "Manual". Unlike the view variant it works in any view type, including Sections views.
