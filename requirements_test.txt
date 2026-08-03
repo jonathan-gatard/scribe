@@ -4,5 +4,5 @@ pytest-asyncio
 psycopg2-binary
 sqlalchemy
 asyncpg
-ruff
+ruff==0.15.0
 pycares
