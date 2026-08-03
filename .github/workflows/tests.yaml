@@ -56,7 +56,19 @@ jobs:
         env:
           SCRIBE_TEST_DSN: postgresql://postgres:scribe@127.0.0.1:55432/scribe
         run: |
-          pytest tests
+          pytest tests \
+            --cov=custom_components/scribe \
+            --cov-report=term-missing \
+            --cov-fail-under=83
+
+      - name: Publish coverage summary
+        if: always()
+        run: |
+          {
+            echo "## Coverage"
+            echo
+            coverage report --format=markdown
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify integration tests actually ran
         # They skip silently when no database answers; without this check a

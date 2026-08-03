@@ -1,0 +1,13 @@
+[run]
+source = custom_components/scribe
+branch = false
+
+[report]
+# Lines that exist to satisfy the type checker or to guard against a state
+# tests deliberately cannot reach.
+exclude_also =
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    if __name__ == .__main__.:
+show_missing = true
+skip_covered = false

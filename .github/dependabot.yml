@@ -1,0 +1,21 @@
+version: 2
+
+updates:
+  # Action versions go stale silently — the Node 20 deprecation warnings on
+  # every run are the visible symptom. Monthly keeps the noise low.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+
+  # Test-only dependencies. ruff is pinned deliberately (an unpinned linter on
+  # the release gate blocks publishing at random), so this is how the pin gets
+  # raised: as a reviewable PR whose CI shows what the new version flags.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"

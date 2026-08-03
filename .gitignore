@@ -6,3 +6,7 @@ venv/
 
 migration/.env
 *.log
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
