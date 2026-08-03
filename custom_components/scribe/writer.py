@@ -24,7 +24,10 @@ import asyncpg
 
 from homeassistant.helpers.json import JSONEncoder
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.core import HomeAssistant
+
+from .const import DOMAIN
 
 # NOTE: 'migration' is imported lazily (inside methods) to avoid circular imports.
 # __init__.py imports ScribeWriter, so a top-level 'from . import migration' here
@@ -1394,7 +1397,9 @@ class ScribeWriter:
                                 )
                             if occupant_live_eid is not None or not provable:
                                 # Occupant is still live, or cannot be proven dead:
-                                # refuse. Nothing is modified (safe no-op).
+                                # refuse. Nothing is modified (safe no-op), but the
+                                # user must hear about it — their history is now
+                                # split across the two ids.
                                 _LOGGER.error(
                                     "[writer.rename_entity] Refusing %s -> %s: destination is "
                                     "not a provably-dead orphan (live_entity=%s, unique_id=%s, "
@@ -1403,6 +1408,25 @@ class ScribeWriter:
                                     old_entity_id, new_entity_id, occupant_live_eid,
                                     occ["unique_id"], occ["domain"], occ["platform"],
                                 )
+                                if occupant_live_eid is not None:
+                                    self._report_rename_issue(
+                                        new_entity_id,
+                                        "rename_refused_live",
+                                        {
+                                            "old_entity_id": old_entity_id,
+                                            "new_entity_id": new_entity_id,
+                                            "occupant": occupant_live_eid,
+                                        },
+                                    )
+                                else:
+                                    self._report_rename_issue(
+                                        new_entity_id,
+                                        "rename_refused_unprovable",
+                                        {
+                                            "old_entity_id": old_entity_id,
+                                            "new_entity_id": new_entity_id,
+                                        },
+                                    )
                                 return
                             # Provably dead orphan: reuse it. Fold its history into
                             # the renamed entity's metadata_id, drop its row, then
@@ -1443,6 +1467,10 @@ class ScribeWriter:
                 if mid is not None:
                     self._metadata_id_map.pop(mid, None)
 
+            # A rename to this name succeeded — retire any repair issue a previous
+            # refused/failed attempt on the same destination may have raised.
+            self._clear_rename_issue(new_entity_id)
+
             if merged_orphan_rows is not None:
                 _LOGGER.warning(
                     "[writer.rename_entity] Renamed entity %s -> %s: destination was a "
@@ -1461,6 +1489,57 @@ class ScribeWriter:
             _LOGGER.error(
                 "[writer.rename_entity] Failed to rename entity %s -> %s: %s (%s)",
                 old_entity_id, new_entity_id, e, type(e).__name__, exc_info=True,
+            )
+            # The registry event will not fire again: without this issue the
+            # rename is silently lost and the entity's history splits.
+            self._report_rename_issue(
+                new_entity_id,
+                "rename_failed",
+                {
+                    "old_entity_id": old_entity_id,
+                    "new_entity_id": new_entity_id,
+                    "error": f"{e} ({type(e).__name__})",
+                },
+                severity=ir.IssueSeverity.ERROR,
+            )
+
+    def _report_rename_issue(
+        self,
+        new_entity_id: str,
+        translation_key: str,
+        placeholders: Dict[str, str],
+        severity: "ir.IssueSeverity" = ir.IssueSeverity.WARNING,
+    ):
+        """Surface a refused/failed rename in the Repairs dashboard (best effort).
+
+        Keyed by destination entity_id: repeated attempts on the same name update
+        one issue, and any later successful rename to that name retires it.
+        """
+        try:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                f"rename_collision_{new_entity_id}",
+                is_fixable=False,
+                severity=severity,
+                translation_key=translation_key,
+                translation_placeholders=placeholders,
+                learn_more_url="https://github.com/jonathan-gtd/scribe/blob/master/datastructre.md",
+            )
+        except Exception as e:  # never let UI plumbing break the writer
+            _LOGGER.debug(
+                "[writer._report_rename_issue] Could not create repair issue for %s: %s (%s)",
+                new_entity_id, e, type(e).__name__,
+            )
+
+    def _clear_rename_issue(self, new_entity_id: str):
+        """Delete the repair issue for this destination, if one exists (best effort)."""
+        try:
+            ir.async_delete_issue(self.hass, DOMAIN, f"rename_collision_{new_entity_id}")
+        except Exception as e:
+            _LOGGER.debug(
+                "[writer._clear_rename_issue] Could not delete repair issue for %s: %s (%s)",
+                new_entity_id, e, type(e).__name__,
             )
 
     # ------------------------------------------------------------------

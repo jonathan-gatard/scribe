@@ -121,5 +121,19 @@
         "error": {
             "must_record_something": "Au moins l'une des options 'Enregistrer les changements d'état' ou 'Enregistrer les événements' doit être activée."
         }
+    },
+    "issues": {
+        "rename_refused_live": {
+            "title": "Renommage d'entité vers {new_entity_id} non appliqué",
+            "description": "Home Assistant a renommé `{old_entity_id}` en `{new_entity_id}`, mais la base de Scribe suit déjà `{new_entity_id}` pour une autre entité encore active (`{occupant}`). Pour ne pas mélanger l'historique de deux entités vivantes, Scribe n'a rien modifié : l'historique déjà enregistré reste sous `{old_entity_id}`, et les nouveaux états peuvent être enregistrés sous la ligne `{new_entity_id}` existante. Si l'autre entité vient elle aussi d'être renommée, cela se résout généralement en moins d'une minute — cette réparation disparaîtra dès que le renommage aboutit. Si le problème persiste, examinez la table `entities` de votre base."
+        },
+        "rename_refused_unprovable": {
+            "title": "Renommage d'entité vers {new_entity_id} non appliqué",
+            "description": "Home Assistant a renommé `{old_entity_id}` en `{new_entity_id}`, mais la base de Scribe contient déjà une ligne `{new_entity_id}` aux métadonnées incomplètes : Scribe ne peut pas prouver qu'elle appartient à une entité supprimée. Pour ne pas corrompre l'historique, rien n'a été modifié : l'historique déjà enregistré reste sous `{old_entity_id}`. Si vous êtes certain que la ligne `{new_entity_id}` est un reliquat d'une entité supprimée, supprimez-la manuellement de la table `entities` ; Scribe appliquera alors le renommage au prochain renommage de l'entité."
+        },
+        "rename_failed": {
+            "title": "Échec du renommage de {old_entity_id}",
+            "description": "Scribe a rencontré une erreur en renommant `{old_entity_id}` en `{new_entity_id}` dans la base : {error}. L'historique de l'entité est peut-être désormais scindé entre les deux identifiants. Consultez les logs de Home Assistant pour le détail ; renommer à nouveau l'entité relancera l'opération."
+        }
     }
 }

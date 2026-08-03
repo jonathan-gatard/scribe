@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Repairs issue when a rename cannot be applied**: a refused rename (destination occupied by a live or unprovable entity) or a failed one (database error) used to be visible only in the logs, while the entity's history silently split across two IDs. Scribe now raises a Home Assistant Repairs issue explaining what happened and what to do; a later successful rename to the same destination retires it automatically. Translated in English and French.
 - **`lovelace_scribe_card.yaml`**: the dashboard as a single `vertical-stack` card, pasteable into "Add card" → "Manual". Unlike the view variant it works in any view type, including Sections views.
 
 ### Fixed

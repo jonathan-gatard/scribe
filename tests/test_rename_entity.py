@@ -4,6 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import asyncpg
 
+from homeassistant.helpers import issue_registry as ir
+
+from custom_components.scribe.const import DOMAIN
 from custom_components.scribe.writer import ScribeWriter
 
 
@@ -188,3 +191,85 @@ async def test_rename_no_pool_is_noop(hass, writer, mock_db_connection):
     writer._pool = None
     await writer.rename_entity("sensor.old", "sensor.new")
     mock_db_connection.execute.assert_not_called()
+
+
+def _get_issue(hass):
+    return ir.async_get(hass).async_get_issue(DOMAIN, "rename_collision_sensor.new")
+
+
+@pytest.mark.asyncio
+async def test_refusal_live_raises_repair_issue(hass, writer, mock_db_connection):
+    """Refusing because of a live occupant surfaces a Repairs issue."""
+    _raise_unique_violation_once(mock_db_connection)
+    mock_db_connection.fetchrow.return_value = {
+        "id": 42, "unique_id": "uid-b", "domain": "sensor", "platform": "mqtt",
+    }
+    registry = MagicMock()
+    registry.async_get_entity_id.return_value = "sensor.still_alive"
+
+    with patch(
+        "custom_components.scribe.writer.er.async_get", return_value=registry
+    ):
+        await writer.rename_entity("sensor.old", "sensor.new")
+
+    issue = _get_issue(hass)
+    assert issue is not None
+    assert issue.translation_key == "rename_refused_live"
+    assert issue.severity == ir.IssueSeverity.WARNING
+    assert issue.translation_placeholders == {
+        "old_entity_id": "sensor.old",
+        "new_entity_id": "sensor.new",
+        "occupant": "sensor.still_alive",
+    }
+
+
+@pytest.mark.asyncio
+async def test_refusal_unprovable_raises_repair_issue(hass, writer, mock_db_connection):
+    """Refusing because death is unprovable surfaces a Repairs issue."""
+    _raise_unique_violation_once(mock_db_connection)
+    mock_db_connection.fetchrow.return_value = {
+        "id": 42, "unique_id": None, "domain": "sensor", "platform": "mqtt",
+    }
+
+    await writer.rename_entity("sensor.old", "sensor.new")
+
+    issue = _get_issue(hass)
+    assert issue is not None
+    assert issue.translation_key == "rename_refused_unprovable"
+    assert issue.translation_placeholders == {
+        "old_entity_id": "sensor.old",
+        "new_entity_id": "sensor.new",
+    }
+
+
+@pytest.mark.asyncio
+async def test_rename_failure_raises_error_issue(hass, writer, mock_db_connection):
+    """An unexpected DB error surfaces an ERROR-severity Repairs issue."""
+    mock_db_connection.execute.side_effect = RuntimeError("connection lost")
+
+    await writer.rename_entity("sensor.old", "sensor.new")
+
+    issue = _get_issue(hass)
+    assert issue is not None
+    assert issue.translation_key == "rename_failed"
+    assert issue.severity == ir.IssueSeverity.ERROR
+    assert "connection lost" in issue.translation_placeholders["error"]
+
+
+@pytest.mark.asyncio
+async def test_successful_rename_clears_repair_issue(hass, writer, mock_db_connection):
+    """A later successful rename to the same destination retires the issue."""
+    # First attempt: refused (unprovable occupant) -> issue raised.
+    _raise_unique_violation_once(mock_db_connection)
+    mock_db_connection.fetchrow.return_value = {
+        "id": 42, "unique_id": None, "domain": None, "platform": None,
+    }
+    await writer.rename_entity("sensor.old", "sensor.new")
+    assert _get_issue(hass) is not None
+
+    # Second attempt: the occupant row is gone, plain rename succeeds.
+    mock_db_connection.execute.side_effect = None
+    mock_db_connection.execute.return_value = "UPDATE 1"
+    mock_db_connection.fetchrow.return_value = None
+    await writer.rename_entity("sensor.old", "sensor.new")
+    assert _get_issue(hass) is None
