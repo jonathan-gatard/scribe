@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Flush crash on `date` attributes**: an entity exposing a plain `datetime.date` in its attributes (expiry dates, calendar entities, `input_datetime` helpers in date mode) raised `Object of type date is not JSON serializable` inside the jsonb codec, killing the **entire flush batch** — every state and event in it was lost or endlessly re-buffered. Home Assistant's `JSONEncoder` handles `datetime` but not a bare `date`; the 3.6.1 fix for #40 addressed the `time` column and left this path open. Dates are now serialized as ISO strings. Found by the new end-to-end test suite.
+
+### Changed
+- **End-to-end test suite covering the whole component** (`tests/integration/`): 54 tests driving the real writer against a real TimescaleDB and a real Home Assistant registry — schema and hypertable creation, the flush and sanitization path, metadata sync for all five registries, statistics, the read-only query service, legacy `states` → `states_raw` migration, and entity renames. They assert on what actually lands in the tables rather than on mocked SQL calls. CI runs them against a service container and fails if they skip.
+
 ## [3.7.0] - 2026-08-03
 
 ### Added

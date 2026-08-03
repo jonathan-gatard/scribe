@@ -1,0 +1,133 @@
+"""End-to-end stats and the read-only query service, against real data."""
+import pytest
+
+from .conftest import make_writer, write_event, write_states
+
+
+@pytest.mark.asyncio
+async def test_stats_report_real_chunks(writer, db):
+    """Chunk counts come from TimescaleDB and reflect actual written data."""
+    await write_states(writer, "sensor.stats", 5)
+    await write_event(writer, "stats_event")
+
+    stats = await writer.get_db_stats("all")
+
+    assert stats["states_total_chunks"] >= 1
+    assert stats["states_uncompressed_chunks"] >= 1
+    assert stats["states_compressed_chunks"] == 0  # nothing old enough yet
+    assert stats["events_total_chunks"] >= 1
+    # Sizes are real byte counts, not placeholders.
+    assert stats["states_total_size"] > 0
+    assert stats["events_total_size"] > 0
+
+
+@pytest.mark.asyncio
+async def test_stats_types_are_selective(writer, db):
+    """stats_type narrows the work done: 'chunk' must not compute sizes."""
+    await write_states(writer, "sensor.stats", 1)
+
+    chunk_only = await writer.get_db_stats("chunk")
+    size_only = await writer.get_db_stats("size")
+
+    assert "states_total_chunks" in chunk_only
+    assert "states_total_size" not in chunk_only
+    assert "states_total_size" in size_only
+    assert "states_total_chunks" not in size_only
+
+
+@pytest.mark.asyncio
+async def test_stats_skip_disabled_tables(hass, clean_db):
+    """With record_events=False no events stats are produced."""
+    w = make_writer(hass, record_events=False)
+    await w.start()
+    try:
+        await write_states(w, "sensor.only_states", 1)
+        stats = await w.get_db_stats("all")
+        assert "states_total_chunks" in stats
+        assert not [k for k in stats if k.startswith("events_")]
+    finally:
+        await w.stop()
+
+
+@pytest.mark.asyncio
+async def test_stats_empty_without_a_pool(hass, clean_db):
+    """A disconnected writer reports no stats rather than raising."""
+    w = make_writer(hass)
+    assert await w.get_db_stats("all") == {}
+
+
+@pytest.mark.asyncio
+async def test_query_returns_rows_as_dicts(writer, db):
+    """The query service hands back plain dicts the service layer can serialize."""
+    await write_states(writer, "sensor.queried", 3)
+
+    rows = await writer.query(
+        "SELECT entity_id, state, value FROM states "
+        "WHERE entity_id = 'sensor.queried' ORDER BY time")
+
+    assert len(rows) == 3
+    assert isinstance(rows[0], dict)
+    assert rows[0]["entity_id"] == "sensor.queried"
+    assert [r["state"] for r in rows] == ["s0", "s1", "s2"]
+
+
+@pytest.mark.asyncio
+async def test_query_is_read_only(writer, db):
+    """Writes through the query service are rejected by the transaction itself."""
+    await write_states(writer, "sensor.readonly", 1)
+
+    with pytest.raises(Exception) as excinfo:
+        await writer.query("DELETE FROM states_raw")
+    assert "read-only" in str(excinfo.value).lower()
+
+    # The data is still there.
+    async with db.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM states_raw") == 1
+
+
+@pytest.mark.asyncio
+async def test_query_rejects_ddl_too(writer, db):
+    """Schema changes are covered by the same read-only guard."""
+    with pytest.raises(Exception):
+        await writer.query("DROP TABLE entities CASCADE")
+
+    async with db.acquire() as conn:
+        assert await conn.fetchval(
+            "SELECT EXISTS (SELECT FROM information_schema.tables "
+            "WHERE table_name = 'entities')")
+
+
+@pytest.mark.asyncio
+async def test_query_propagates_sql_errors(writer, db):
+    """A bad query raises rather than silently returning nothing."""
+    with pytest.raises(Exception):
+        await writer.query("SELECT * FROM table_that_does_not_exist")
+
+
+@pytest.mark.asyncio
+async def test_query_without_a_pool_raises(hass, clean_db):
+    """Querying a disconnected writer is an error, not an empty result."""
+    w = make_writer(hass)
+    with pytest.raises(RuntimeError, match="not connected"):
+        await w.query("SELECT 1")
+
+
+@pytest.mark.asyncio
+async def test_initial_counts_come_from_the_database(hass, clean_db):
+    """A restarting writer picks up the row counts already in the tables."""
+    first = make_writer(hass)
+    await first.start()
+    try:
+        await write_states(first, "sensor.persisted", 4)
+        await write_event(first, "persisted_event")
+    finally:
+        await first.stop()
+
+    second = make_writer(hass)
+    await second.start()
+    try:
+        await second._get_initial_counts()
+        assert second._states_written == 4
+        assert second._events_written == 1
+    finally:
+        await second.stop()

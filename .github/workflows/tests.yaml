@@ -64,7 +64,7 @@ jobs:
         env:
           SCRIBE_TEST_DSN: postgresql://postgres:scribe@127.0.0.1:55432/scribe
         run: |
-          pytest tests/test_rename_integration.py -q --no-header -p no:cacheprovider \
+          pytest tests/integration -q --no-header -p no:cacheprovider \
             | tee /tmp/integration.txt
           if grep -q "skipped" /tmp/integration.txt; then
             echo "::error::Integration tests skipped — the TimescaleDB service is unreachable."

@@ -109,6 +109,21 @@ def _normalize_dsn(db_url: str) -> str:
     return db_url.replace("postgresql+asyncpg://", "postgresql://")
 
 
+def _json_default(obj):
+    """Encode values json cannot serialize natively, for the jsonb codec.
+
+    `_sanitize_obj` already stringifies unknown objects, so little reaches
+    here — but a bare ``date`` does, and Home Assistant's JSONEncoder only
+    handles ``datetime``. Without this it raises TypeError and takes the whole
+    flush batch down with it.
+    """
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    if isinstance(obj, (dt_datetime, date)):
+        return obj.isoformat()
+    return JSONEncoder().default(obj)
+
+
 def _affected_rows(status: str) -> int:
     """Row count from an asyncpg command tag ('UPDATE 12'), or -1 if unparsable."""
     try:
@@ -316,7 +331,7 @@ class ScribeWriter:
                     async def _init_connection(conn):
                         await conn.set_type_codec(
                             'jsonb',
-                            encoder=lambda x: b'\x01' + json.dumps(x, cls=JSONEncoder, default=lambda o: str(o) if isinstance(o, uuid.UUID) else JSONEncoder().default(o)).encode('utf-8'),
+                            encoder=lambda x: b'\x01' + json.dumps(x, cls=JSONEncoder, default=_json_default).encode('utf-8'),
                             decoder=lambda x: json.loads(x[1:].decode('utf-8')),
                             schema='pg_catalog',
                             format='binary'
