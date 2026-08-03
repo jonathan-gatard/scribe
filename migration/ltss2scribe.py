@@ -1,5 +1,6 @@
 
 import os
+import contextlib
 import sys
 import json
 import logging
@@ -162,12 +163,11 @@ def migrate():
                     pg_state = clean_null_bytes(state_raw)
                     
                     # Try to extract float value
+                    # Non-numeric states keep pg_value NULL and live in pg_state.
                     pg_value = None
-                    try:
-                        if pg_state is not None:
+                    if pg_state is not None:
+                        with contextlib.suppress(ValueError):
                             pg_value = float(pg_state)
-                    except ValueError:
-                        pass
                     
                     # Clean attributes
                     if isinstance(attributes, dict):

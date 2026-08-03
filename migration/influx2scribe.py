@@ -1,5 +1,6 @@
 
 import os
+import contextlib
 import sys
 import json
 import logging
@@ -179,11 +180,10 @@ def migrate():
                     pg_state = None
                     
                     # Try to parse value as float
+                    # Non-numeric values keep pg_value NULL and live in pg_state.
                     if val is not None:
-                        try:
+                        with contextlib.suppress(ValueError):
                             pg_value = float(val)
-                        except ValueError:
-                            pass
                     
                     # Determine state string
                     if state_val is not None:

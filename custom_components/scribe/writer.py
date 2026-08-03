@@ -514,7 +514,7 @@ class ScribeWriter:
             try:
                 await self._task
             except asyncio.CancelledError:
-                pass
+                _LOGGER.debug("[writer.stop] Writer task cancelled as expected")
             except Exception as e:
                 _LOGGER.error(
                     "[writer.stop] Error waiting for writer task to stop: %s (%s)",

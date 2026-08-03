@@ -340,10 +340,9 @@ async def migrate_entities_table(conn):
     Receives an asyncpg connection directly (called from within an open transaction
     in writer.py's _init_entities_table).
     """
-    step = "init"
     try:
-        # Check if 'entities' table exists
         step = "check_entities_table"
+        # Check if 'entities' table exists
         table_exists = await conn.fetchval(
             "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'entities')"
         )
@@ -388,10 +387,9 @@ async def migrate_entities_table(conn):
 
 async def migrate_states_data(pool: asyncpg.Pool):
     """Migrate data from states_legacy to states_raw in chunks."""
-    step = "init"
     try:
-        # Check if 'states_legacy' exists
         step = "check_states_legacy"
+        # Check if 'states_legacy' exists
         async with pool.acquire() as conn:
             legacy_exists = await conn.fetchval(
                 "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'states_legacy')"
