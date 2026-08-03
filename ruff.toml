@@ -1,0 +1,28 @@
+# Ruff runs on the release gate, so its rule set is declared here rather than
+# left to the version's defaults. Ruff 0.16 enabled several rule families that
+# 0.15 did not, which turned a routine linter upgrade into ~250 findings on
+# code nobody had touched — and, because a red build blocks the tag, into a
+# blocked release. With an explicit selection any ruff version behaves the
+# same, and adopting a new rule becomes a deliberate change with its own diff.
+
+target-version = "py312"
+
+[lint]
+select = [
+    "E4",      # imports
+    "E7",      # statement-level errors
+    "E9",      # syntax / IO errors
+    "F",       # pyflakes: undefined names, unused imports and variables
+    "RUF013",  # implicit Optional (x: str = None) — hides a real nullable
+    "TRY201",  # `raise e` inside except: loses the original traceback
+    "UP006",   # typing.Dict -> dict
+    "UP035",   # deprecated typing imports
+]
+
+# Deliberately not enabled, so the reasoning survives:
+#   BLE001  blind `except Exception` — the writer catches broadly on purpose;
+#           a recorder must never take Home Assistant down with it.
+#   I001    import sorting — worth having, but reorders imports in 49 files
+#           and would bury the history for no behavioural gain.
+#   G201 / LOG015  logging style, ~100 sites, no correctness impact.
+#   DTZ005  naive datetime.now() — only ever in tests, where it is fine.

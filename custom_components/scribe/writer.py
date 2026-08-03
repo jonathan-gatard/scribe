@@ -13,7 +13,7 @@ import ssl
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
-from typing import Any, Dict
+from typing import Any
 from collections import deque
 import dataclasses
 import json
@@ -209,9 +209,9 @@ class ScribeWriter:
         table_name_states: str, 
         table_name_events: str,
         use_ssl: bool = False,
-        ssl_root_cert: str = None,
-        ssl_cert_file: str = None,
-        ssl_key_file: str = None,
+        ssl_root_cert: str | None = None,
+        ssl_cert_file: str | None = None,
+        ssl_key_file: str | None = None,
         enable_table_areas: bool = True,
         enable_table_devices: bool = True,
         enable_table_integrations: bool = True,
@@ -274,9 +274,9 @@ class ScribeWriter:
         self._running = False
         
         # ID Cache: entity_id -> metadata_id
-        self._entity_id_map: Dict[str, int] = {}
+        self._entity_id_map: dict[str, int] = {}
         # Reverse Cache: metadata_id -> entity_id (for debugging/renames if needed)
-        self._metadata_id_map: Dict[int, str] = {}
+        self._metadata_id_map: dict[int, str] = {}
 
     # ------------------------------------------------------------------
     # Internal helpers: acquire connection with/without transaction
@@ -293,7 +293,7 @@ class ScribeWriter:
             async with conn.transaction():
                 await conn.executemany(sql, args_list)
 
-    async def _copy_records(self, conn: asyncpg.Connection, table_name: str, columns: list[str], records: list[tuple[Any, ...]], conflict_target: str = None):
+    async def _copy_records(self, conn: asyncpg.Connection, table_name: str, columns: list[str], records: list[tuple[Any, ...]], conflict_target: str | None = None):
         """Write batched records via PostgreSQL COPY, falling back to executemany if unavailable.
 
         COPY has no ON CONFLICT clause, so a row colliding with one already in
@@ -443,14 +443,14 @@ class ScribeWriter:
                     e, type(e).__name__, exc_info=True,
                 )
                 self._connected = False
-                raise e
+                raise
 
         except Exception as e:
             _LOGGER.error(
                 "[writer.start] Unexpected error starting ScribeWriter: %s (%s)",
                 e, type(e).__name__, exc_info=True,
             )
-            raise e
+            raise
 
     async def _get_initial_counts(self):
         """Fetch initial row counts from database."""
@@ -607,7 +607,7 @@ class ScribeWriter:
                 # Prevent tight loop if persistent error
                 await asyncio.sleep(5)
 
-    def enqueue(self, data: Dict[str, Any]):
+    def enqueue(self, data: dict[str, Any]):
         """Add data to the queue.
 
         This is called from the main loop, so it shouldn't block.
@@ -1769,7 +1769,7 @@ class ScribeWriter:
         self,
         issue_id: str,
         translation_key: str,
-        placeholders: Dict[str, str] = None,
+        placeholders: dict[str, str] | None = None,
         severity: "ir.IssueSeverity" = ir.IssueSeverity.WARNING,
     ):
         """Surface a condition in the Repairs dashboard (best effort).
@@ -1809,7 +1809,7 @@ class ScribeWriter:
         self,
         new_entity_id: str,
         translation_key: str,
-        placeholders: Dict[str, str],
+        placeholders: dict[str, str],
         severity: "ir.IssueSeverity" = ir.IssueSeverity.WARNING,
     ):
         """Report a rename problem, keyed by the destination entity_id.
@@ -1851,7 +1851,7 @@ class ScribeWriter:
                 "[writer.query] Error executing query (sqlstate=%s, type=%s): %s | SQL=%s",
                 sqlstate, type(e).__name__, e, sql, exc_info=True,
             )
-            raise e
+            raise
 
     async def get_db_stats(self, stats_type: str = "all"):
         """Fetch database statistics using TimescaleDB chunks view.

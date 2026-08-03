@@ -204,7 +204,7 @@ async def _migrate_states_raw_constraints(pool: asyncpg.Pool, has_timescaledb: b
             "[migration._migrate_states_raw_constraints] ❌ states_raw constraints migration failed at step '%s': %s (%s)",
             step, e, type(e).__name__, exc_info=True,
         )
-        raise e
+        raise
 
 
 async def _convert_to_hypertable(pool: asyncpg.Pool, chunk_time_interval: str = "7 days", compress_after: str = "7 days"):
