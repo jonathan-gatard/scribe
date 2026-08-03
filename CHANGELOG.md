@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [3.7.0] - 2026-08-03
 
 ### Added
 - **Repairs issue when a rename cannot be applied**: a refused rename (destination occupied by a live or unprovable entity) or a failed one (database error) used to be visible only in the logs, while the entity's history silently split across two IDs. Scribe now raises a Home Assistant Repairs issue explaining what happened and what to do; a later successful rename to the same destination retires it automatically. Translated in English and French.
