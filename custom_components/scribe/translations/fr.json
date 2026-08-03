@@ -134,6 +134,30 @@
         "rename_failed": {
             "title": "Échec du renommage de {old_entity_id}",
             "description": "Scribe a rencontré une erreur en renommant `{old_entity_id}` en `{new_entity_id}` dans la base : {error}. L'historique de l'entité est peut-être désormais scindé entre les deux identifiants. Consultez les logs de Home Assistant pour le détail ; renommer à nouveau l'entité relancera l'opération."
+        },
+        "db_unreachable": {
+            "title": "Scribe ne peut pas joindre sa base de données",
+            "description": "Scribe n'a pas pu se connecter à `{host}` et **n'enregistre plus rien**. La base a répondu : {error}\n\nVérifiez que le serveur tourne et qu'il est joignable depuis Home Assistant, et que l'URL, l'identifiant et le mot de passe dans les réglages de Scribe sont corrects. Cette réparation disparaît d'elle-même dès qu'une connexion aboutit — rechargez l'intégration Scribe pour réessayer immédiatement."
+        },
+        "write_failing": {
+            "title": "Scribe n'arrive plus à écrire dans sa base",
+            "description": "Les {failures} dernières tentatives d'écriture ont échoué. Les données sont conservées en mémoire et seront écrites au rétablissement de la base, mais elles seront perdues si Home Assistant redémarre avant — ou si la mémoire tampon se remplit.\n\nDernière erreur : {error}\n\nVérifiez le serveur de base de données (espace disque, limite de connexions, ses propres logs). Cette réparation disparaît dès qu'une écriture aboutit."
+        },
+        "buffer_full": {
+            "title": "La mémoire tampon de Scribe est pleine — de l'historique est perdu",
+            "description": "Les écritures échouent depuis assez longtemps pour avoir rempli la mémoire tampon ({max_queue_size} éléments). Les enregistrements les plus anciens sont désormais supprimés pour faire de la place aux nouveaux : **de l'historique est définitivement perdu**.\n\nCorrigez d'abord le problème de base de données — voyez l'autre réparation Scribe, ou les logs de Home Assistant. Si votre base est simplement plus lente que votre rythme de changements d'état, augmentez la taille du tampon dans les réglages de Scribe. Cette réparation disparaît dès que l'écriture reprend."
+        },
+        "data_dropped": {
+            "title": "Scribe abandonne des enregistrements",
+            "description": "{dropped} enregistrements ont été abandonnés depuis le démarrage de Home Assistant, parce qu'une écriture a échoué et que la mise en tampon est désactivée dans les réglages de Scribe.\n\nActivez la mise en tampon pour conserver les enregistrements en mémoire pendant une panne temporaire de la base, et consultez les logs pour l'erreur d'écriture sous-jacente."
+        },
+        "no_timescaledb": {
+            "title": "TimescaleDB n'est pas installé sur la base de Scribe",
+            "description": "Scribe enregistre bien vers `{host}`, mais l'extension TimescaleDB n'y est pas installée. L'historique est sauvegardé et reste interrogeable — en revanche le découpage en chunks et la **compression sont indisponibles**, donc la base grossira nettement plus vite, et les capteurs de taille et de compression resteront vides.\n\nInstallez l'extension puis exécutez `CREATE EXTENSION timescaledb;` sur cette base, et redémarrez Home Assistant. Cette réparation disparaît dès que l'extension est détectée."
+        },
+        "migration_failed": {
+            "title": "Scribe n'a pas pu terminer la migration de votre ancien historique",
+            "description": "Scribe convertit l'ancienne table `states` vers son format actuel en tâche de fond, et cela a échoué avec : {error}\n\nVotre ancien historique n'est pas perdu — il est conservé dans une table nommée `states_legacy` — mais il reste invisible pour Scribe tant que la migration n'est pas terminée. Les nouveaux états sont enregistrés normalement entre-temps.\n\nConsultez les logs de Home Assistant pour identifier l'étape en échec, puis redémarrez Home Assistant pour réessayer."
         }
     }
 }

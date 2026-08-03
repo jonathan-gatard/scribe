@@ -6,10 +6,9 @@ of states from an integration that just came online.
 """
 import asyncio
 
-import asyncpg
 import pytest
 
-from .conftest import BASE_TIME, DSN, entity_rows, make_writer, write_states
+from .conftest import BASE_TIME, entity_rows, make_writer, reconnect, write_states
 
 
 def _state(entity_id, seconds):
@@ -39,9 +38,7 @@ async def test_buffered_states_are_written_once_the_database_returns(hass, clean
         assert len(w._queue) == 5, "batch was not buffered"
 
         # Reconnect the way a restart would.
-        w._pool = await asyncpg.create_pool(
-            DSN, min_size=1, max_size=4, max_inactive_connection_lifetime=0,
-            init=_jsonb_codec)
+        await reconnect(w)
         await w._flush()
 
         _, count = await entity_rows(w._pool, "sensor.recovered")
@@ -50,31 +47,6 @@ async def test_buffered_states_are_written_once_the_database_returns(hass, clean
     finally:
         if w._pool is not None:
             await w.stop()
-
-
-async def _jsonb_codec(conn):
-    """Same codec the writer installs, needed for dict attributes."""
-    import json
-    import uuid
-    from datetime import date, datetime as dt_datetime
-
-    from homeassistant.helpers.json import JSONEncoder
-
-    def default(obj):
-        if isinstance(obj, uuid.UUID):
-            return str(obj)
-        if isinstance(obj, (dt_datetime, date)):
-            return obj.isoformat()
-        return JSONEncoder().default(obj)
-
-    await conn.set_type_codec(
-        "jsonb",
-        encoder=lambda x: b"\x01" + json.dumps(
-            x, cls=JSONEncoder, default=default).encode("utf-8"),
-        decoder=lambda x: json.loads(x[1:].decode("utf-8")),
-        schema="pg_catalog",
-        format="binary",
-    )
 
 
 @pytest.mark.asyncio

@@ -109,6 +109,22 @@ def _normalize_dsn(db_url: str) -> str:
     return db_url.replace("postgresql+asyncpg://", "postgresql://")
 
 
+ISSUE_LEARN_MORE_URL = "https://github.com/jonathan-gtd/scribe#troubleshooting"
+
+# Repairs issue ids. Fixed strings (not per-entity) so a recurring condition
+# updates one entry and resolving it deletes that same entry.
+ISSUE_DB_UNREACHABLE = "db_unreachable"
+ISSUE_WRITE_FAILING = "write_failing"
+ISSUE_BUFFER_FULL = "buffer_full"
+ISSUE_DATA_DROPPED = "data_dropped"
+ISSUE_NO_TIMESCALEDB = "no_timescaledb"
+ISSUE_MIGRATION_FAILED = "migration_failed"
+
+# How many consecutive failed flushes before bothering the user: a single
+# failure is a blip (a restart, a brief network drop) and self-heals.
+WRITE_FAILURE_ISSUE_THRESHOLD = 3
+
+
 def _json_default(obj):
     """Encode values json cannot serialize natively, for the jsonb codec.
 
@@ -225,6 +241,9 @@ class ScribeWriter:
         # sync can insert the destination row mid-rename (self-collision), or a
         # flush can COPY states to a metadata_id a rename just merged away.
         self._metadata_lock = asyncio.Lock()
+        # Consecutive failed flushes, used to decide when a transient blip has
+        # become a condition worth surfacing in Repairs.
+        self._consecutive_flush_failures = 0
         
         # asyncpg connection pool (replaces SQLAlchemy engine)
         self._pool: asyncpg.Pool = None
@@ -369,10 +388,22 @@ class ScribeWriter:
                     self._engine = self._pool
 
                     _LOGGER.debug("[writer.start] asyncpg pool created successfully (host=%s, ssl=%s)", self.db_url.split('@')[-1], bool(ssl_arg))
+                    self._clear_issue(ISSUE_DB_UNREACHABLE)
                 except Exception as e:
                     _LOGGER.error(
                         "[writer.start] Failed to create asyncpg pool for %s: %s (%s). Check DB URL, credentials, network and SSL configuration.",
                         self.db_url.split('@')[-1], e, type(e).__name__, exc_info=True,
+                    )
+                    # Nothing will be recorded at all until this is fixed, and
+                    # the only other signal is a log line at startup.
+                    self._report_issue(
+                        ISSUE_DB_UNREACHABLE,
+                        "db_unreachable",
+                        {
+                            "host": self.db_url.split("@")[-1],
+                            "error": f"{e} ({type(e).__name__})",
+                        },
+                        severity=ir.IssueSeverity.ERROR,
                     )
                     self._running = False
                     return
@@ -513,10 +544,21 @@ class ScribeWriter:
                 async with self._pool.acquire() as conn:
                     await self._init_states_view(conn)
 
+                self._clear_issue(ISSUE_MIGRATION_FAILED)
+
             except Exception as e:
                 _LOGGER.error(
                     "[writer._run._launch_migration] Background migration failed: %s (%s)",
                     e, type(e).__name__, exc_info=True,
+                )
+                # A half-migrated database keeps the old history in
+                # states_legacy where nothing reads it. Silence here means the
+                # user believes their history was carried over when it was not.
+                self._report_issue(
+                    ISSUE_MIGRATION_FAILED,
+                    "migration_failed",
+                    {"error": f"{e} ({type(e).__name__})"},
+                    severity=ir.IssueSeverity.ERROR,
                 )
 
         from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
@@ -631,8 +673,11 @@ class ScribeWriter:
                         self.table_name_events, self.chunk_interval, self.compress_after, e, type(e).__name__, exc_info=True,
                     )
 
+            await self._check_timescaledb_available()
+
             _LOGGER.info("[writer.init_db] Database initialized successfully")
             self._connected = True
+            self._clear_issue(ISSUE_DB_UNREACHABLE)
 
         except Exception as e:
             _LOGGER.error(
@@ -1121,6 +1166,39 @@ class ScribeWriter:
                 len(integrations), exc, type(exc).__name__, exc_info=True,
             )
 
+    async def _check_timescaledb_available(self):
+        """Warn once if the database is plain PostgreSQL.
+
+        Scribe keeps working — the tables are ordinary ones — but chunking,
+        compression and the size sensors all silently do nothing, which looks
+        exactly like Scribe being broken rather than the extension missing.
+        """
+        try:
+            installed = await self._fetchval(
+                "SELECT EXISTS (SELECT FROM pg_extension WHERE extname = 'timescaledb')"
+            )
+        except Exception as e:
+            _LOGGER.debug(
+                "[writer._check_timescaledb_available] Extension check failed: %s (%s)",
+                e, type(e).__name__,
+            )
+            return
+
+        if installed:
+            self._clear_issue(ISSUE_NO_TIMESCALEDB)
+            return
+
+        _LOGGER.warning(
+            "[writer._check_timescaledb_available] TimescaleDB extension is not installed: "
+            "history is recorded, but chunking and compression are unavailable."
+        )
+        self._report_issue(
+            ISSUE_NO_TIMESCALEDB,
+            "no_timescaledb",
+            {"host": self.db_url.split("@")[-1]},
+            severity=ir.IssueSeverity.WARNING,
+        )
+
     async def _init_hypertable(self, table_name, segment_by):
         """Initialize hypertable and compression.
 
@@ -1346,6 +1424,14 @@ class ScribeWriter:
                 self._connected = True
                 self._last_error = None
 
+                # Writing works again: retire whatever the failure path raised.
+                if self._consecutive_flush_failures:
+                    self._consecutive_flush_failures = 0
+                    self._clear_issue(ISSUE_WRITE_FAILING)
+                    self._clear_issue(ISSUE_DB_UNREACHABLE)
+                if len(self._queue) < self.max_queue_size:
+                    self._clear_issue(ISSUE_BUFFER_FULL)
+
             except asyncpg.PostgresError as e:
                 msg = str(e)
                 if "\n" in msg:
@@ -1359,6 +1445,7 @@ class ScribeWriter:
 
                 self._connected = False
                 self._last_error = msg
+                self._note_flush_failure(f"{msg} (sqlstate={sqlstate})")
 
                 if self.buffer_on_failure:
                     _LOGGER.warning(
@@ -1373,6 +1460,7 @@ class ScribeWriter:
                 )
                 self._connected = False
                 self._last_error = str(e)
+                self._note_flush_failure(f"{e} ({type(e).__name__})")
 
                 if self.buffer_on_failure:
                     _LOGGER.warning(
@@ -1386,11 +1474,24 @@ class ScribeWriter:
                             "[writer._flush] Buffer full! Queue size: %d (max=%d) — oldest items will be dropped",
                             len(self._queue), self.max_queue_size,
                         )
+                        # From here on history is being lost, silently.
+                        self._report_issue(
+                            ISSUE_BUFFER_FULL,
+                            "buffer_full",
+                            {"max_queue_size": str(self.max_queue_size)},
+                            severity=ir.IssueSeverity.ERROR,
+                        )
                 else:
                     self._dropped_events += len(batch)
                     _LOGGER.warning(
                         "[writer._flush] Dropped %d items (buffering disabled, total dropped since start=%d)",
                         len(batch), self._dropped_events,
+                    )
+                    self._report_issue(
+                        ISSUE_DATA_DROPPED,
+                        "data_dropped",
+                        {"dropped": str(self._dropped_events)},
+                        severity=ir.IssueSeverity.ERROR,
                     )
         except Exception as e:
             _LOGGER.error(
@@ -1625,6 +1726,65 @@ class ScribeWriter:
         finally:
             self._metadata_lock.release()
 
+    def _note_flush_failure(self, error: str):
+        """Count a failed flush and raise an issue once it stops looking transient.
+
+        A single failure is a blip — a database restart, a brief network drop —
+        and the next flush heals it. Repeated ones mean recording has stopped,
+        which otherwise shows up nowhere but the log.
+        """
+        self._consecutive_flush_failures += 1
+        if self._consecutive_flush_failures == WRITE_FAILURE_ISSUE_THRESHOLD:
+            self._report_issue(
+                ISSUE_WRITE_FAILING,
+                "write_failing",
+                {
+                    "failures": str(self._consecutive_flush_failures),
+                    "error": error,
+                },
+                severity=ir.IssueSeverity.ERROR,
+            )
+
+    def _report_issue(
+        self,
+        issue_id: str,
+        translation_key: str,
+        placeholders: Dict[str, str] = None,
+        severity: "ir.IssueSeverity" = ir.IssueSeverity.WARNING,
+    ):
+        """Surface a condition in the Repairs dashboard (best effort).
+
+        Issues are keyed by `issue_id`, so a repeating condition updates one
+        entry instead of piling up, and whoever resolves it calls
+        `_clear_issue` with the same id. Never let UI plumbing break a write.
+        """
+        try:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=severity,
+                translation_key=translation_key,
+                translation_placeholders=placeholders or {},
+                learn_more_url=ISSUE_LEARN_MORE_URL,
+            )
+        except Exception as e:  # never let UI plumbing break the writer
+            _LOGGER.debug(
+                "[writer._report_issue] Could not create repair issue %s: %s (%s)",
+                issue_id, e, type(e).__name__,
+            )
+
+    def _clear_issue(self, issue_id: str):
+        """Retire an issue once its condition no longer holds (best effort)."""
+        try:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+        except Exception as e:
+            _LOGGER.debug(
+                "[writer._clear_issue] Could not delete repair issue %s: %s (%s)",
+                issue_id, e, type(e).__name__,
+            )
+
     def _report_rename_issue(
         self,
         new_entity_id: str,
@@ -1632,37 +1792,19 @@ class ScribeWriter:
         placeholders: Dict[str, str],
         severity: "ir.IssueSeverity" = ir.IssueSeverity.WARNING,
     ):
-        """Surface a refused/failed rename in the Repairs dashboard (best effort).
+        """Report a rename problem, keyed by the destination entity_id.
 
-        Keyed by destination entity_id: repeated attempts on the same name update
-        one issue, and any later successful rename to that name retires it.
+        Repeated attempts on the same name update one issue, and any later
+        successful rename to that name retires it.
         """
-        try:
-            ir.async_create_issue(
-                self.hass,
-                DOMAIN,
-                f"rename_collision_{new_entity_id}",
-                is_fixable=False,
-                severity=severity,
-                translation_key=translation_key,
-                translation_placeholders=placeholders,
-                learn_more_url="https://github.com/jonathan-gtd/scribe/blob/master/datastructre.md",
-            )
-        except Exception as e:  # never let UI plumbing break the writer
-            _LOGGER.debug(
-                "[writer._report_rename_issue] Could not create repair issue for %s: %s (%s)",
-                new_entity_id, e, type(e).__name__,
-            )
+        self._report_issue(
+            f"rename_collision_{new_entity_id}", translation_key,
+            placeholders, severity,
+        )
 
     def _clear_rename_issue(self, new_entity_id: str):
-        """Delete the repair issue for this destination, if one exists (best effort)."""
-        try:
-            ir.async_delete_issue(self.hass, DOMAIN, f"rename_collision_{new_entity_id}")
-        except Exception as e:
-            _LOGGER.debug(
-                "[writer._clear_rename_issue] Could not delete repair issue for %s: %s (%s)",
-                new_entity_id, e, type(e).__name__,
-            )
+        """Delete the repair issue for this destination, if one exists."""
+        self._clear_issue(f"rename_collision_{new_entity_id}")
 
     # ------------------------------------------------------------------
     # Query / stats

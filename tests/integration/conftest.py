@@ -271,6 +271,34 @@ async def write_event(writer, event_type, **overrides):
     await writer._flush()
 
 
+async def reconnect(writer):
+    """Give a writer a fresh pool, with the same jsonb codec start() installs.
+
+    A bare asyncpg pool cannot encode dict attributes, so a reconnection test
+    built on one fails for the wrong reason.
+    """
+    import json
+
+    from homeassistant.helpers.json import JSONEncoder
+
+    from custom_components.scribe.writer import _json_default
+
+    async def init(conn):
+        await conn.set_type_codec(
+            "jsonb",
+            encoder=lambda x: b"\x01" + json.dumps(
+                x, cls=JSONEncoder, default=_json_default).encode("utf-8"),
+            decoder=lambda x: json.loads(x[1:].decode("utf-8")),
+            schema="pg_catalog",
+            format="binary",
+        )
+
+    writer._pool = await asyncpg.create_pool(
+        DSN, min_size=1, max_size=4,
+        max_inactive_connection_lifetime=0, init=init)
+    return writer._pool
+
+
 async def entity_rows(pool, entity_id):
     """Return (entities.id, number of states_raw rows) for an entity_id."""
     async with pool.acquire() as conn:

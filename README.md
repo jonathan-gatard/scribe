@@ -354,6 +354,20 @@ response_variable: query_result
 
 ## Troubleshooting
 
+### Repairs
+
+Scribe reports problems it cannot fix on its own in **Settings → System → Repairs**, so you do not have to watch the logs. Each one disappears by itself once the condition is resolved.
+
+| Repair | What it means |
+| --- | --- |
+| Cannot reach its database | The connection failed at startup: **nothing is being recorded**. Check that the server is up and that the URL and credentials are right. |
+| Cannot write to its database | Several consecutive writes failed. Data is held in memory and written on recovery — unless Home Assistant restarts first. |
+| Buffer is full | Writes failed long enough to saturate the buffer; the oldest records are now being discarded. Fix the database, or raise `max_queue_size`. |
+| Discarding records | A write failed while buffering is disabled, so records were dropped immediately. Enable buffering to survive short outages. |
+| TimescaleDB is not installed | History is recorded, but chunking and compression are unavailable, so the database grows much faster and the size sensors stay empty. |
+| Could not finish migrating old history | The legacy `states` table was not fully converted. Your data is safe in `states_legacy`, but Scribe cannot see it yet. |
+| Entity rename was not applied | A rename collided with an existing row in the database. The entity's history is split across the two IDs. |
+
 ### High memory usage
 - Reduce `max_queue_size`
 - Reduce `flush_interval` for faster writes

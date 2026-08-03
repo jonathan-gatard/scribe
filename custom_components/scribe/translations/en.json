@@ -134,6 +134,30 @@
         "rename_failed": {
             "title": "Entity rename of {old_entity_id} failed",
             "description": "Scribe hit an error while renaming `{old_entity_id}` to `{new_entity_id}` in the database: {error}. The entity's history may now be split across the two IDs. Check the Home Assistant logs for details; renaming the entity again will retry the operation."
+        },
+        "db_unreachable": {
+            "title": "Scribe cannot reach its database",
+            "description": "Scribe could not connect to `{host}` and is **not recording anything**. The database reported: {error}\n\nCheck that the server is running and reachable from Home Assistant, and that the URL, username and password in Scribe's settings are correct. This issue disappears on its own once a connection succeeds — reload the Scribe integration to retry immediately."
+        },
+        "write_failing": {
+            "title": "Scribe cannot write to its database",
+            "description": "The last {failures} attempts to write history failed. Recorded data is being held in memory and will be written once the database recovers, but it will be lost if Home Assistant restarts first — or if the buffer fills up.\n\nThe last error was: {error}\n\nCheck the database server (disk space, connection limits, and its own logs). This issue clears itself as soon as a write succeeds."
+        },
+        "buffer_full": {
+            "title": "Scribe's buffer is full — history is being lost",
+            "description": "Writes have been failing long enough to fill the in-memory buffer ({max_queue_size} items). The oldest records are now being discarded to make room for new ones, so **history is being permanently lost**.\n\nFix the database problem first — see the other Scribe repair, or the Home Assistant logs. If your database is simply slower than your rate of state changes, raise the buffer size in Scribe's settings. This issue clears once writing resumes."
+        },
+        "data_dropped": {
+            "title": "Scribe is discarding records",
+            "description": "{dropped} records have been discarded since Home Assistant started, because a write failed and buffering is disabled in Scribe's settings.\n\nEnable buffering to keep records in memory through a temporary database outage, and check the logs for the underlying write error."
+        },
+        "no_timescaledb": {
+            "title": "TimescaleDB is not installed on Scribe's database",
+            "description": "Scribe is recording to `{host}`, but the TimescaleDB extension is not installed there. History is still being saved and remains queryable — however chunking and **compression are unavailable**, so the database will grow considerably faster, and the size and compression sensors will stay empty.\n\nInstall the extension and run `CREATE EXTENSION timescaledb;` on this database, then restart Home Assistant. This issue disappears once the extension is detected."
+        },
+        "migration_failed": {
+            "title": "Scribe could not finish migrating your old history",
+            "description": "Scribe converts the legacy `states` table into its current format in the background, and this failed with: {error}\n\nYour old history is not lost — it is kept in a table named `states_legacy` — but it is not visible to Scribe until the migration completes. New states are being recorded normally in the meantime.\n\nCheck the Home Assistant logs for the failing step, then restart Home Assistant to retry."
         }
     }
 }
