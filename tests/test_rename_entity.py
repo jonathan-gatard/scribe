@@ -1,4 +1,6 @@
 """Tests for ScribeWriter.rename_entity collision handling."""
+import asyncio
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -168,6 +170,61 @@ async def test_rename_reuses_dead_orphan(writer, mock_db_connection):
     assert "sensor.new" not in writer._entity_id_map
     assert 17 not in writer._metadata_id_map
     assert 42 not in writer._metadata_id_map
+
+
+@pytest.mark.asyncio
+async def test_rename_self_collision_merges(hass, writer, mock_db_connection):
+    """Occupant row belongs to the renamed entity itself: merge, no refusal.
+
+    Reproduces the race seen live on 3.7.0b1: a concurrent registry-sync task
+    inserted the destination row (full metadata, same entity) before
+    rename_entity ran, so the occupant's unique_id resolved to new_entity_id.
+    """
+    _raise_unique_violation_once(mock_db_connection)
+
+    async def fetchrow_side_effect(sql, *args):
+        if args == ("sensor.new",):
+            return {"id": 42, "unique_id": "uid-self",
+                    "domain": "sensor", "platform": "mqtt"}
+        if args == ("sensor.old",):
+            return {"id": 17}
+        return None
+
+    mock_db_connection.fetchrow.side_effect = fetchrow_side_effect
+    registry = MagicMock()
+    # The occupant's unique_id resolves to the destination itself.
+    registry.async_get_entity_id.return_value = "sensor.new"
+
+    with patch(
+        "custom_components.scribe.writer.er.async_get", return_value=registry
+    ):
+        await writer.rename_entity("sensor.old", "sensor.new")
+
+    executed = _executed_sql(mock_db_connection)
+    # Same merge sequence as the dead-orphan path.
+    assert executed[1] == (
+        "UPDATE states_raw SET metadata_id = $1 WHERE metadata_id = $2", (17, 42))
+    assert executed[2] == ("DELETE FROM entities WHERE id = $1", (42,))
+    assert executed[3] == (
+        "UPDATE entities SET entity_id = $1 WHERE entity_id = $2",
+        ("sensor.new", "sensor.old"))
+    assert len(executed) == 4
+    # No repair issue: nothing was refused.
+    assert _get_issue(hass) is None
+
+
+@pytest.mark.asyncio
+async def test_rename_waits_for_metadata_lock(writer, mock_db_connection):
+    """rename_entity serializes behind the metadata lock (no interleaving)."""
+    mock_db_connection.execute.return_value = "UPDATE 1"
+    async with writer._metadata_lock:
+        task = asyncio.ensure_future(
+            writer.rename_entity("sensor.old", "sensor.new"))
+        await asyncio.sleep(0)
+        # Lock held elsewhere: the rename must not have touched the DB yet.
+        mock_db_connection.execute.assert_not_called()
+    await task
+    mock_db_connection.execute.assert_called_once()
 
 
 @pytest.mark.asyncio

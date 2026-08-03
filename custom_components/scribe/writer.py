@@ -196,6 +196,12 @@ class ScribeWriter:
         # Queue
         self._queue: deque = deque(maxlen=max_queue_size)
         self._flush_pending = False  # Prevent multiple flush tasks
+        # Serializes every write that touches entity metadata (rename_entity,
+        # write_entities, and the flush section that resolves/uses metadata_ids).
+        # HA fires registry events as concurrent tasks: without this, a metadata
+        # sync can insert the destination row mid-rename (self-collision), or a
+        # flush can COPY states to a metadata_id a rename just merged away.
+        self._metadata_lock = asyncio.Lock()
         
         # asyncpg connection pool (replaces SQLAlchemy engine)
         self._pool: asyncpg.Pool = None
@@ -797,6 +803,10 @@ class ScribeWriter:
             return
 
         _LOGGER.debug("[writer.write_entities] Processing %d entities...", len(entities))
+        # Serialized with rename_entity: without this, a registry-sync task can
+        # insert the destination row while a rename of the same entity is
+        # in flight (HA fires registry events as concurrent tasks).
+        await self._metadata_lock.acquire()
         try:
             text_fields = ["entity_id", "unique_id", "platform", "domain", "name", "device_id", "area_id"]
             for entity in entities:
@@ -908,6 +918,8 @@ class ScribeWriter:
                 "[writer.write_entities] Error syncing %d entities (sample=%s): %s (%s)",
                 len(entities), [e.get('entity_id') for e in entities[:3]], e, type(e).__name__, exc_info=True,
             )
+        finally:
+            self._metadata_lock.release()
 
     async def _init_areas_table(self, conn):
         """Initialize areas table."""
@@ -1206,49 +1218,53 @@ class ScribeWriter:
                 # Run CPU-intensive serialization in executor
                 states_data, events_data = await self.hass.async_add_executor_job(_process_batch, batch)
 
-                # Resolve Metadata IDs for states
-                if states_data:
-                    eids = set()
-                    for s in states_data:
-                        if 'entity_id' in s:
-                            eids.add(s['entity_id'])
-                    
-                    if eids:
-                        await self._ensure_metadata_ids(list(eids))
-                    
-                    final_states_data = []
-                    for s in states_data:
-                        eid = s.pop('entity_id', None)
-                        if eid and eid in self._entity_id_map:
-                            s['metadata_id'] = self._entity_id_map[eid]
-                            final_states_data.append(s)
-                        else:
-                            _LOGGER.warning("[writer._flush] Skipping state for unknown entity_id: %r (not in cache — INSERT into entities may have failed)", eid)
+                # Held from metadata_id resolution through the COPY: a concurrent
+                # rename must not move/delete a metadata_id in between, or the
+                # copied rows would be stranded under a deleted id.
+                async with self._metadata_lock:
+                    # Resolve Metadata IDs for states
+                    if states_data:
+                        eids = set()
+                        for s in states_data:
+                            if 'entity_id' in s:
+                                eids.add(s['entity_id'])
 
-                    states_data = final_states_data
+                        if eids:
+                            await self._ensure_metadata_ids(list(eids))
 
-                async with self._pool.acquire() as conn:
-                    async with conn.transaction():
-                        if states_data:
-                            await self._copy_records(
-                                conn=conn,
-                                table_name="states_raw",
-                                columns=["time", "metadata_id", "state", "value", "attributes"],
-                                records=[
-                                    (s['time'], s['metadata_id'], s.get('state'), s.get('value'), s.get('attributes'))
-                                    for s in states_data
-                                ],
-                            )
-                        if events_data:
-                            await self._copy_records(
-                                conn=conn,
-                                table_name=self.table_name_events,
-                                columns=["time", "event_type", "event_data", "origin", "context_id", "context_user_id", "context_parent_id"],
-                                records=[
-                                    (e['time'], e['event_type'], e.get('event_data'), e.get('origin'), e.get('context_id'), e.get('context_user_id'), e.get('context_parent_id'))
-                                    for e in events_data
-                                ],
-                            )
+                        final_states_data = []
+                        for s in states_data:
+                            eid = s.pop('entity_id', None)
+                            if eid and eid in self._entity_id_map:
+                                s['metadata_id'] = self._entity_id_map[eid]
+                                final_states_data.append(s)
+                            else:
+                                _LOGGER.warning("[writer._flush] Skipping state for unknown entity_id: %r (not in cache — INSERT into entities may have failed)", eid)
+
+                        states_data = final_states_data
+
+                    async with self._pool.acquire() as conn:
+                        async with conn.transaction():
+                            if states_data:
+                                await self._copy_records(
+                                    conn=conn,
+                                    table_name="states_raw",
+                                    columns=["time", "metadata_id", "state", "value", "attributes"],
+                                    records=[
+                                        (s['time'], s['metadata_id'], s.get('state'), s.get('value'), s.get('attributes'))
+                                        for s in states_data
+                                    ],
+                                )
+                            if events_data:
+                                await self._copy_records(
+                                    conn=conn,
+                                    table_name=self.table_name_events,
+                                    columns=["time", "event_type", "event_data", "origin", "context_id", "context_user_id", "context_parent_id"],
+                                    records=[
+                                        (e['time'], e['event_type'], e.get('event_data'), e.get('origin'), e.get('context_id'), e.get('context_user_id'), e.get('context_parent_id'))
+                                        for e in events_data
+                                    ],
+                                )
                 
                 duration = time.time() - start_time
                 self._states_written += len(states_data)
@@ -1356,6 +1372,11 @@ class ScribeWriter:
         _LOGGER.info("[writer.rename_entity] Renaming entity %s -> %s", old_entity_id, new_entity_id)
 
         merged_orphan_rows = None
+        merge_reason = None
+        # Serialized with write_entities and the flush metadata section — see
+        # _metadata_lock. Held through cache invalidation so no flush can
+        # resolve entity_ids against a half-renamed state.
+        await self._metadata_lock.acquire()
         try:
             async with self._pool.acquire() as conn:
                 async with conn.transaction():
@@ -1395,11 +1416,21 @@ class ScribeWriter:
                                 occupant_live_eid = reg.async_get_entity_id(
                                     occ["domain"], occ["platform"], occ["unique_id"],
                                 )
-                            if occupant_live_eid is not None or not provable:
-                                # Occupant is still live, or cannot be proven dead:
-                                # refuse. Nothing is modified (safe no-op), but the
-                                # user must hear about it — their history is now
-                                # split across the two ids.
+                            if occupant_live_eid == new_entity_id:
+                                # Self-collision: the occupant row belongs to the
+                                # renamed entity itself — a concurrent metadata sync
+                                # (registry event task) inserted the destination row
+                                # before this rename ran. Every row involved belongs
+                                # to this one entity, so merging is unconditionally
+                                # safe. The _metadata_lock prevents new occurrences;
+                                # this branch heals rows created before the lock
+                                # existed or by paths outside it.
+                                merge_reason = "self-collision (row created by a concurrent metadata sync)"
+                            elif occupant_live_eid is not None or not provable:
+                                # Occupant is a *different* live entity, or cannot be
+                                # proven dead: refuse. Nothing is modified (safe
+                                # no-op), but the user must hear about it — their
+                                # history is now split across the two ids.
                                 _LOGGER.error(
                                     "[writer.rename_entity] Refusing %s -> %s: destination is "
                                     "not a provably-dead orphan (live_entity=%s, unique_id=%s, "
@@ -1428,9 +1459,13 @@ class ScribeWriter:
                                         },
                                     )
                                 return
-                            # Provably dead orphan: reuse it. Fold its history into
-                            # the renamed entity's metadata_id, drop its row, then
-                            # rename — one continuous history under the new name.
+                            else:
+                                # Provably dead orphan: reuse it (typical case: the
+                                # same device re-added with a new unique_id).
+                                merge_reason = "dead orphan"
+                            # Fold the occupant's history into the renamed entity's
+                            # metadata_id, drop its row, then rename — one
+                            # continuous history under the new name.
                             live = await conn.fetchrow(
                                 "SELECT id FROM entities WHERE entity_id = $1",
                                 old_entity_id,
@@ -1474,9 +1509,9 @@ class ScribeWriter:
             if merged_orphan_rows is not None:
                 _LOGGER.warning(
                     "[writer.rename_entity] Renamed entity %s -> %s: destination was a "
-                    "dead orphan; reused it by merging %s history rows into the "
-                    "renamed entity and deleting the orphan metadata row.",
-                    old_entity_id, new_entity_id,
+                    "%s; reused it by merging %s history rows into the "
+                    "renamed entity and deleting the occupant metadata row.",
+                    old_entity_id, new_entity_id, merge_reason,
                     "an unknown number of" if merged_orphan_rows < 0 else merged_orphan_rows,
                 )
             else:
@@ -1502,6 +1537,8 @@ class ScribeWriter:
                 },
                 severity=ir.IssueSeverity.ERROR,
             )
+        finally:
+            self._metadata_lock.release()
 
     def _report_rename_issue(
         self,
