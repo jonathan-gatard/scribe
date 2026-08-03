@@ -48,7 +48,7 @@ jobs:
           zip -r scribe.zip scribe
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           files: custom_components/scribe.zip
           generate_release_notes: true
