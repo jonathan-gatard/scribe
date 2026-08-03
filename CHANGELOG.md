@@ -4,13 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [3.8.0] - 2026-08-03
 
-First published as `3.8.0rc1`, a pre-release: HACS only offers it to users who
-enabled beta versions for this repository.
+Published as a pre-release: HACS only offers it to users who enabled beta
+versions for this repository.
 
 ### Added
 - **Repairs issues for the failures that used to be log-only**: Scribe now surfaces six more conditions in Home Assistant's Repairs dashboard, each explaining the consequence and the fix, and each retiring itself automatically once resolved — an unreachable database (nothing is being recorded), repeated write failures (data held in memory, lost on restart), a saturated buffer (history being discarded), records dropped because buffering is disabled, a missing TimescaleDB extension (no chunking or compression, database grows much faster, size sensors stay empty), and a failed legacy migration (old history stranded in `states_legacy`). Write failures only raise an issue after three consecutive flushes fail, so a database restart or a brief network drop stays silent. Translated in English and French, and documented in the README's Troubleshooting section.
 
 ### Fixed
+- **Options set in the UI were ignored whenever `configuration.yaml` had a `scribe:` block (#52)**: Home Assistant validates that block against Scribe's schema before setup, and the validation filled in *every* optional key with its default. A YAML file containing nothing but `db_url` therefore reached Scribe as a config that also declared `enable_stats_io: false`, empty filter lists, and so on — and YAML outranks the options flow. Settings were saved and redisplayed as enabled, but never applied: the reporter had all three statistics toggles on and only `binary_sensor.scribe_database_connection` created. The schema no longer injects defaults, so keys you did not write fall through to your UI options; YAML still wins for keys you actually set. Reported by @shaver.
 - **Recording could stall permanently on duplicate timestamps**: two states for the same entity at the same instant — Home Assistant emits them when a restored state meets a live one, or on `force_update` — violated `states_raw`'s `(metadata_id, time)` primary key. `COPY` has no `ON CONFLICT` clause, so the **whole batch** failed, was re-buffered, and failed again on every retry: the queue grew to its cap and Scribe stopped recording until restart. Batches are now de-duplicated on that key before the write (last state wins), and a batch colliding with rows already stored falls back to `ON CONFLICT DO NOTHING` instead of aborting.
 - **Flush crash on `date` attributes**: an entity exposing a plain `datetime.date` in its attributes (expiry dates, calendar entities, `input_datetime` helpers in date mode) raised `Object of type date is not JSON serializable` inside the jsonb codec, killing the **entire flush batch** — every state and event in it lost or endlessly re-buffered. Home Assistant's `JSONEncoder` handles `datetime` but not a bare `date`; the 3.6.1 fix for #40 addressed the `time` column and left this path open. Dates are now serialized as ISO strings.
 
