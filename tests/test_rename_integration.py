@@ -14,6 +14,8 @@ import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 
+from unittest.mock import patch
+
 import asyncpg
 import pytest
 
@@ -37,8 +39,22 @@ async def _dsn_reachable() -> bool:
 
 @pytest.fixture(autouse=True)
 def mock_create_pool():
-    """Neutralize conftest's autouse asyncpg patch — we want the real thing."""
-    yield None
+    """Override conftest's autouse patch: use the real asyncpg, minus idle timers.
+
+    asyncpg keeps a `call_later` timer per pooled connection to retire idle ones.
+    It outlives the test and trips Home Assistant's lingering-timer check, so
+    connections are made to never expire instead.
+    """
+    real_create_pool = asyncpg.create_pool
+
+    def factory(*args, **kwargs):
+        kwargs.setdefault("max_inactive_connection_lifetime", 0)
+        return real_create_pool(*args, **kwargs)
+
+    with patch(
+        "custom_components.scribe.writer.asyncpg.create_pool", side_effect=factory
+    ):
+        yield
 
 
 @pytest.fixture
@@ -85,7 +101,7 @@ async def writer(hass, clean_db):
     await w.start()
     assert w._pool is not None, "writer failed to connect"
     yield w
-    await w.stop()
+    await w.stop()  # closes the pool and clears it
 
 
 @pytest.fixture
