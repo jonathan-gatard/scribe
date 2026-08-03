@@ -235,7 +235,9 @@ async def test_rename_waits_for_metadata_lock(writer, mock_db_connection):
         await asyncio.sleep(0)
         # Lock held elsewhere: the rename must not have touched the DB yet.
         mock_db_connection.execute.assert_not_called()
-    await task
+    # Bounded: a regression that never acquires the lock fails the test
+    # instead of hanging the suite.
+    await asyncio.wait_for(task, timeout=5)
     mock_db_connection.execute.assert_called_once()
 
 
