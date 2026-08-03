@@ -12,6 +12,7 @@ import asyncio
 import ssl
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Any, Dict
 from collections import deque
 import dataclasses
@@ -107,6 +108,25 @@ def _normalize_dsn(db_url: str) -> str:
     asyncpg uses postgresql:// (or postgres://), not postgresql+asyncpg://.
     """
     return db_url.replace("postgresql+asyncpg://", "postgresql://")
+
+
+def _safe_target(db_url: str) -> str:
+    """Describe where a DSN points, with no chance of carrying its credentials.
+
+    This ends up in logs and in Repairs cards, so it is built from the parsed
+    host, port and database name rather than by slicing the URL — a split on
+    '@' happens to be safe today but cannot be proven so, and one edit away
+    from leaking a password.
+    """
+    try:
+        parts = urlsplit(db_url)
+        target = parts.hostname or "?"
+        if parts.port:
+            target = f"{target}:{parts.port}"
+        database = parts.path.lstrip("/")
+        return f"{target}/{database}" if database else target
+    except Exception:
+        return "?"
 
 
 ISSUE_LEARN_MORE_URL = "https://github.com/jonathan-gtd/scribe#troubleshooting"
@@ -342,7 +362,7 @@ class ScribeWriter:
             # Create connection pool
             if not self._pool:
                 try:
-                    _LOGGER.debug("[writer.start] Creating asyncpg pool for %s", self.db_url.split('@')[-1])
+                    _LOGGER.debug("[writer.start] Creating asyncpg pool for %s", _safe_target(self.db_url))
 
                     ssl_arg = False  # default: no SSL
                     if self.use_ssl:
@@ -387,12 +407,12 @@ class ScribeWriter:
                     # Expose pool as _engine so migration.py can use it
                     self._engine = self._pool
 
-                    _LOGGER.debug("[writer.start] asyncpg pool created successfully (host=%s, ssl=%s)", self.db_url.split('@')[-1], bool(ssl_arg))
+                    _LOGGER.debug("[writer.start] asyncpg pool created successfully (host=%s, ssl=%s)", _safe_target(self.db_url), bool(ssl_arg))
                     self._clear_issue(ISSUE_DB_UNREACHABLE)
                 except Exception as e:
                     _LOGGER.error(
                         "[writer.start] Failed to create asyncpg pool for %s: %s (%s). Check DB URL, credentials, network and SSL configuration.",
-                        self.db_url.split('@')[-1], e, type(e).__name__, exc_info=True,
+                        _safe_target(self.db_url), e, type(e).__name__, exc_info=True,
                     )
                     # Nothing will be recorded at all until this is fixed, and
                     # the only other signal is a log line at startup.
@@ -400,7 +420,7 @@ class ScribeWriter:
                         ISSUE_DB_UNREACHABLE,
                         "db_unreachable",
                         {
-                            "host": self.db_url.split("@")[-1],
+                            "host": _safe_target(self.db_url),
                             "error": f"{e} ({type(e).__name__})",
                         },
                         severity=ir.IssueSeverity.ERROR,
@@ -1195,7 +1215,7 @@ class ScribeWriter:
         self._report_issue(
             ISSUE_NO_TIMESCALEDB,
             "no_timescaledb",
-            {"host": self.db_url.split("@")[-1]},
+            {"host": _safe_target(self.db_url)},
             severity=ir.IssueSeverity.WARNING,
         )
 

@@ -218,7 +218,7 @@ async def test_query_service_returns_rows(hass, scribe_entry):
 @pytest.mark.asyncio
 async def test_query_service_reports_errors(hass, scribe_entry):
     """A failing query surfaces as HomeAssistantError, not a silent empty list."""
-    entry, writer = await scribe_entry()
+    await scribe_entry()
 
     with pytest.raises(HomeAssistantError):
         await hass.services.async_call(
@@ -290,7 +290,7 @@ async def test_stats_sensor_entities_report_values(hass, scribe_entry):
 @pytest.mark.asyncio
 async def test_connection_binary_sensor_reflects_the_pool(hass, scribe_entry):
     """The connectivity entity is on while the writer holds a working pool."""
-    entry, writer = await scribe_entry()
+    await scribe_entry()
 
     state = hass.states.get("binary_sensor.scribe_database_connection")
     assert state is not None
