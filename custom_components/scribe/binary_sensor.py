@@ -16,7 +16,22 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+import re
+
 from .const import DOMAIN
+
+# A state attribute is readable by every Home Assistant user and is written to
+# the recorder, the logbook and the history. `last_error` is raw driver text,
+# so any connection string inside it would be persisted in all three. Today's
+# asyncpg messages do not carry one; this makes sure a future one cannot.
+_DSN_PATTERN = re.compile(r"\b[a-z+]*(?:postgres|postgresql)://[^\s'\"]+", re.I)
+
+
+def _redact_dsn(message: str | None) -> str | None:
+    """Replace any connection string in an error message with a marker."""
+    if not message:
+        return message
+    return _DSN_PATTERN.sub("<redacted-database-url>", message)
 
 
 async def async_setup_entry(
@@ -66,5 +81,5 @@ class ScribeConnectionBinarySensor(BinarySensorEntity):
 
     @property
     def extra_state_attributes(self):
-        """Return error message if any."""
-        return {"last_error": self._writer._last_error}
+        """Return error message if any, with any connection string removed."""
+        return {"last_error": _redact_dsn(self._writer._last_error)}

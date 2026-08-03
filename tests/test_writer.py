@@ -93,11 +93,9 @@ async def test_writer_init_db(writer, mock_pool, mock_db_connection):
     assert any("create_hypertable('states_raw'" in c for c in calls)
     assert any("create_hypertable('events'" in c for c in calls)
 
-    # Check for initial count queries
-    # SELECT count(*) FROM states (view) or states_raw?
-    # writer.py: SELECT count(*) FROM {self.table_name_states} -> "states" view
-    assert any("SELECT count(*) FROM states" in c for c in calls)
-    assert any("SELECT count(*) FROM events" in c for c in calls)
+    # Initial row counts come from the planner statistics: count(*) walks every
+    # chunk on a large install and would run at every Home Assistant start.
+    assert any("approximate_row_count" in c for c in calls)
 
 
 @pytest.mark.asyncio

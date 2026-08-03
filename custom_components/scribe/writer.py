@@ -164,6 +164,11 @@ ISSUE_MIGRATION_FAILED = "migration_failed"
 # failure is a blip (a restart, a brief network drop) and self-heals.
 WRITE_FAILURE_ISSUE_THRESHOLD = 3
 
+# Ceiling for the `scribe.query` service, in milliseconds. Long enough for a
+# genuine report over a year of history, short enough that a runaway query
+# cannot hold a pooled connection and hammer the server indefinitely.
+QUERY_TIMEOUT_MS = 120_000
+
 
 def _json_default(obj):
     """Encode values json cannot serialize natively, for the jsonb codec.
@@ -502,24 +507,49 @@ class ScribeWriter:
             )
             raise
 
+    async def _row_count(self, hypertable: str, fallback_relation: str) -> int:
+        """Row count for a table, without scanning it when that can be avoided.
+
+        `SELECT count(*)` here is not cheap: on a year-old install it aggregates
+        tens of millions of rows across every chunk, decompressing each one, at
+        every Home Assistant start. TimescaleDB's approximate_row_count() reads
+        the planner statistics instead and answers in milliseconds — accurate
+        enough for a "total written" counter. Plain PostgreSQL still gets the
+        exact count, where the table is small enough for it not to matter.
+        """
+        try:
+            approx = await self._fetchval(
+                "SELECT approximate_row_count($1::regclass)", hypertable
+            )
+            # A zero estimate means either a genuinely empty table or planner
+            # statistics that have not been gathered yet (a fresh install, or a
+            # bulk import before autovacuum caught up). Both are worth the exact
+            # count: the first answers instantly, and the second would otherwise
+            # leave the counter stuck at zero.
+            if approx:
+                return int(approx)
+        except Exception as e:
+            _LOGGER.debug(
+                "[writer._row_count] approximate_row_count unavailable for %s: %s (%s)"
+                " — falling back to an exact count",
+                hypertable,
+                e,
+                type(e).__name__,
+            )
+        return await self._fetchval(f"SELECT count(*) FROM {fallback_relation}") or 0
+
     async def _get_initial_counts(self):
         """Fetch initial row counts from database."""
         _LOGGER.debug("[writer._get_initial_counts] Fetching initial row counts...")
         try:
             if self.record_states:
-                self._states_written = (
-                    await self._fetchval(
-                        f"SELECT count(*) FROM {self.table_name_states}"
-                    )
-                    or 0
+                self._states_written = await self._row_count(
+                    "states_raw", self.table_name_states
                 )
 
             if self.record_events:
-                self._events_written = (
-                    await self._fetchval(
-                        f"SELECT count(*) FROM {self.table_name_events}"
-                    )
-                    or 0
+                self._events_written = await self._row_count(
+                    self.table_name_events, self.table_name_events
                 )
 
             _LOGGER.debug(
@@ -2175,11 +2205,17 @@ class ScribeWriter:
             async with self._pool.acquire() as conn:
                 async with conn.transaction():
                     await conn.execute("SET LOCAL TRANSACTION READ ONLY")
-                    try:
-                        rows = await conn.fetch(sql)
-                        return [dict(row) for row in rows]
-                    except Exception:
-                        raise
+                    # Bound the query. This service takes arbitrary SQL from the
+                    # UI or an automation, and an unbounded one pins a pooled
+                    # connection while it works the server — a single careless
+                    # aggregate over a large hypertable can starve the writer and
+                    # drag the whole machine into swap. SET LOCAL is scoped to
+                    # this transaction, so nothing else is affected.
+                    await conn.execute(
+                        f"SET LOCAL statement_timeout = {QUERY_TIMEOUT_MS}"
+                    )
+                    rows = await conn.fetch(sql)
+                    return [dict(row) for row in rows]
         except Exception as e:
             sqlstate = getattr(e, "sqlstate", None)
             _LOGGER.error(
