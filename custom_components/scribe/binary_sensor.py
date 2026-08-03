@@ -4,6 +4,7 @@ This module provides a binary sensor to indicate the connectivity status of the
 database writer. It helps users quickly identify if Scribe is successfully
 connected to the TimescaleDB instance.
 """
+
 from __future__ import annotations
 
 from homeassistant.components.binary_sensor import (
@@ -17,6 +18,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -24,16 +26,17 @@ async def async_setup_entry(
 ) -> None:
     """Set up Scribe binary sensors."""
     writer = hass.data[DOMAIN][entry.entry_id]["writer"]
-    
+
     entities = [
         ScribeConnectionBinarySensor(writer, entry),
     ]
-    
+
     async_add_entities(entities)
+
 
 class ScribeConnectionBinarySensor(BinarySensorEntity):
     """Binary sensor for DB connection status.
-    
+
     Reflects the `_connected` state of the writer.
     Also exposes the last error message as an attribute for debugging.
     """
@@ -64,6 +67,4 @@ class ScribeConnectionBinarySensor(BinarySensorEntity):
     @property
     def extra_state_attributes(self):
         """Return error message if any."""
-        return {
-            "last_error": self._writer._last_error
-        }
+        return {"last_error": self._writer._last_error}

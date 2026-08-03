@@ -7,6 +7,7 @@ to minimize database connection overhead and blocking.
 NOTE: This version uses asyncpg directly (no SQLAlchemy) to avoid the greenlet
 dependency which is not available on Python 3.14 / Alpine Linux (Home Assistant OS).
 """
+
 import logging
 import asyncio
 import ssl
@@ -37,19 +38,23 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-def _create_ssl_context(ssl_root_cert=None, ssl_cert_file=None, ssl_key_file=None) -> ssl.SSLContext:
+def _create_ssl_context(
+    ssl_root_cert=None, ssl_cert_file=None, ssl_key_file=None
+) -> ssl.SSLContext:
     """Create and configure SSL context in executor thread.
-    
+
     asyncpg calls ssl.load_cert_chain() synchronously when establishing SSL connections.
     By creating the SSLContext here (in an executor thread) and passing it to asyncpg,
     we avoid blocking Home Assistant's event loop.
-    
+
     This function must be run via hass.async_add_executor_job().
-    
+
     Returns:
         Configured SSLContext ready to be used by asyncpg
     """
-    _LOGGER.debug("[writer._create_ssl_context] Creating SSL context in executor thread...")
+    _LOGGER.debug(
+        "[writer._create_ssl_context] Creating SSL context in executor thread..."
+    )
 
     # Create SSL context
     ssl_context = ssl.create_default_context()
@@ -61,19 +66,28 @@ def _create_ssl_context(ssl_root_cert=None, ssl_cert_file=None, ssl_key_file=Non
     except Exception as e:
         _LOGGER.warning(
             "[writer._create_ssl_context] Could not load system CA certificates: %s (%s) — continuing with built-in defaults",
-            e, type(e).__name__,
+            e,
+            type(e).__name__,
         )
 
     # Load PostgreSQL client certificates
     if ssl_cert_file:
         if Path(ssl_cert_file).exists():
             try:
-                _LOGGER.debug("[writer._create_ssl_context] Loading PostgreSQL client certificate from %s (key=%s)", ssl_cert_file, ssl_key_file)
+                _LOGGER.debug(
+                    "[writer._create_ssl_context] Loading PostgreSQL client certificate from %s (key=%s)",
+                    ssl_cert_file,
+                    ssl_key_file,
+                )
                 ssl_context.load_cert_chain(ssl_cert_file, ssl_key_file)
             except Exception as e:
                 _LOGGER.error(
                     "[writer._create_ssl_context] Could not load cert chain from %s (key=%s): %s (%s)",
-                    ssl_cert_file, ssl_key_file, e, type(e).__name__, exc_info=True,
+                    ssl_cert_file,
+                    ssl_key_file,
+                    e,
+                    type(e).__name__,
+                    exc_info=True,
                 )
         else:
             _LOGGER.warning(
@@ -85,12 +99,18 @@ def _create_ssl_context(ssl_root_cert=None, ssl_cert_file=None, ssl_key_file=Non
     if ssl_root_cert:
         if Path(ssl_root_cert).exists():
             try:
-                _LOGGER.debug("[writer._create_ssl_context] Loading CA certificate from %s", ssl_root_cert)
+                _LOGGER.debug(
+                    "[writer._create_ssl_context] Loading CA certificate from %s",
+                    ssl_root_cert,
+                )
                 ssl_context.load_verify_locations(ssl_root_cert)
             except Exception as e:
                 _LOGGER.error(
                     "[writer._create_ssl_context] Could not load CA cert from %s: %s (%s)",
-                    ssl_root_cert, e, type(e).__name__, exc_info=True,
+                    ssl_root_cert,
+                    e,
+                    type(e).__name__,
+                    exc_info=True,
                 )
         else:
             _LOGGER.warning(
@@ -177,6 +197,7 @@ def _validate_table_name(name: str) -> str:
     Raises ValueError if the name is invalid.
     """
     import re
+
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
         raise ValueError(
             f"Invalid table name '{name}': only letters, digits, and underscores are allowed"
@@ -186,27 +207,27 @@ def _validate_table_name(name: str) -> str:
 
 class ScribeWriter:
     """Handle database connections and writing.
-    
+
     This class runs as an asyncio task. It maintains a queue of events to be written.
     Data is flushed to the database when the queue reaches BATCH_SIZE or when
     FLUSH_INTERVAL seconds have passed.
-    
+
     Uses asyncpg directly (no SQLAlchemy) to avoid the greenlet dependency.
     """
 
     def __init__(
-        self, 
-        hass: HomeAssistant, 
-        db_url: str, 
-        chunk_interval: str, 
-        compress_after: str, 
-        record_states: bool, 
-        record_events: bool, 
-        batch_size: int, 
-        flush_interval: int, 
-        max_queue_size: int, 
-        buffer_on_failure: bool, 
-        table_name_states: str, 
+        self,
+        hass: HomeAssistant,
+        db_url: str,
+        chunk_interval: str,
+        compress_after: str,
+        record_states: bool,
+        record_events: bool,
+        batch_size: int,
+        flush_interval: int,
+        max_queue_size: int,
+        buffer_on_failure: bool,
+        table_name_states: str,
         table_name_events: str,
         use_ssl: bool = False,
         ssl_root_cert: str | None = None,
@@ -219,10 +240,10 @@ class ScribeWriter:
     ):
         """Initialize the writer."""
         self.hass = hass
-        
+
         # Normalize DSN - strip SQLAlchemy dialect prefix if present
         self.db_url = _normalize_dsn(db_url)
-            
+
         self.chunk_interval = chunk_interval
         self.compress_after = compress_after
         self.record_states = record_states
@@ -241,7 +262,7 @@ class ScribeWriter:
         self.enable_table_devices = enable_table_devices
         self.enable_table_integrations = enable_table_integrations
         self.enable_table_users = enable_table_users
-        
+
         # Stats for sensors
         self._states_written = 0
         self._events_written = 0
@@ -251,7 +272,7 @@ class ScribeWriter:
         self._states_history = deque()
         self._events_history = deque()
         self._dropped_events = 0
-        
+
         # Queue
         self._queue: deque = deque(maxlen=max_queue_size)
         self._flush_pending = False  # Prevent multiple flush tasks
@@ -264,15 +285,15 @@ class ScribeWriter:
         # Consecutive failed flushes, used to decide when a transient blip has
         # become a condition worth surfacing in Repairs.
         self._consecutive_flush_failures = 0
-        
+
         # asyncpg connection pool (replaces SQLAlchemy engine)
         self._pool: asyncpg.Pool = None
         # Keep _engine as alias for migration.py compatibility
         self._engine = None
-        
+
         self._task = None
         self._running = False
-        
+
         # ID Cache: entity_id -> metadata_id
         self._entity_id_map: dict[str, int] = {}
         # Reverse Cache: metadata_id -> entity_id (for debugging/renames if needed)
@@ -293,7 +314,14 @@ class ScribeWriter:
             async with conn.transaction():
                 await conn.executemany(sql, args_list)
 
-    async def _copy_records(self, conn: asyncpg.Connection, table_name: str, columns: list[str], records: list[tuple[Any, ...]], conflict_target: str | None = None):
+    async def _copy_records(
+        self,
+        conn: asyncpg.Connection,
+        table_name: str,
+        columns: list[str],
+        records: list[tuple[Any, ...]],
+        conflict_target: str | None = None,
+    ):
         """Write batched records via PostgreSQL COPY, falling back to executemany if unavailable.
 
         COPY has no ON CONFLICT clause, so a row colliding with one already in
@@ -322,11 +350,15 @@ class ScribeWriter:
                 _LOGGER.warning(
                     "[writer._copy_records] COPY into %s hit an existing row; "
                     "retrying %d records with ON CONFLICT (%s) DO NOTHING.",
-                    table_name, len(records), conflict_target,
+                    table_name,
+                    len(records),
+                    conflict_target,
                 )
 
         placeholders = ", ".join(f"${idx}" for idx in range(1, len(columns) + 1))
-        fallback_sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+        fallback_sql = (
+            f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+        )
         if conflict_target:
             fallback_sql += f" ON CONFLICT ({conflict_target}) DO NOTHING"
         await conn.executemany(fallback_sql, records)
@@ -362,7 +394,10 @@ class ScribeWriter:
             # Create connection pool
             if not self._pool:
                 try:
-                    _LOGGER.debug("[writer.start] Creating asyncpg pool for %s", _safe_target(self.db_url))
+                    _LOGGER.debug(
+                        "[writer.start] Creating asyncpg pool for %s",
+                        _safe_target(self.db_url),
+                    )
 
                     ssl_arg = False  # default: no SSL
                     if self.use_ssl:
@@ -380,21 +415,25 @@ class ScribeWriter:
                         key_file = resolve_path(self.ssl_key_file)
 
                         # Create SSL context in executor to avoid blocking the event loop
-                        _LOGGER.debug("[writer.start] SSL enabled, creating SSL context in executor...")
+                        _LOGGER.debug(
+                            "[writer.start] SSL enabled, creating SSL context in executor..."
+                        )
                         ssl_arg = await self.hass.async_add_executor_job(
-                            _create_ssl_context,
-                            root_cert,
-                            cert_file,
-                            key_file
+                            _create_ssl_context, root_cert, cert_file, key_file
                         )
 
                     async def _init_connection(conn):
                         await conn.set_type_codec(
-                            'jsonb',
-                            encoder=lambda x: b'\x01' + json.dumps(x, cls=JSONEncoder, default=_json_default).encode('utf-8'),
-                            decoder=lambda x: json.loads(x[1:].decode('utf-8')),
-                            schema='pg_catalog',
-                            format='binary'
+                            "jsonb",
+                            encoder=lambda x: (
+                                b"\x01"
+                                + json.dumps(
+                                    x, cls=JSONEncoder, default=_json_default
+                                ).encode("utf-8")
+                            ),
+                            decoder=lambda x: json.loads(x[1:].decode("utf-8")),
+                            schema="pg_catalog",
+                            format="binary",
                         )
 
                     self._pool = await asyncpg.create_pool(
@@ -402,17 +441,24 @@ class ScribeWriter:
                         min_size=1,
                         max_size=10,
                         ssl=ssl_arg,
-                        init=_init_connection
+                        init=_init_connection,
                     )
                     # Expose pool as _engine so migration.py can use it
                     self._engine = self._pool
 
-                    _LOGGER.debug("[writer.start] asyncpg pool created successfully (host=%s, ssl=%s)", _safe_target(self.db_url), bool(ssl_arg))
+                    _LOGGER.debug(
+                        "[writer.start] asyncpg pool created successfully (host=%s, ssl=%s)",
+                        _safe_target(self.db_url),
+                        bool(ssl_arg),
+                    )
                     self._clear_issue(ISSUE_DB_UNREACHABLE)
                 except Exception as e:
                     _LOGGER.error(
                         "[writer.start] Failed to create asyncpg pool for %s: %s (%s). Check DB URL, credentials, network and SSL configuration.",
-                        _safe_target(self.db_url), e, type(e).__name__, exc_info=True,
+                        _safe_target(self.db_url),
+                        e,
+                        type(e).__name__,
+                        exc_info=True,
                     )
                     # Nothing will be recorded at all until this is fixed, and
                     # the only other signal is a log line at startup.
@@ -440,7 +486,9 @@ class ScribeWriter:
             except Exception as e:
                 _LOGGER.error(
                     "[writer.start] Database initialization failed: %s (%s)",
-                    e, type(e).__name__, exc_info=True,
+                    e,
+                    type(e).__name__,
+                    exc_info=True,
                 )
                 self._connected = False
                 raise
@@ -448,7 +496,9 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.error(
                 "[writer.start] Unexpected error starting ScribeWriter: %s (%s)",
-                e, type(e).__name__, exc_info=True,
+                e,
+                type(e).__name__,
+                exc_info=True,
             )
             raise
 
@@ -457,16 +507,33 @@ class ScribeWriter:
         _LOGGER.debug("[writer._get_initial_counts] Fetching initial row counts...")
         try:
             if self.record_states:
-                self._states_written = await self._fetchval(f"SELECT count(*) FROM {self.table_name_states}") or 0
+                self._states_written = (
+                    await self._fetchval(
+                        f"SELECT count(*) FROM {self.table_name_states}"
+                    )
+                    or 0
+                )
 
             if self.record_events:
-                self._events_written = await self._fetchval(f"SELECT count(*) FROM {self.table_name_events}") or 0
+                self._events_written = (
+                    await self._fetchval(
+                        f"SELECT count(*) FROM {self.table_name_events}"
+                    )
+                    or 0
+                )
 
-            _LOGGER.debug("[writer._get_initial_counts] Initial counts: states=%d, events=%d", self._states_written, self._events_written)
+            _LOGGER.debug(
+                "[writer._get_initial_counts] Initial counts: states=%d, events=%d",
+                self._states_written,
+                self._events_written,
+            )
         except Exception as e:
             _LOGGER.warning(
                 "[writer._get_initial_counts] Failed to fetch initial counts from tables (states=%s, events=%s): %s (%s)",
-                self.table_name_states, self.table_name_events, e, type(e).__name__,
+                self.table_name_states,
+                self.table_name_events,
+                e,
+                type(e).__name__,
             )
 
     async def _ensure_metadata_ids(self, entity_ids: list[str]):
@@ -481,28 +548,36 @@ class ScribeWriter:
                     # Insert missing entities
                     await conn.executemany(
                         "INSERT INTO entities (entity_id) VALUES ($1) ON CONFLICT (entity_id) DO NOTHING",
-                        [(eid,) for eid in missing]
+                        [(eid,) for eid in missing],
                     )
 
                     # Fetch IDs for the missing ones
                     rows = await conn.fetch(
                         "SELECT entity_id, id FROM entities WHERE entity_id = ANY($1)",
-                        missing
+                        missing,
                     )
 
                     count = 0
                     for row in rows:
-                        self._entity_id_map[row['entity_id']] = row['id']
-                        self._metadata_id_map[row['id']] = row['entity_id']
+                        self._entity_id_map[row["entity_id"]] = row["id"]
+                        self._metadata_id_map[row["id"]] = row["entity_id"]
                         count += 1
 
                     if count > 0:
-                        _LOGGER.debug("[writer._ensure_metadata_ids] Registered %d new entities (missing=%d)", count, len(missing))
+                        _LOGGER.debug(
+                            "[writer._ensure_metadata_ids] Registered %d new entities (missing=%d)",
+                            count,
+                            len(missing),
+                        )
 
         except Exception as e:
             _LOGGER.error(
                 "[writer._ensure_metadata_ids] Error registering %d new entities (sample=%s): %s (%s)",
-                len(missing), missing[:5], e, type(e).__name__, exc_info=True,
+                len(missing),
+                missing[:5],
+                e,
+                type(e).__name__,
+                exc_info=True,
             )
 
     async def stop(self):
@@ -518,7 +593,9 @@ class ScribeWriter:
             except Exception as e:
                 _LOGGER.error(
                     "[writer.stop] Error waiting for writer task to stop: %s (%s)",
-                    e, type(e).__name__, exc_info=True,
+                    e,
+                    type(e).__name__,
+                    exc_info=True,
                 )
 
         # Final flush
@@ -527,7 +604,10 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.error(
                 "[writer.stop] Error during final flush (queue_size=%d): %s (%s)",
-                len(self._queue), e, type(e).__name__, exc_info=True,
+                len(self._queue),
+                e,
+                type(e).__name__,
+                exc_info=True,
             )
 
         if self._pool:
@@ -539,7 +619,9 @@ class ScribeWriter:
             except Exception as e:
                 _LOGGER.error(
                     "[writer.stop] Error closing asyncpg pool: %s (%s)",
-                    e, type(e).__name__, exc_info=True,
+                    e,
+                    type(e).__name__,
+                    exc_info=True,
                 )
 
     async def _run(self):
@@ -549,15 +631,18 @@ class ScribeWriter:
         # 1. Register listener to launch migration AFTER HA finishes bootstrap
         async def _launch_migration(event):
             """Launch migration after HA is fully started."""
-            _LOGGER.debug("[writer._run._launch_migration] HA fully started, launching background migration task")
+            _LOGGER.debug(
+                "[writer._run._launch_migration] HA fully started, launching background migration task"
+            )
             try:
                 from . import migration  # lazy import to avoid circular dependency
+
                 await migration.migrate_database(
                     self.hass,
-                    self._pool,   # pass pool (migration.py uses it as 'engine')
+                    self._pool,  # pass pool (migration.py uses it as 'engine')
                     self.record_states,
                     self.chunk_interval,
-                    self.compress_after
+                    self.compress_after,
                 )
 
                 # Create the view now that migration is done (the table was renamed/dropped)
@@ -569,7 +654,9 @@ class ScribeWriter:
             except Exception as e:
                 _LOGGER.error(
                     "[writer._run._launch_migration] Background migration failed: %s (%s)",
-                    e, type(e).__name__, exc_info=True,
+                    e,
+                    type(e).__name__,
+                    exc_info=True,
                 )
                 # A half-migrated database keeps the old history in
                 # states_legacy where nothing reads it. Silence here means the
@@ -582,6 +669,7 @@ class ScribeWriter:
                 )
 
         from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+
         self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _launch_migration)
 
         # 2. Fetch initial counts (background - might take a while on large DBs)
@@ -590,7 +678,8 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.warning(
                 "[writer._run] Failed to fetch initial (background) counts: %s (%s)",
-                e, type(e).__name__,
+                e,
+                type(e).__name__,
             )
 
         while self._running:
@@ -602,7 +691,11 @@ class ScribeWriter:
             except Exception as e:
                 _LOGGER.error(
                     "[writer._run] Error in writer loop (flush_interval=%ss, queue_size=%d): %s (%s)",
-                    self.flush_interval, len(self._queue), e, type(e).__name__, exc_info=True,
+                    self.flush_interval,
+                    len(self._queue),
+                    e,
+                    type(e).__name__,
+                    exc_info=True,
                 )
                 # Prevent tight loop if persistent error
                 await asyncio.sleep(5)
@@ -622,14 +715,20 @@ class ScribeWriter:
             # Trigger flush if batch size reached (but only if no flush is already pending)
             if len(self._queue) >= self.batch_size and not self._flush_pending:
                 self._flush_pending = True
-                _LOGGER.debug("[writer.enqueue] Batch size reached (%d >= %d), triggering flush", len(self._queue), self.batch_size)
+                _LOGGER.debug(
+                    "[writer.enqueue] Batch size reached (%d >= %d), triggering flush",
+                    len(self._queue),
+                    self.batch_size,
+                )
                 asyncio.create_task(self._flush())
         except Exception as e:
             _LOGGER.error(
                 "[writer.enqueue] Error enqueuing data (type=%s, keys=%s): %s (%s)",
-                data.get('type') if isinstance(data, dict) else type(data).__name__,
+                data.get("type") if isinstance(data, dict) else type(data).__name__,
                 list(data.keys()) if isinstance(data, dict) else None,
-                e, type(e).__name__, exc_info=True,
+                e,
+                type(e).__name__,
+                exc_info=True,
             )
 
     # ------------------------------------------------------------------
@@ -640,7 +739,9 @@ class ScribeWriter:
         """Initialize database tables."""
         _LOGGER.debug("[writer.init_db] Initializing database...")
         if not self._pool:
-            _LOGGER.warning("[writer.init_db] No connection pool available, skipping DB initialization")
+            _LOGGER.warning(
+                "[writer.init_db] No connection pool available, skipping DB initialization"
+            )
             return
 
         try:
@@ -681,7 +782,11 @@ class ScribeWriter:
                 except Exception as e:
                     _LOGGER.error(
                         "[writer.init_db] Failed to init hypertable/compression for states_raw (chunk=%s, compress_after=%s): %s (%s)",
-                        self.chunk_interval, self.compress_after, e, type(e).__name__, exc_info=True,
+                        self.chunk_interval,
+                        self.compress_after,
+                        e,
+                        type(e).__name__,
+                        exc_info=True,
                     )
 
             if self.record_events:
@@ -690,7 +795,12 @@ class ScribeWriter:
                 except Exception as e:
                     _LOGGER.error(
                         "[writer.init_db] Failed to init hypertable/compression for %s (chunk=%s, compress_after=%s): %s (%s)",
-                        self.table_name_events, self.chunk_interval, self.compress_after, e, type(e).__name__, exc_info=True,
+                        self.table_name_events,
+                        self.chunk_interval,
+                        self.compress_after,
+                        e,
+                        type(e).__name__,
+                        exc_info=True,
                     )
 
             await self._check_timescaledb_available()
@@ -702,7 +812,9 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.error(
                 "[writer.init_db] Error initializing database: %s (%s)",
-                e, type(e).__name__, exc_info=True,
+                e,
+                type(e).__name__,
+                exc_info=True,
             )
             self._connected = False
 
@@ -718,19 +830,25 @@ class ScribeWriter:
             )
 
             if states_exists and not states_raw_exists:
-                _LOGGER.warning("[writer._check_and_migrate_states] Detected legacy 'states' table. Starting migration to 'states_raw'...")
-                _LOGGER.info("[writer._check_and_migrate_states] 1/2 Renaming 'states' to 'states_legacy'. Data migration will happen in background.")
+                _LOGGER.warning(
+                    "[writer._check_and_migrate_states] Detected legacy 'states' table. Starting migration to 'states_raw'..."
+                )
+                _LOGGER.info(
+                    "[writer._check_and_migrate_states] 1/2 Renaming 'states' to 'states_legacy'. Data migration will happen in background."
+                )
                 await conn.execute("ALTER TABLE states RENAME TO states_legacy")
 
         except Exception as e:
             _LOGGER.error(
                 "[writer._check_and_migrate_states] Migration check failed: %s (%s)",
-                e, type(e).__name__, exc_info=True,
+                e,
+                type(e).__name__,
+                exc_info=True,
             )
 
     async def _init_states_table(self, conn):
         """Initialize states_raw table and View."""
-        
+
         # 1. Create states_raw
         _LOGGER.debug("Creating table states_raw if not exists")
         await conn.execute("""
@@ -747,20 +865,29 @@ class ScribeWriter:
             CREATE INDEX IF NOT EXISTS states_raw_meta_time_idx 
             ON states_raw (metadata_id, time DESC);
         """)
-        
-        # 2. The view creation is now handled in `_init_states_view` 
+
+        # 2. The view creation is now handled in `_init_states_view`
         # to ensure it doesn't conflict with the `states` table before migration.
         await self._init_states_view(conn)
 
     async def _init_states_view(self, conn):
         """Create the backward-compatible states view, if the name isn't taken by a table."""
         try:
-            is_table = await conn.fetchval("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1 AND table_type = 'BASE TABLE')", self.table_name_states)
+            is_table = await conn.fetchval(
+                "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1 AND table_type = 'BASE TABLE')",
+                self.table_name_states,
+            )
             if is_table:
-                _LOGGER.debug("[writer._init_states_view] '%s' is currently a table. Skipping view creation until migration finishes.", self.table_name_states)
+                _LOGGER.debug(
+                    "[writer._init_states_view] '%s' is currently a table. Skipping view creation until migration finishes.",
+                    self.table_name_states,
+                )
                 return
 
-            _LOGGER.debug("[writer._init_states_view] Creating/Replacing view '%s'", self.table_name_states)
+            _LOGGER.debug(
+                "[writer._init_states_view] Creating/Replacing view '%s'",
+                self.table_name_states,
+            )
             await conn.execute(f"DROP VIEW IF EXISTS {self.table_name_states} CASCADE;")
             await conn.execute(f"""
                 CREATE VIEW {self.table_name_states} AS
@@ -782,12 +909,18 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.error(
                 "[writer._init_states_view] Failed to create view '%s' over 'states_raw': %s (%s)",
-                self.table_name_states, e, type(e).__name__, exc_info=True,
+                self.table_name_states,
+                e,
+                type(e).__name__,
+                exc_info=True,
             )
 
     async def _init_events_table(self, conn):
         """Initialize events table."""
-        _LOGGER.debug("[writer._init_events_table] Creating table %s if not exists", self.table_name_events)
+        _LOGGER.debug(
+            "[writer._init_events_table] Creating table %s if not exists",
+            self.table_name_events,
+        )
         await conn.execute(f"""
             CREATE TABLE IF NOT EXISTS {self.table_name_events} (
                 time TIMESTAMPTZ NOT NULL,
@@ -823,7 +956,9 @@ class ScribeWriter:
         if not self._pool or not users:
             return
 
-        _LOGGER.debug("[writer.write_users] Writing %d users to database...", len(users))
+        _LOGGER.debug(
+            "[writer.write_users] Writing %d users to database...", len(users)
+        )
         try:
             # Sanitize text fields (ensure string, remove null bytes)
             text_fields = ["user_id", "name"]
@@ -846,7 +981,8 @@ class ScribeWriter:
                 for u in users
             ]
 
-            await self._execute_many("""
+            await self._execute_many(
+                """
                 INSERT INTO users (user_id, name, is_owner, is_active, system_generated, group_ids)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (user_id) DO UPDATE SET
@@ -855,22 +991,30 @@ class ScribeWriter:
                     is_active = EXCLUDED.is_active,
                     system_generated = EXCLUDED.system_generated,
                     group_ids = EXCLUDED.group_ids;
-            """, rows)
+            """,
+                rows,
+            )
             _LOGGER.debug("[writer.write_users] Users written successfully")
         except Exception as e:
             _LOGGER.error(
                 "[writer.write_users] Error writing %d users: %s (%s)",
-                len(users), e, type(e).__name__, exc_info=True,
+                len(users),
+                e,
+                type(e).__name__,
+                exc_info=True,
             )
 
     async def _init_entities_table(self, conn):
         """Initialize entities table."""
-        _LOGGER.debug("[writer._init_entities_table] Creating table entities if not exists")
+        _LOGGER.debug(
+            "[writer._init_entities_table] Creating table entities if not exists"
+        )
 
         # Ensure schema is up to date (migrate from old text-PK schema if needed)
         from . import migration  # lazy import to avoid circular dependency
+
         await migration.migrate_entities_table(conn)
-        
+
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS entities (
                 id SERIAL PRIMARY KEY,
@@ -884,21 +1028,25 @@ class ScribeWriter:
                 capabilities JSONB
             );
         """)
-        
+
         # Index for entity lookup by entity_id (UNIQUE constraint already creates an index)
         # await conn.execute("CREATE INDEX IF NOT EXISTS entities_entity_id_idx ON entities (entity_id)")
-        
+
         # Populate Cache on startup
         try:
             rows = await conn.fetch("SELECT entity_id, id FROM entities")
             for row in rows:
-                self._entity_id_map[row['entity_id']] = row['id']
-                self._metadata_id_map[row['id']] = row['entity_id']
-            _LOGGER.debug("[writer._init_entities_table] Loaded %d entities into ID cache", len(self._entity_id_map))
+                self._entity_id_map[row["entity_id"]] = row["id"]
+                self._metadata_id_map[row["id"]] = row["entity_id"]
+            _LOGGER.debug(
+                "[writer._init_entities_table] Loaded %d entities into ID cache",
+                len(self._entity_id_map),
+            )
         except Exception as e:
             _LOGGER.warning(
                 "[writer._init_entities_table] Failed to populate entity cache: %s (%s)",
-                e, type(e).__name__,
+                e,
+                type(e).__name__,
             )
 
     async def write_entities(self, entities: list[dict]):
@@ -911,13 +1059,23 @@ class ScribeWriter:
         if not self._pool or not entities:
             return
 
-        _LOGGER.debug("[writer.write_entities] Processing %d entities...", len(entities))
+        _LOGGER.debug(
+            "[writer.write_entities] Processing %d entities...", len(entities)
+        )
         # Serialized with rename_entity: without this, a registry-sync task can
         # insert the destination row while a rename of the same entity is
         # in flight (HA fires registry events as concurrent tasks).
         await self._metadata_lock.acquire()
         try:
-            text_fields = ["entity_id", "unique_id", "platform", "domain", "name", "device_id", "area_id"]
+            text_fields = [
+                "entity_id",
+                "unique_id",
+                "platform",
+                "domain",
+                "name",
+                "device_id",
+                "area_id",
+            ]
             for entity in entities:
                 for field in text_fields:
                     if entity.get(field) is not None:
@@ -1019,13 +1177,19 @@ class ScribeWriter:
 
             _LOGGER.debug(
                 "[writer.write_entities] Done: %d inserted, %d updated, %d unchanged (of %d total)",
-                len(to_insert), len(to_update),
-                len(entities) - len(to_insert) - len(to_update), len(entities),
+                len(to_insert),
+                len(to_update),
+                len(entities) - len(to_insert) - len(to_update),
+                len(entities),
             )
         except Exception as e:
             _LOGGER.error(
                 "[writer.write_entities] Error syncing %d entities (sample=%s): %s (%s)",
-                len(entities), [e.get('entity_id') for e in entities[:3]], e, type(e).__name__, exc_info=True,
+                len(entities),
+                [e.get("entity_id") for e in entities[:3]],
+                e,
+                type(e).__name__,
+                exc_info=True,
             )
         finally:
             self._metadata_lock.release()
@@ -1046,7 +1210,9 @@ class ScribeWriter:
         if not self._pool or not areas:
             return
 
-        _LOGGER.debug("[writer.write_areas] Writing %d areas to database...", len(areas))
+        _LOGGER.debug(
+            "[writer.write_areas] Writing %d areas to database...", len(areas)
+        )
         try:
             text_fields = ["area_id", "name", "picture"]
             for area in areas:
@@ -1056,23 +1222,31 @@ class ScribeWriter:
 
             rows = [(a.get("area_id"), a.get("name"), a.get("picture")) for a in areas]
 
-            await self._execute_many("""
+            await self._execute_many(
+                """
                 INSERT INTO areas (area_id, name, picture)
                 VALUES ($1, $2, $3)
                 ON CONFLICT (area_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     picture = EXCLUDED.picture;
-            """, rows)
+            """,
+                rows,
+            )
             _LOGGER.debug("[writer.write_areas] Areas written successfully")
         except Exception as exc:
             _LOGGER.error(
                 "[writer.write_areas] Error writing %d areas: %s (%s)",
-                len(areas), exc, type(exc).__name__, exc_info=True,
+                len(areas),
+                exc,
+                type(exc).__name__,
+                exc_info=True,
             )
 
     async def _init_devices_table(self, conn):
         """Initialize devices table."""
-        _LOGGER.debug("[writer._init_devices_table] Creating table devices if not exists")
+        _LOGGER.debug(
+            "[writer._init_devices_table] Creating table devices if not exists"
+        )
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS devices (
                 device_id TEXT PRIMARY KEY,
@@ -1091,10 +1265,21 @@ class ScribeWriter:
         if not self._pool or not devices:
             return
 
-        _LOGGER.debug("[writer.write_devices] Writing %d devices to database...", len(devices))
+        _LOGGER.debug(
+            "[writer.write_devices] Writing %d devices to database...", len(devices)
+        )
 
         try:
-            text_fields = ["device_id", "name", "name_by_user", "model", "manufacturer", "sw_version", "area_id", "primary_config_entry"]
+            text_fields = [
+                "device_id",
+                "name",
+                "name_by_user",
+                "model",
+                "manufacturer",
+                "sw_version",
+                "area_id",
+                "primary_config_entry",
+            ]
             for device in devices:
                 for field in text_fields:
                     if device.get(field) is not None:
@@ -1114,7 +1299,8 @@ class ScribeWriter:
                 for d in devices
             ]
 
-            await self._execute_many("""
+            await self._execute_many(
+                """
                 INSERT INTO devices (device_id, name, name_by_user, model, manufacturer, sw_version, area_id, primary_config_entry)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT (device_id) DO UPDATE SET
@@ -1125,17 +1311,24 @@ class ScribeWriter:
                     sw_version = EXCLUDED.sw_version,
                     area_id = EXCLUDED.area_id,
                     primary_config_entry = EXCLUDED.primary_config_entry;
-            """, rows)
+            """,
+                rows,
+            )
             _LOGGER.debug("[writer.write_devices] Devices written successfully")
         except Exception as exc:
             _LOGGER.error(
                 "[writer.write_devices] Error writing %d devices: %s (%s)",
-                len(devices), exc, type(exc).__name__, exc_info=True,
+                len(devices),
+                exc,
+                type(exc).__name__,
+                exc_info=True,
             )
 
     async def _init_integrations_table(self, conn):
         """Initialize integrations table."""
-        _LOGGER.debug("[writer._init_integrations_table] Creating table integrations if not exists")
+        _LOGGER.debug(
+            "[writer._init_integrations_table] Creating table integrations if not exists"
+        )
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS integrations (
                 entry_id TEXT PRIMARY KEY,
@@ -1151,7 +1344,10 @@ class ScribeWriter:
         if not self._pool or not integrations:
             return
 
-        _LOGGER.debug("[writer.write_integrations] Writing %d integrations to database...", len(integrations))
+        _LOGGER.debug(
+            "[writer.write_integrations] Writing %d integrations to database...",
+            len(integrations),
+        )
         try:
             text_fields = ["entry_id", "domain", "title", "state", "source"]
             for integration in integrations:
@@ -1170,7 +1366,8 @@ class ScribeWriter:
                 for i in integrations
             ]
 
-            await self._execute_many("""
+            await self._execute_many(
+                """
                 INSERT INTO integrations (entry_id, domain, title, state, source)
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (entry_id) DO UPDATE SET
@@ -1178,12 +1375,19 @@ class ScribeWriter:
                     title = EXCLUDED.title,
                     state = EXCLUDED.state,
                     source = EXCLUDED.source;
-            """, rows)
-            _LOGGER.debug("[writer.write_integrations] Integrations written successfully")
+            """,
+                rows,
+            )
+            _LOGGER.debug(
+                "[writer.write_integrations] Integrations written successfully"
+            )
         except Exception as exc:
             _LOGGER.error(
                 "[writer.write_integrations] Error writing %d integrations: %s (%s)",
-                len(integrations), exc, type(exc).__name__, exc_info=True,
+                len(integrations),
+                exc,
+                type(exc).__name__,
+                exc_info=True,
             )
 
     async def _check_timescaledb_available(self):
@@ -1200,7 +1404,8 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.debug(
                 "[writer._check_timescaledb_available] Extension check failed: %s (%s)",
-                e, type(e).__name__,
+                e,
+                type(e).__name__,
             )
             return
 
@@ -1228,7 +1433,11 @@ class ScribeWriter:
 
         # Convert to hypertable
         try:
-            _LOGGER.debug("[writer._init_hypertable] Converting %s to hypertable (chunk=%s)...", table_name, self.chunk_interval)
+            _LOGGER.debug(
+                "[writer._init_hypertable] Converting %s to hypertable (chunk=%s)...",
+                table_name,
+                self.chunk_interval,
+            )
             async with self._pool.acquire() as conn:
                 await conn.execute(
                     f"SELECT create_hypertable('{table_name}', 'time', chunk_time_interval => INTERVAL '{self.chunk_interval}', if_not_exists => TRUE);"
@@ -1236,12 +1445,19 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.warning(
                 "[writer._init_hypertable] Hypertable creation failed for %s (chunk=%s) — might not be TimescaleDB or already exists: %s (%s)",
-                table_name, self.chunk_interval, e, type(e).__name__,
+                table_name,
+                self.chunk_interval,
+                e,
+                type(e).__name__,
             )
 
         # Enable compression
         try:
-            _LOGGER.debug("[writer._init_hypertable] Enabling compression for %s (segment_by=%s)...", table_name, segment_by)
+            _LOGGER.debug(
+                "[writer._init_hypertable] Enabling compression for %s (segment_by=%s)...",
+                table_name,
+                segment_by,
+            )
             async with self._pool.acquire() as conn:
                 await conn.execute(f"""
                     ALTER TABLE {table_name} SET (
@@ -1251,17 +1467,32 @@ class ScribeWriter:
                     );
                 """)
         except Exception as e:
-            _LOGGER.debug("[writer._init_hypertable] Compression enable failed for %s: %s (%s)", table_name, e, type(e).__name__)
+            _LOGGER.debug(
+                "[writer._init_hypertable] Compression enable failed for %s: %s (%s)",
+                table_name,
+                e,
+                type(e).__name__,
+            )
 
         # Add compression policy
         try:
-            _LOGGER.debug("[writer._init_hypertable] Adding compression policy for %s (after=%s)...", table_name, self.compress_after)
+            _LOGGER.debug(
+                "[writer._init_hypertable] Adding compression policy for %s (after=%s)...",
+                table_name,
+                self.compress_after,
+            )
             async with self._pool.acquire() as conn:
                 await conn.execute(
                     f"SELECT add_compression_policy('{table_name}', INTERVAL '{self.compress_after}', if_not_exists => TRUE);"
                 )
         except Exception as e:
-            _LOGGER.debug("[writer._init_hypertable] Compression policy failed for %s (after=%s): %s (%s)", table_name, self.compress_after, e, type(e).__name__)
+            _LOGGER.debug(
+                "[writer._init_hypertable] Compression policy failed for %s (after=%s): %s (%s)",
+                table_name,
+                self.compress_after,
+                e,
+                type(e).__name__,
+            )
 
     # ------------------------------------------------------------------
     # Sanitization
@@ -1274,7 +1505,7 @@ class ScribeWriter:
 
             if obj is None or isinstance(obj, (bool, int)):
                 return obj
-                
+
             if isinstance(obj, (dt_datetime, date)):
                 return obj
 
@@ -1285,7 +1516,10 @@ class ScribeWriter:
 
             if isinstance(obj, str):
                 if "\0" in obj:
-                    _LOGGER.warning("[writer._sanitize_obj] Sanitized string containing null byte: %r", obj)
+                    _LOGGER.warning(
+                        "[writer._sanitize_obj] Sanitized string containing null byte: %r",
+                        obj,
+                    )
                     return obj.replace("\0", "")
                 return obj
             if isinstance(obj, dict):
@@ -1306,7 +1540,11 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.error(
                 "[writer._sanitize_obj] Error sanitizing object (type=%s, depth=%d): %s (%s)",
-                type(obj).__name__, depth, e, type(e).__name__, exc_info=True,
+                type(obj).__name__,
+                depth,
+                e,
+                type(e).__name__,
+                exc_info=True,
             )
             return str(obj)
 
@@ -1318,7 +1556,7 @@ class ScribeWriter:
         """Flush the queue to the database."""
         try:
             self._flush_pending = False  # Reset flag immediately
-            
+
             # Prune history first (maintain rolling window even if idle)
             now = time.time()
             while self._states_history and now - self._states_history[0][0] > 60:
@@ -1332,33 +1570,42 @@ class ScribeWriter:
             # Swap queue - drain the deque
             batch = list(self._queue)
             self._queue.clear()
-            
+
             start_time = time.time()
-            
+
             try:
+
                 def _process_batch(batch_items):
                     sanitized_batch = [self._sanitize_obj(item) for item in batch_items]
-                    
+
                     states_res = []
                     events_res = []
-                    
+
                     for x in sanitized_batch:
-                        if x['type'] == 'state':
-                            for field in ['entity_id', 'state']:
+                        if x["type"] == "state":
+                            for field in ["entity_id", "state"]:
                                 if x.get(field) is not None:
-                                    x[field] = str(x[field]).replace('\0', '')
+                                    x[field] = str(x[field]).replace("\0", "")
 
                             states_res.append(x)
-                        elif x['type'] == 'event':
-                            for field in ['event_type', 'origin', 'context_id', 'context_user_id', 'context_parent_id']:
+                        elif x["type"] == "event":
+                            for field in [
+                                "event_type",
+                                "origin",
+                                "context_id",
+                                "context_user_id",
+                                "context_parent_id",
+                            ]:
                                 if x.get(field) is not None:
-                                    x[field] = str(x[field]).replace('\0', '')
+                                    x[field] = str(x[field]).replace("\0", "")
 
                             events_res.append(x)
                     return states_res, events_res
 
                 # Run CPU-intensive serialization in executor
-                states_data, events_data = await self.hass.async_add_executor_job(_process_batch, batch)
+                states_data, events_data = await self.hass.async_add_executor_job(
+                    _process_batch, batch
+                )
 
                 # Held from metadata_id resolution through the COPY: a concurrent
                 # rename must not move/delete a metadata_id in between, or the
@@ -1368,20 +1615,23 @@ class ScribeWriter:
                     if states_data:
                         eids = set()
                         for s in states_data:
-                            if 'entity_id' in s:
-                                eids.add(s['entity_id'])
+                            if "entity_id" in s:
+                                eids.add(s["entity_id"])
 
                         if eids:
                             await self._ensure_metadata_ids(list(eids))
 
                         final_states_data = []
                         for s in states_data:
-                            eid = s.pop('entity_id', None)
+                            eid = s.pop("entity_id", None)
                             if eid and eid in self._entity_id_map:
-                                s['metadata_id'] = self._entity_id_map[eid]
+                                s["metadata_id"] = self._entity_id_map[eid]
                                 final_states_data.append(s)
                             else:
-                                _LOGGER.warning("[writer._flush] Skipping state for unknown entity_id: %r (not in cache — INSERT into entities may have failed)", eid)
+                                _LOGGER.warning(
+                                    "[writer._flush] Skipping state for unknown entity_id: %r (not in cache — INSERT into entities may have failed)",
+                                    eid,
+                                )
 
                         # states_raw is keyed by (metadata_id, time). Home
                         # Assistant can emit two states for one entity at the
@@ -1393,7 +1643,7 @@ class ScribeWriter:
                         # Keep the last state seen for each key.
                         deduped = {}
                         for s in final_states_data:
-                            deduped[(s['metadata_id'], s['time'])] = s
+                            deduped[(s["metadata_id"], s["time"])] = s
                         if len(deduped) != len(final_states_data):
                             _LOGGER.debug(
                                 "[writer._flush] Dropped %d state(s) sharing a "
@@ -1408,9 +1658,21 @@ class ScribeWriter:
                                 await self._copy_records(
                                     conn=conn,
                                     table_name="states_raw",
-                                    columns=["time", "metadata_id", "state", "value", "attributes"],
+                                    columns=[
+                                        "time",
+                                        "metadata_id",
+                                        "state",
+                                        "value",
+                                        "attributes",
+                                    ],
                                     records=[
-                                        (s['time'], s['metadata_id'], s.get('state'), s.get('value'), s.get('attributes'))
+                                        (
+                                            s["time"],
+                                            s["metadata_id"],
+                                            s.get("state"),
+                                            s.get("value"),
+                                            s.get("attributes"),
+                                        )
                                         for s in states_data
                                     ],
                                     conflict_target="metadata_id, time",
@@ -1419,26 +1681,43 @@ class ScribeWriter:
                                 await self._copy_records(
                                     conn=conn,
                                     table_name=self.table_name_events,
-                                    columns=["time", "event_type", "event_data", "origin", "context_id", "context_user_id", "context_parent_id"],
+                                    columns=[
+                                        "time",
+                                        "event_type",
+                                        "event_data",
+                                        "origin",
+                                        "context_id",
+                                        "context_user_id",
+                                        "context_parent_id",
+                                    ],
                                     records=[
-                                        (e['time'], e['event_type'], e.get('event_data'), e.get('origin'), e.get('context_id'), e.get('context_user_id'), e.get('context_parent_id'))
+                                        (
+                                            e["time"],
+                                            e["event_type"],
+                                            e.get("event_data"),
+                                            e.get("origin"),
+                                            e.get("context_id"),
+                                            e.get("context_user_id"),
+                                            e.get("context_parent_id"),
+                                        )
                                         for e in events_data
                                     ],
                                 )
-                
+
                 duration = time.time() - start_time
                 self._states_written += len(states_data)
                 self._events_written += len(events_data)
-                
+
                 self._states_history.append((time.time(), len(states_data)))
                 self._events_history.append((time.time(), len(events_data)))
-                
+
                 self._last_write_duration = duration
-                
+
                 if not self._connected:
                     _LOGGER.info(
                         "[writer._flush] Database connection restored. Flushed %d states and %d events.",
-                        len(states_data), len(events_data),
+                        len(states_data),
+                        len(events_data),
                     )
 
                 self._connected = True
@@ -1457,10 +1736,14 @@ class ScribeWriter:
                 if "\n" in msg:
                     msg = msg.split("\n")[0]
 
-                sqlstate = getattr(e, 'sqlstate', None)
+                sqlstate = getattr(e, "sqlstate", None)
                 _LOGGER.error(
                     "[writer._flush] PostgreSQL error during flush (type=%s, sqlstate=%s, batch_size=%d): %s",
-                    type(e).__name__, sqlstate, len(batch), msg, exc_info=True,
+                    type(e).__name__,
+                    sqlstate,
+                    len(batch),
+                    msg,
+                    exc_info=True,
                 )
 
                 self._connected = False
@@ -1470,13 +1753,19 @@ class ScribeWriter:
                 if self.buffer_on_failure:
                     _LOGGER.warning(
                         "[writer._flush] Buffering %d items due to PostgreSQL failure (sqlstate=%s). Current queue size: %d/%d",
-                        len(batch), sqlstate, len(self._queue), self.max_queue_size,
+                        len(batch),
+                        sqlstate,
+                        len(self._queue),
+                        self.max_queue_size,
                     )
 
             except Exception as e:
                 _LOGGER.error(
                     "[writer._flush] Unexpected error flushing batch (batch_size=%d): %s (%s)",
-                    len(batch), e, type(e).__name__, exc_info=True,
+                    len(batch),
+                    e,
+                    type(e).__name__,
+                    exc_info=True,
                 )
                 self._connected = False
                 self._last_error = str(e)
@@ -1485,14 +1774,19 @@ class ScribeWriter:
                 if self.buffer_on_failure:
                     _LOGGER.warning(
                         "[writer._flush] Buffering %d items due to failure. Current queue size: %d/%d",
-                        len(batch), len(self._queue), self.max_queue_size,
+                        len(batch),
+                        len(self._queue),
+                        self.max_queue_size,
                     )
-                    self._queue = deque(batch + list(self._queue), maxlen=self.max_queue_size)
+                    self._queue = deque(
+                        batch + list(self._queue), maxlen=self.max_queue_size
+                    )
 
                     if len(self._queue) == self.max_queue_size:
                         _LOGGER.warning(
                             "[writer._flush] Buffer full! Queue size: %d (max=%d) — oldest items will be dropped",
-                            len(self._queue), self.max_queue_size,
+                            len(self._queue),
+                            self.max_queue_size,
                         )
                         # From here on history is being lost, silently.
                         self._report_issue(
@@ -1505,7 +1799,8 @@ class ScribeWriter:
                     self._dropped_events += len(batch)
                     _LOGGER.warning(
                         "[writer._flush] Dropped %d items (buffering disabled, total dropped since start=%d)",
-                        len(batch), self._dropped_events,
+                        len(batch),
+                        self._dropped_events,
                     )
                     self._report_issue(
                         ISSUE_DATA_DROPPED,
@@ -1516,7 +1811,9 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.error(
                 "[writer._flush] Critical error in flush routine: %s (%s)",
-                e, type(e).__name__, exc_info=True,
+                e,
+                type(e).__name__,
+                exc_info=True,
             )
 
     # ------------------------------------------------------------------
@@ -1552,7 +1849,11 @@ class ScribeWriter:
         if not self._pool:
             return
 
-        _LOGGER.info("[writer.rename_entity] Renaming entity %s -> %s", old_entity_id, new_entity_id)
+        _LOGGER.info(
+            "[writer.rename_entity] Renaming entity %s -> %s",
+            old_entity_id,
+            new_entity_id,
+        )
 
         merged_orphan_rows = None
         dropped_duplicate_rows = 0
@@ -1571,7 +1872,8 @@ class ScribeWriter:
                         async with conn.transaction():
                             await conn.execute(
                                 "UPDATE entities SET entity_id = $1 WHERE entity_id = $2",
-                                new_entity_id, old_entity_id,
+                                new_entity_id,
+                                old_entity_id,
                             )
                     except asyncpg.UniqueViolationError:
                         # The destination name is occupied in Scribe. Only take it over
@@ -1590,7 +1892,8 @@ class ScribeWriter:
                             # Freed between the failed UPDATE and now — just rename.
                             await conn.execute(
                                 "UPDATE entities SET entity_id = $1 WHERE entity_id = $2",
-                                new_entity_id, old_entity_id,
+                                new_entity_id,
+                                old_entity_id,
                             )
                         elif src is None:
                             # The UniqueViolation proved this row existed moments
@@ -1598,7 +1901,8 @@ class ScribeWriter:
                             _LOGGER.warning(
                                 "[writer.rename_entity] Source %s vanished during "
                                 "rename to %s; nothing to do.",
-                                old_entity_id, new_entity_id,
+                                old_entity_id,
+                                new_entity_id,
                             )
                             return
                         else:
@@ -1607,13 +1911,20 @@ class ScribeWriter:
                             # _ensure_metadata_ids before the registry sync filled it
                             # in) could resolve to nothing while its entity is alive.
                             occupant_live_eid = None
-                            provable = occ["unique_id"] and occ["domain"] and occ["platform"]
+                            provable = (
+                                occ["unique_id"] and occ["domain"] and occ["platform"]
+                            )
                             if provable:
                                 reg = er.async_get(self.hass)
                                 occupant_live_eid = reg.async_get_entity_id(
-                                    occ["domain"], occ["platform"], occ["unique_id"],
+                                    occ["domain"],
+                                    occ["platform"],
+                                    occ["unique_id"],
                                 )
-                            if occ["unique_id"] and occ["unique_id"] == src["unique_id"]:
+                            if (
+                                occ["unique_id"]
+                                and occ["unique_id"] == src["unique_id"]
+                            ):
                                 # Self-collision: both rows carry the same unique_id,
                                 # so they are two rows for ONE entity — a concurrent
                                 # metadata sync inserted the destination row before
@@ -1636,8 +1947,12 @@ class ScribeWriter:
                                     "not a provably-dead orphan (live_entity=%s, unique_id=%s, "
                                     "domain=%s, platform=%s). "
                                     "Left unchanged to avoid corrupting a live entity.",
-                                    old_entity_id, new_entity_id, occupant_live_eid,
-                                    occ["unique_id"], occ["domain"], occ["platform"],
+                                    old_entity_id,
+                                    new_entity_id,
+                                    occupant_live_eid,
+                                    occ["unique_id"],
+                                    occ["domain"],
+                                    occ["platform"],
                                 )
                                 if occupant_live_eid is not None:
                                     self._report_rename_issue(
@@ -1682,20 +1997,24 @@ class ScribeWriter:
                                       WHERE l.metadata_id = $1 AND l.time = o.time
                                   )
                                 """,
-                                src["id"], occ["id"],
+                                src["id"],
+                                occ["id"],
                             )
                             status = await conn.execute(
                                 "UPDATE states_raw SET metadata_id = $1 WHERE metadata_id = $2",
-                                src["id"], occ["id"],
+                                src["id"],
+                                occ["id"],
                             )
                             merged_orphan_rows = _affected_rows(status)
                             dropped_duplicate_rows = _affected_rows(dropped)
                             await conn.execute(
-                                "DELETE FROM entities WHERE id = $1", occ["id"],
+                                "DELETE FROM entities WHERE id = $1",
+                                occ["id"],
                             )
                             await conn.execute(
                                 "UPDATE entities SET entity_id = $1 WHERE entity_id = $2",
-                                new_entity_id, old_entity_id,
+                                new_entity_id,
+                                old_entity_id,
                             )
 
             # Invalidate the touched cache entries; they are re-resolved lazily from
@@ -1714,22 +2033,32 @@ class ScribeWriter:
                     "[writer.rename_entity] Renamed entity %s -> %s: destination was a "
                     "%s; reused it by merging %s history rows into the "
                     "renamed entity and deleting the occupant metadata row%s.",
-                    old_entity_id, new_entity_id, merge_reason,
-                    "an unknown number of" if merged_orphan_rows < 0 else merged_orphan_rows,
+                    old_entity_id,
+                    new_entity_id,
+                    merge_reason,
+                    "an unknown number of"
+                    if merged_orphan_rows < 0
+                    else merged_orphan_rows,
                     f" ({dropped_duplicate_rows} duplicate rows at timestamps the "
                     "renamed entity already had were dropped)"
-                    if dropped_duplicate_rows else "",
+                    if dropped_duplicate_rows
+                    else "",
                 )
             else:
                 _LOGGER.info(
                     "[writer.rename_entity] Renamed entity %s -> %s successfully",
-                    old_entity_id, new_entity_id,
+                    old_entity_id,
+                    new_entity_id,
                 )
 
         except Exception as e:
             _LOGGER.error(
                 "[writer.rename_entity] Failed to rename entity %s -> %s: %s (%s)",
-                old_entity_id, new_entity_id, e, type(e).__name__, exc_info=True,
+                old_entity_id,
+                new_entity_id,
+                e,
+                type(e).__name__,
+                exc_info=True,
             )
             # The registry event will not fire again: without this issue the
             # rename is silently lost and the entity's history splits.
@@ -1792,7 +2121,9 @@ class ScribeWriter:
         except Exception as e:  # never let UI plumbing break the writer
             _LOGGER.debug(
                 "[writer._report_issue] Could not create repair issue %s: %s (%s)",
-                issue_id, e, type(e).__name__,
+                issue_id,
+                e,
+                type(e).__name__,
             )
 
     def _clear_issue(self, issue_id: str):
@@ -1802,7 +2133,9 @@ class ScribeWriter:
         except Exception as e:
             _LOGGER.debug(
                 "[writer._clear_issue] Could not delete repair issue %s: %s (%s)",
-                issue_id, e, type(e).__name__,
+                issue_id,
+                e,
+                type(e).__name__,
             )
 
     def _report_rename_issue(
@@ -1818,8 +2151,10 @@ class ScribeWriter:
         successful rename to that name retires it.
         """
         self._report_issue(
-            f"rename_collision_{new_entity_id}", translation_key,
-            placeholders, severity,
+            f"rename_collision_{new_entity_id}",
+            translation_key,
+            placeholders,
+            severity,
         )
 
     def _clear_rename_issue(self, new_entity_id: str):
@@ -1846,25 +2181,29 @@ class ScribeWriter:
                     except Exception:
                         raise
         except Exception as e:
-            sqlstate = getattr(e, 'sqlstate', None)
+            sqlstate = getattr(e, "sqlstate", None)
             _LOGGER.error(
                 "[writer.query] Error executing query (sqlstate=%s, type=%s): %s | SQL=%s",
-                sqlstate, type(e).__name__, e, sql, exc_info=True,
+                sqlstate,
+                type(e).__name__,
+                e,
+                sql,
+                exc_info=True,
             )
             raise
 
     async def get_db_stats(self, stats_type: str = "all"):
         """Fetch database statistics using TimescaleDB chunks view.
-        
+
         Args:
             stats_type: Type of stats to fetch - "chunk", "size", or "all"
         """
         stats = {}
         if not self._pool:
             return stats
-        
+
         tasks = []
-        
+
         async def get_states_chunk_stats():
             try:
                 row = await self._fetchrow("""
@@ -1877,12 +2216,16 @@ class ScribeWriter:
                 """)
                 if row:
                     return {
-                        "states_total_chunks": row['total_chunks'] or 0,
-                        "states_compressed_chunks": row['compressed_chunks'] or 0,
-                        "states_uncompressed_chunks": row['uncompressed_chunks'] or 0
+                        "states_total_chunks": row["total_chunks"] or 0,
+                        "states_compressed_chunks": row["compressed_chunks"] or 0,
+                        "states_uncompressed_chunks": row["uncompressed_chunks"] or 0,
                     }
             except Exception as e:
-                _LOGGER.debug("[writer.get_db_stats:states_chunk] Failed: %s (%s)", e, type(e).__name__)
+                _LOGGER.debug(
+                    "[writer.get_db_stats:states_chunk] Failed: %s (%s)",
+                    e,
+                    type(e).__name__,
+                )
             return {}
 
         async def get_states_size_stats():
@@ -1892,29 +2235,53 @@ class ScribeWriter:
             after_bytes = 0
 
             try:
-                total_bytes = await self._fetchval("SELECT total_bytes FROM hypertable_detailed_size('states_raw')") or 0
+                total_bytes = (
+                    await self._fetchval(
+                        "SELECT total_bytes FROM hypertable_detailed_size('states_raw')"
+                    )
+                    or 0
+                )
             except Exception as e:
-                _LOGGER.debug("[writer.get_db_stats:states_total_size] Failed: %s (%s)", e, type(e).__name__)
+                _LOGGER.debug(
+                    "[writer.get_db_stats:states_total_size] Failed: %s (%s)",
+                    e,
+                    type(e).__name__,
+                )
 
             try:
-                compressed_bytes = await self._fetchval("SELECT after_compression_total_bytes FROM hypertable_compression_stats('states_raw')") or 0
+                compressed_bytes = (
+                    await self._fetchval(
+                        "SELECT after_compression_total_bytes FROM hypertable_compression_stats('states_raw')"
+                    )
+                    or 0
+                )
             except Exception as e:
-                _LOGGER.debug("[writer.get_db_stats:states_compressed_size] Failed: %s (%s)", e, type(e).__name__)
+                _LOGGER.debug(
+                    "[writer.get_db_stats:states_compressed_size] Failed: %s (%s)",
+                    e,
+                    type(e).__name__,
+                )
 
             try:
-                row = await self._fetchrow("SELECT before_compression_total_bytes, after_compression_total_bytes FROM hypertable_compression_stats('states_raw')")
+                row = await self._fetchrow(
+                    "SELECT before_compression_total_bytes, after_compression_total_bytes FROM hypertable_compression_stats('states_raw')"
+                )
                 if row:
-                    before_bytes = row['before_compression_total_bytes'] or 0
-                    after_bytes = row['after_compression_total_bytes'] or 0
+                    before_bytes = row["before_compression_total_bytes"] or 0
+                    after_bytes = row["after_compression_total_bytes"] or 0
             except Exception as e:
-                _LOGGER.debug("[writer.get_db_stats:states_compression_ratio] Failed: %s (%s)", e, type(e).__name__)
+                _LOGGER.debug(
+                    "[writer.get_db_stats:states_compression_ratio] Failed: %s (%s)",
+                    e,
+                    type(e).__name__,
+                )
 
             return {
                 "states_total_size": total_bytes,
                 "states_compressed_size": compressed_bytes,
                 "states_uncompressed_size": max(0, total_bytes - compressed_bytes),
                 "states_before_compression_total_bytes": before_bytes,
-                "states_after_compression_total_bytes": after_bytes
+                "states_after_compression_total_bytes": after_bytes,
             }
 
         async def get_events_chunk_stats():
@@ -1929,12 +2296,16 @@ class ScribeWriter:
                 """)
                 if row:
                     return {
-                        "events_total_chunks": row['total_chunks'] or 0,
-                        "events_compressed_chunks": row['compressed_chunks'] or 0,
-                        "events_uncompressed_chunks": row['uncompressed_chunks'] or 0
+                        "events_total_chunks": row["total_chunks"] or 0,
+                        "events_compressed_chunks": row["compressed_chunks"] or 0,
+                        "events_uncompressed_chunks": row["uncompressed_chunks"] or 0,
                     }
             except Exception as e:
-                _LOGGER.debug("[writer.get_db_stats:events_chunk] Failed: %s (%s)", e, type(e).__name__)
+                _LOGGER.debug(
+                    "[writer.get_db_stats:events_chunk] Failed: %s (%s)",
+                    e,
+                    type(e).__name__,
+                )
             return {}
 
         async def get_events_size_stats():
@@ -1944,29 +2315,53 @@ class ScribeWriter:
             after_bytes = 0
 
             try:
-                total_bytes = await self._fetchval(f"SELECT total_bytes FROM hypertable_detailed_size('{self.table_name_events}')") or 0
+                total_bytes = (
+                    await self._fetchval(
+                        f"SELECT total_bytes FROM hypertable_detailed_size('{self.table_name_events}')"
+                    )
+                    or 0
+                )
             except Exception as e:
-                _LOGGER.debug("[writer.get_db_stats:events_total_size] Failed: %s (%s)", e, type(e).__name__)
+                _LOGGER.debug(
+                    "[writer.get_db_stats:events_total_size] Failed: %s (%s)",
+                    e,
+                    type(e).__name__,
+                )
 
             try:
-                compressed_bytes = await self._fetchval(f"SELECT after_compression_total_bytes FROM hypertable_compression_stats('{self.table_name_events}')") or 0
+                compressed_bytes = (
+                    await self._fetchval(
+                        f"SELECT after_compression_total_bytes FROM hypertable_compression_stats('{self.table_name_events}')"
+                    )
+                    or 0
+                )
             except Exception as e:
-                _LOGGER.debug("[writer.get_db_stats:events_compressed_size] Failed: %s (%s)", e, type(e).__name__)
+                _LOGGER.debug(
+                    "[writer.get_db_stats:events_compressed_size] Failed: %s (%s)",
+                    e,
+                    type(e).__name__,
+                )
 
             try:
-                row = await self._fetchrow(f"SELECT before_compression_total_bytes, after_compression_total_bytes FROM hypertable_compression_stats('{self.table_name_events}')")
+                row = await self._fetchrow(
+                    f"SELECT before_compression_total_bytes, after_compression_total_bytes FROM hypertable_compression_stats('{self.table_name_events}')"
+                )
                 if row:
-                    before_bytes = row['before_compression_total_bytes'] or 0
-                    after_bytes = row['after_compression_total_bytes'] or 0
+                    before_bytes = row["before_compression_total_bytes"] or 0
+                    after_bytes = row["after_compression_total_bytes"] or 0
             except Exception as e:
-                _LOGGER.debug("[writer.get_db_stats:events_compression_ratio] Failed: %s (%s)", e, type(e).__name__)
+                _LOGGER.debug(
+                    "[writer.get_db_stats:events_compression_ratio] Failed: %s (%s)",
+                    e,
+                    type(e).__name__,
+                )
 
             return {
                 "events_total_size": total_bytes,
                 "events_compressed_size": compressed_bytes,
                 "events_uncompressed_size": max(0, total_bytes - compressed_bytes),
                 "events_before_compression_total_bytes": before_bytes,
-                "events_after_compression_total_bytes": after_bytes
+                "events_after_compression_total_bytes": after_bytes,
             }
 
         if self.record_states:
@@ -1985,7 +2380,7 @@ class ScribeWriter:
             results = await asyncio.gather(*tasks)
             for result in results:
                 stats.update(result)
-            
+
         return stats
 
     # ------------------------------------------------------------------

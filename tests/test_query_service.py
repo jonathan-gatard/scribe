@@ -3,6 +3,7 @@ from custom_components.scribe.writer import ScribeWriter
 
 # Using mock_pool from conftest.py
 
+
 @pytest.fixture
 async def writer(hass, mock_pool):
     """Create a writer instance."""
@@ -26,17 +27,19 @@ async def writer(hass, mock_pool):
     if writer._task:
         await writer.stop()
 
+
 @pytest.mark.asyncio
 async def test_query_select_valid(writer, mock_db_connection):
     """Test valid SELECT query."""
     mock_db_connection.fetch.return_value = [{"id": 1, "name": "test"}]
 
     result = await writer.query("SELECT * FROM states")
-    
+
     assert len(result) == 1
     assert result[0]["id"] == 1
     assert result[0]["name"] == "test"
     assert mock_db_connection.fetch.called
+
 
 @pytest.mark.asyncio
 async def test_ensure_read_only_transaction(writer, mock_db_connection):
@@ -44,17 +47,18 @@ async def test_ensure_read_only_transaction(writer, mock_db_connection):
     mock_db_connection.fetch.return_value = []
 
     await writer.query("SELECT * FROM states")
-    
+
     # Verify that SET LOCAL TRANSACTION READ ONLY was called
     calls = mock_db_connection.execute.call_args_list
-    
+
     has_read_only = False
     for call in calls:
         if "SET LOCAL TRANSACTION READ ONLY" in str(call):
             has_read_only = True
             break
-                
+
     assert has_read_only, f"Read-only transaction was not enforced. Calls: {calls}"
+
 
 @pytest.mark.asyncio
 async def test_query_whitespace(writer, mock_db_connection):
@@ -63,12 +67,14 @@ async def test_query_whitespace(writer, mock_db_connection):
     await writer.query("  SELECT * FROM states")
     assert mock_db_connection.fetch.called
 
+
 @pytest.mark.asyncio
 async def test_query_case_insensitive(writer, mock_db_connection):
     """Test query case insensitivity."""
     mock_db_connection.fetch.return_value = []
     await writer.query("select * from states")
     assert mock_db_connection.fetch.called
+
 
 @pytest.mark.asyncio
 async def test_query_no_connection(hass):
@@ -88,9 +94,9 @@ async def test_query_no_connection(hass):
         table_name_events="events",
         ssl_root_cert=None,
         ssl_cert_file=None,
-        ssl_key_file=None
+        ssl_key_file=None,
     )
     # Don't start writer, so no engine
-    
+
     with pytest.raises(RuntimeError, match="Database not connected"):
         await writer.query("SELECT * FROM states")

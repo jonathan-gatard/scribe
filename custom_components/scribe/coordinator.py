@@ -1,4 +1,5 @@
 """DataUpdateCoordinator for Scribe."""
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -14,18 +15,19 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class ScribeDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching Scribe data."""
 
     def __init__(
-        self, 
-        hass: HomeAssistant, 
-        writer, 
+        self,
+        hass: HomeAssistant,
+        writer,
         update_interval_minutes: int = 60,
-        stats_type: str = "all"
+        stats_type: str = "all",
     ) -> None:
         """Initialize.
-        
+
         Args:
             hass: Home Assistant instance
             writer: ScribeWriter instance
@@ -34,7 +36,7 @@ class ScribeDataUpdateCoordinator(DataUpdateCoordinator):
         """
         self.writer = writer
         self.stats_type = stats_type
-        
+
         super().__init__(
             hass,
             _LOGGER,
@@ -50,7 +52,10 @@ class ScribeDataUpdateCoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.error(
                 "[coordinator._async_update_data:%s] Failed to fetch DB stats: %s (%s)",
-                self.stats_type, err, type(err).__name__, exc_info=True,
+                self.stats_type,
+                err,
+                type(err).__name__,
+                exc_info=True,
             )
             raise UpdateFailed(
                 f"[coordinator:{self.stats_type}] Error communicating with database: "

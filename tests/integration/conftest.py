@@ -12,6 +12,7 @@ Start the database they expect with:
 Every test here skips itself when no database answers, so the suite still runs
 anywhere. CI provides a service container and fails if they skip.
 """
+
 import asyncio
 import os
 from datetime import datetime, timedelta, timezone
@@ -37,8 +38,15 @@ BASE_TIME = datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone.utc)
 # so the kind is read from the catalog rather than assumed — DROP VIEW on a
 # table (and vice versa) is an error, not a no-op.
 _SCRIBE_RELATIONS = (
-    "states", "states_legacy", "states_raw", "events",
-    "entities", "users", "areas", "devices", "integrations",
+    "states",
+    "states_legacy",
+    "states_raw",
+    "events",
+    "entities",
+    "users",
+    "areas",
+    "devices",
+    "integrations",
 )
 
 _RELKIND_KEYWORD = {"r": "TABLE", "p": "TABLE", "v": "VIEW", "m": "MATERIALIZED VIEW"}
@@ -60,8 +68,7 @@ async def drop_scribe_relations(conn):
     for row in rows:
         keyword = _RELKIND_KEYWORD.get(row["relkind"])
         if keyword:
-            await conn.execute(
-                f'DROP {keyword} IF EXISTS "{row["relname"]}" CASCADE')
+            await conn.execute(f'DROP {keyword} IF EXISTS "{row["relname"]}" CASCADE')
 
 
 async def dsn_reachable() -> bool:
@@ -161,7 +168,10 @@ async def scribe_entry(hass, clean_db):
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.scribe.const import (
-        CONF_DB_URL, CONF_RECORD_EVENTS, CONF_RECORD_STATES, DOMAIN,
+        CONF_DB_URL,
+        CONF_RECORD_EVENTS,
+        CONF_RECORD_STATES,
+        DOMAIN,
     )
 
     def _factory(**options):
@@ -222,16 +232,20 @@ async def register_entity(hass, entity_id, unique_id, platform=None):
 async def sync_metadata(writer, hass, entity_id):
     """Mirror what __init__.handle_entity_registry_update writes to `entities`."""
     entity = er.async_get(hass).async_get(entity_id)
-    await writer.write_entities([{
-        "entity_id": entity.entity_id,
-        "unique_id": entity.unique_id,
-        "platform": entity.platform,
-        "domain": entity.domain,
-        "name": entity.name or entity.original_name,
-        "device_id": entity.device_id,
-        "area_id": entity.area_id,
-        "capabilities": None,
-    }])
+    await writer.write_entities(
+        [
+            {
+                "entity_id": entity.entity_id,
+                "unique_id": entity.unique_id,
+                "platform": entity.platform,
+                "domain": entity.domain,
+                "name": entity.name or entity.original_name,
+                "device_id": entity.device_id,
+                "area_id": entity.area_id,
+                "capabilities": None,
+            }
+        ]
+    )
 
 
 async def write_states(writer, entity_id, count, start=0, **overrides):
@@ -286,16 +300,18 @@ async def reconnect(writer):
     async def init(conn):
         await conn.set_type_codec(
             "jsonb",
-            encoder=lambda x: b"\x01" + json.dumps(
-                x, cls=JSONEncoder, default=_json_default).encode("utf-8"),
+            encoder=lambda x: (
+                b"\x01"
+                + json.dumps(x, cls=JSONEncoder, default=_json_default).encode("utf-8")
+            ),
             decoder=lambda x: json.loads(x[1:].decode("utf-8")),
             schema="pg_catalog",
             format="binary",
         )
 
     writer._pool = await asyncpg.create_pool(
-        DSN, min_size=1, max_size=4,
-        max_inactive_connection_lifetime=0, init=init)
+        DSN, min_size=1, max_size=4, max_inactive_connection_lifetime=0, init=init
+    )
     return writer._pool
 
 
@@ -303,11 +319,13 @@ async def entity_rows(pool, entity_id):
     """Return (entities.id, number of states_raw rows) for an entity_id."""
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT id FROM entities WHERE entity_id = $1", entity_id)
+            "SELECT id FROM entities WHERE entity_id = $1", entity_id
+        )
         if row is None:
             return None, 0
         n = await conn.fetchval(
-            "SELECT count(*) FROM states_raw WHERE metadata_id = $1", row["id"])
+            "SELECT count(*) FROM states_raw WHERE metadata_id = $1", row["id"]
+        )
         return row["id"], n
 
 
@@ -316,5 +334,6 @@ async def table_exists(pool, name, kind="BASE TABLE"):
         return await conn.fetchval(
             "SELECT EXISTS (SELECT FROM information_schema.tables "
             "WHERE table_name = $1 AND table_type = $2)",
-            name, kind,
+            name,
+            kind,
         )

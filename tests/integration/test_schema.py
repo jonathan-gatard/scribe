@@ -1,4 +1,5 @@
 """Schema creation against a real TimescaleDB: tables, hypertables, view."""
+
 import pytest
 
 from .conftest import make_writer, table_exists
@@ -7,8 +8,15 @@ from .conftest import make_writer, table_exists
 @pytest.mark.asyncio
 async def test_creates_all_tables(writer, db):
     """A default configuration creates every table Scribe needs."""
-    for name in ("entities", "states_raw", "events", "users",
-                 "areas", "devices", "integrations"):
+    for name in (
+        "entities",
+        "states_raw",
+        "events",
+        "users",
+        "areas",
+        "devices",
+        "integrations",
+    ):
         assert await table_exists(db, name), f"{name} missing"
     # `states` is a view over states_raw, never a table.
     assert await table_exists(db, "states", kind="VIEW")
@@ -47,8 +55,7 @@ async def test_entities_entity_id_is_unique(writer, db):
     async with db.acquire() as conn:
         await conn.execute("INSERT INTO entities (entity_id) VALUES ('sensor.dup')")
         with pytest.raises(Exception) as excinfo:
-            await conn.execute(
-                "INSERT INTO entities (entity_id) VALUES ('sensor.dup')")
+            await conn.execute("INSERT INTO entities (entity_id) VALUES ('sensor.dup')")
         assert "unique" in str(excinfo.value).lower()
 
 
@@ -57,7 +64,8 @@ async def test_hypertables_are_created(writer, db):
     """states_raw and events are TimescaleDB hypertables, not plain tables."""
     async with db.acquire() as conn:
         names = await conn.fetch(
-            "SELECT hypertable_name FROM timescaledb_information.hypertables")
+            "SELECT hypertable_name FROM timescaledb_information.hypertables"
+        )
         got = {r["hypertable_name"] for r in names}
     assert {"states_raw", "events"} <= got
 
@@ -67,12 +75,16 @@ async def test_states_view_joins_entity_ids(writer, db):
     """The compatibility view resolves metadata_id back to entity_id."""
     async with db.acquire() as conn:
         mid = await conn.fetchval(
-            "INSERT INTO entities (entity_id) VALUES ('sensor.viewed') RETURNING id")
+            "INSERT INTO entities (entity_id) VALUES ('sensor.viewed') RETURNING id"
+        )
         await conn.execute(
             "INSERT INTO states_raw (time, metadata_id, state, value) "
-            "VALUES (now(), $1, 'on', 1.0)", mid)
+            "VALUES (now(), $1, 'on', 1.0)",
+            mid,
+        )
         row = await conn.fetchrow(
-            "SELECT entity_id, state, value FROM states WHERE entity_id = 'sensor.viewed'")
+            "SELECT entity_id, state, value FROM states WHERE entity_id = 'sensor.viewed'"
+        )
     assert row["entity_id"] == "sensor.viewed"
     assert row["state"] == "on"
     assert row["value"] == 1.0
@@ -84,7 +96,8 @@ async def test_init_is_idempotent(writer, db, hass):
     async with db.acquire() as conn:
         before = await conn.fetchval(
             "SELECT count(*) FROM information_schema.tables "
-            "WHERE table_schema = 'public'")
+            "WHERE table_schema = 'public'"
+        )
 
     second = make_writer(hass)
     await second.start()
@@ -93,7 +106,8 @@ async def test_init_is_idempotent(writer, db, hass):
         async with second._pool.acquire() as conn:
             after = await conn.fetchval(
                 "SELECT count(*) FROM information_schema.tables "
-                "WHERE table_schema = 'public'")
+                "WHERE table_schema = 'public'"
+            )
         assert after == before
     finally:
         await second.stop()

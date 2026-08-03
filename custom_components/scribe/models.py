@@ -1,12 +1,15 @@
 """SQLAlchemy models for Scribe."""
+
 from sqlalchemy import Column, DateTime, String, Float
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
+
 class State(Base):
     """State model."""
+
     __tablename__ = "states"
 
     time = Column(DateTime(timezone=True), primary_key=True, nullable=False)
@@ -15,8 +18,10 @@ class State(Base):
     value = Column(Float)
     attributes = Column(JSONB)
 
+
 class Event(Base):
     """Event model."""
+
     __tablename__ = "events"
 
     time = Column(DateTime(timezone=True), primary_key=True, nullable=False)

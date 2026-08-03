@@ -1,4 +1,3 @@
-
 import os
 import contextlib
 import sys
@@ -16,15 +15,13 @@ from preflight import preflight_scribe_schema
 load_dotenv()
 
 # Configure logging
-LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(
     level=logging.INFO,
     format=LOG_FORMAT,
-    handlers=[
-        logging.FileHandler("migration_influx.log"),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.FileHandler("migration_influx.log"), logging.StreamHandler()],
 )
+
 
 # --- Configuration Loading ---
 def get_env_var(name, default=None, required=False):
@@ -33,6 +30,7 @@ def get_env_var(name, default=None, required=False):
         logging.error(f"Environment variable {name} is required.")
         sys.exit(1)
     return val
+
 
 # InfluxDB
 INFLUX_URL = get_env_var("INFLUX_URL", "http://localhost:8086")
@@ -68,10 +66,12 @@ def clean_null_bytes(value):
     Remove NUL (0x00) bytes from strings to prevent Postgres errors.
     """
     if isinstance(value, str):
-        return value.replace('\x00', '')
+        return value.replace("\x00", "")
     return value
 
+
 metadata_id_cache = {}
+
 
 def ensure_metadata_id(pg_cur, entity_id):
     """
@@ -80,16 +80,20 @@ def ensure_metadata_id(pg_cur, entity_id):
     if entity_id in metadata_id_cache:
         return metadata_id_cache[entity_id]
     # Use `ON CONFLICT DO UPDATE` to ensure that the query always returns an id.
-    pg_cur.execute("""
+    pg_cur.execute(
+        """
         INSERT INTO entities
             (entity_id) VALUES (%s)
         ON CONFLICT (entity_id) DO UPDATE SET entity_id = %s RETURNING id
-        """, (entity_id, entity_id))
+        """,
+        (entity_id, entity_id),
+    )
     pg_cur.connection.commit()
 
     metadata_id = pg_cur.fetchone()[0]
     metadata_id_cache[entity_id] = metadata_id
     return metadata_id
+
 
 def migrate():
     """
@@ -98,7 +102,11 @@ def migrate():
     # 1. Connect to Postgres
     try:
         pg_conn = psycopg2.connect(
-            host=SCRIBE_HOST, port=SCRIBE_PORT, database=SCRIBE_DB, user=SCRIBE_USER, password=SCRIBE_PASS
+            host=SCRIBE_HOST,
+            port=SCRIBE_PORT,
+            database=SCRIBE_DB,
+            user=SCRIBE_USER,
+            password=SCRIBE_PASS,
         )
         pg_cur = pg_conn.cursor()
         logging.info("Connected to Scribe (PostgreSQL).")
@@ -109,36 +117,47 @@ def migrate():
     preflight_scribe_schema(pg_cur)
 
     # 2. Connect to InfluxDB
-    client = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG, timeout=300000)
+    client = InfluxDBClient(
+        url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG, timeout=300000
+    )
     query_api = client.query_api()
     logging.info("Connected to InfluxDB.")
 
     # 3. Cleanup Destination (Optional)
     if PURGE_DESTINATION:
-        logging.info(f"Cleaning existing data in Scribe (states_raw) for range {START_TIME} to {END_TIME}...")
+        logging.info(
+            f"Cleaning existing data in Scribe (states_raw) for range {START_TIME} to {END_TIME}..."
+        )
         try:
-            pg_cur.execute("DELETE FROM states_raw WHERE time >= %s AND time <= %s", (START_TIME, END_TIME))
+            pg_cur.execute(
+                "DELETE FROM states_raw WHERE time >= %s AND time <= %s",
+                (START_TIME, END_TIME),
+            )
             pg_conn.commit()
             logging.info("Cleanup done.")
         except Exception as e:
             logging.error(f"Error during cleanup: {e}")
             pg_conn.rollback()
     else:
-        logging.info("Skipping cleanup (PURGE_DESTINATION is False). Data will be appended.")
+        logging.info(
+            "Skipping cleanup (PURGE_DESTINATION is False). Data will be appended."
+        )
 
     # 4. Chunk Loop
     current_start = START_TIME
     total_migrated_rows = 0
 
-    logging.info(f"Starting migration from {START_TIME} to {END_TIME} in chunks of {CHUNK_SIZE_HOURS} hours.")
+    logging.info(
+        f"Starting migration from {START_TIME} to {END_TIME} in chunks of {CHUNK_SIZE_HOURS} hours."
+    )
 
     while current_start < END_TIME:
         current_end = current_start + CHUNK_SIZE
         if current_end > END_TIME:
             current_end = END_TIME
-        
+
         logging.info(f"--- Processing Chunk: {current_start} to {current_end} ---")
-        
+
         # Flux Query to get data pivoted
         query = f'''
         from(bucket: "{INFLUX_BUCKET}")
@@ -147,60 +166,69 @@ def migrate():
           |> drop(columns: ["_start", "_stop"])
           |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
         '''
-        
+
         batch = []
         chunk_inserted = 0
-        
+
         try:
             # Query InfluxDB
             tables = query_api.query(query)
-            
+
             for table in tables:
                 for record in table.records:
                     ts = record.get_time()
                     entity_id_raw = record.values.get("entity_id")
                     domain = record.values.get("domain")
-                    
+
                     if not entity_id_raw:
                         continue
-                    
+
                     # Fix Entity ID (ensure domain prefix)
                     if domain and not entity_id_raw.startswith(f"{domain}."):
                         pg_entity_id = f"{domain}.{entity_id_raw}"
                     else:
                         pg_entity_id = entity_id_raw
-                    
+
                     pg_entity_id = clean_null_bytes(pg_entity_id)
                     metadata_id = ensure_metadata_id(pg_cur, pg_entity_id)
 
                     val = record.values.get("value")
                     state_val = record.values.get("state")
-                    
+
                     pg_value = None
                     pg_state = None
-                    
+
                     # Try to parse value as float
                     # Non-numeric values keep pg_value NULL and live in pg_state.
                     if val is not None:
                         with contextlib.suppress(ValueError):
                             pg_value = float(val)
-                    
+
                     # Determine state string
                     if state_val is not None:
                         pg_state = clean_null_bytes(str(state_val))
                     elif pg_value is not None:
                         pg_state = str(pg_value)
-                        
+
                     # Attributes JSON
                     attributes = {}
                     unit = record.values.get("_measurement")
                     if unit and unit != "state":
-                         attributes["unit_of_measurement"] = unit
-                    
+                        attributes["unit_of_measurement"] = unit
+
                     for k, v in record.values.items():
                         # Exclude standard fields from attributes
-                        if k not in ["result", "table", "_start", "_stop", "_time", "entity_id", "value", "state"]:
-                             if v is not None:
+                        if k not in [
+                            "result",
+                            "table",
+                            "_start",
+                            "_stop",
+                            "_time",
+                            "entity_id",
+                            "value",
+                            "state",
+                        ]:
+                            if v is not None:
                                 # Clean keys and values
                                 k_clean = clean_null_bytes(k)
                                 if isinstance(v, str):
@@ -208,35 +236,40 @@ def migrate():
                                 else:
                                     v_clean = v
                                 attributes[k_clean] = v_clean
-                    
+
                     row = (ts, metadata_id, pg_state, pg_value, json.dumps(attributes))
                     batch.append(row)
-            
+
             # Insert Batch into Postgres
             if batch:
-                execute_batch(pg_cur, """
+                execute_batch(
+                    pg_cur,
+                    """
                     INSERT INTO states_raw (time, metadata_id, state, value, attributes)
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (metadata_id, time) DO NOTHING
-                """, batch)
+                """,
+                    batch,
+                )
                 pg_conn.commit()
                 chunk_inserted = len(batch)
                 total_migrated_rows += chunk_inserted
-            
+
             logging.info(f"   -> Imported {chunk_inserted} rows.")
-            
+
         except Exception as e:
             logging.error(f"Error processing chunk {current_start}: {e}")
             pg_conn.rollback()
             # We continue to the next chunk even if one fails
-        
+
         current_start = current_end
 
     logging.info(f"Migration complete. Total rows inserted: {total_migrated_rows}")
-    
+
     pg_cur.close()
     pg_conn.close()
     client.close()
+
 
 if __name__ == "__main__":
     migrate()

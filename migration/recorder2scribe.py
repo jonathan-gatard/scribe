@@ -30,15 +30,13 @@ Minimum version of the recorder DB schema
 load_dotenv()
 
 # Configure logging
-LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(
     level=logging.INFO,
     format=LOG_FORMAT,
-    handlers=[
-        logging.FileHandler("migration_recorder.log"),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.FileHandler("migration_recorder.log"), logging.StreamHandler()],
 )
+
 
 # --- Configuration Loading ---
 def get_env_var(name, default=None, required=False):
@@ -47,6 +45,7 @@ def get_env_var(name, default=None, required=False):
         logging.error(f"Environment variable {name} is required.")
         sys.exit(1)
     return val
+
 
 # Recorder
 RECORDER_TYPE = get_env_var("RECORDER_TYPE", "postgres")
@@ -92,8 +91,9 @@ def clean_null_bytes(value):
     Remove NUL (0x00) bytes from strings to prevent Postgres errors.
     """
     if isinstance(value, str):
-        return value.replace('\x00', '')
+        return value.replace("\x00", "")
     return value
+
 
 def ensure_metadata_id(pg_cur_scribe, entity_id):
     """
@@ -102,16 +102,20 @@ def ensure_metadata_id(pg_cur_scribe, entity_id):
     if entity_id in metadata_id_cache:
         return metadata_id_cache[entity_id]
     # Use `ON CONFLICT DO UPDATE` to ensure that the query always returns an id.
-    pg_cur_scribe.execute("""
+    pg_cur_scribe.execute(
+        """
         INSERT INTO entities
             (entity_id) VALUES (%s)
         ON CONFLICT (entity_id) DO UPDATE SET entity_id = %s RETURNING id
-        """, (entity_id, entity_id))
+        """,
+        (entity_id, entity_id),
+    )
     pg_cur_scribe.connection.commit()
 
     metadata_id = pg_cur_scribe.fetchone()[0]
     metadata_id_cache[entity_id] = metadata_id
     return metadata_id
+
 
 def migrate():
     """
@@ -120,7 +124,11 @@ def migrate():
     # 1. Connect to Postgres (Scribe)
     try:
         pg_conn_scribe = psycopg2.connect(
-            host=SCRIBE_HOST, port=SCRIBE_PORT, database=SCRIBE_DB, user=SCRIBE_USER, password=SCRIBE_PASS
+            host=SCRIBE_HOST,
+            port=SCRIBE_PORT,
+            database=SCRIBE_DB,
+            user=SCRIBE_USER,
+            password=SCRIBE_PASS,
         )
         pg_cur_scribe = pg_conn_scribe.cursor()
         logging.info("Connected to Scribe (PostgreSQL).")
@@ -133,7 +141,11 @@ def migrate():
     if RECORDER_TYPE == "postgres":
         try:
             conn_recorder = psycopg2.connect(
-                host=RECORDER_HOST, port=RECORDER_PORT, database=RECORDER_DB, user=RECORDER_USER, password=RECORDER_PASS
+                host=RECORDER_HOST,
+                port=RECORDER_PORT,
+                database=RECORDER_DB,
+                user=RECORDER_USER,
+                password=RECORDER_PASS,
             )
             cur_recorder = conn_recorder.cursor()
             logging.info("Connected to Recorder (PostgreSQL).")
@@ -149,20 +161,28 @@ def migrate():
             sys.exit(f"Failed to connect to Recorder SQLite: {e}")
         placeholder = "?"
 
-    cur_recorder.execute("SELECT schema_version FROM schema_changes ORDER BY change_id DESC LIMIT 1")
+    cur_recorder.execute(
+        "SELECT schema_version FROM schema_changes ORDER BY change_id DESC LIMIT 1"
+    )
     result = cur_recorder.fetchone()
     if result is None or result[0] < MINIMUM_RECORDER_SCHEMA_VERSION:
-        sys.exit(f"Schema version {result[0]} is less than minimum supported schema version {MINIMUM_RECORDER_SCHEMA_VERSION}."
-                  " Wait for the recorder database migration to finish before reattempting conversion.")
+        sys.exit(
+            f"Schema version {result[0]} is less than minimum supported schema version {MINIMUM_RECORDER_SCHEMA_VERSION}."
+            " Wait for the recorder database migration to finish before reattempting conversion."
+        )
 
     logging.info(f"Recorder schema version: {result[0]}")
 
-
     # 3. Cleanup Destination (Optional)
     if PURGE_DESTINATION:
-        logging.info(f"Cleaning existing data in Scribe for range {START_TIME} to {END_TIME}...")
+        logging.info(
+            f"Cleaning existing data in Scribe for range {START_TIME} to {END_TIME}..."
+        )
         try:
-            pg_cur_scribe.execute("DELETE FROM states_raw WHERE time >= %s AND time < %s", (START_TIME, END_TIME))
+            pg_cur_scribe.execute(
+                "DELETE FROM states_raw WHERE time >= %s AND time < %s",
+                (START_TIME, END_TIME),
+            )
             pg_conn_scribe.commit()
             logging.info("Cleanup done.")
         except Exception as e:
@@ -170,13 +190,17 @@ def migrate():
             pg_conn_scribe.rollback()
             sys.exit(1)
     else:
-        logging.info("Skipping cleanup (PURGE_DESTINATION is False). Data will be appended.")
+        logging.info(
+            "Skipping cleanup (PURGE_DESTINATION is False). Data will be appended."
+        )
 
     # 4. Chunk Loop
     current_start = START_TIME
     total_migrated_rows = 0
 
-    logging.info(f"Starting migration from {START_TIME} to {END_TIME} in chunks of {CHUNK_SIZE_HOURS} hours.")
+    logging.info(
+        f"Starting migration from {START_TIME} to {END_TIME} in chunks of {CHUNK_SIZE_HOURS} hours."
+    )
 
     while current_start < END_TIME:
         current_end = current_start + CHUNK_SIZE
@@ -197,10 +221,14 @@ def migrate():
                     LEFT JOIN state_attributes AS a ON a.attributes_id = s.attributes_id
                 WHERE last_updated_ts >= {placeholder} AND last_updated_ts < {placeholder}
             """
-            cur_recorder.execute(query, (current_start.timestamp(), current_end.timestamp()))
+            cur_recorder.execute(
+                query, (current_start.timestamp(), current_end.timestamp())
+            )
 
             for row in cur_recorder:
-                pg_metadata_id = ensure_metadata_id(pg_cur_scribe, clean_null_bytes(row[0]))
+                pg_metadata_id = ensure_metadata_id(
+                    pg_cur_scribe, clean_null_bytes(row[0])
+                )
                 val = row[1]
                 ts = datetime.fromtimestamp(row[2], tz=timezone.utc)
                 attributes = row[3]
@@ -219,15 +247,22 @@ def migrate():
 
             # Insert Batch into Postgres
             if batch:
-                inserted = execute_values(pg_cur_scribe, """
+                inserted = execute_values(
+                    pg_cur_scribe,
+                    """
                     INSERT INTO states_raw (time, metadata_id, state, value, attributes)
                     VALUES %s ON CONFLICT DO NOTHING
                     RETURNING (time, metadata_id)
-                """, batch, fetch=True)
+                """,
+                    batch,
+                    fetch=True,
+                )
                 pg_conn_scribe.commit()
                 chunk_inserted = len(inserted)
                 if len(batch) != chunk_inserted:
-                    logging.warning(f"   -> {len(batch) - chunk_inserted} rows were skipped due to conflicts.")
+                    logging.warning(
+                        f"   -> {len(batch) - chunk_inserted} rows were skipped due to conflicts."
+                    )
                 total_migrated_rows += chunk_inserted
 
             logging.info(f"   -> Imported {chunk_inserted} rows.")
@@ -245,6 +280,7 @@ def migrate():
     pg_conn_scribe.close()
     cur_recorder.close()
     conn_recorder.close()
+
 
 if __name__ == "__main__":
     migrate()

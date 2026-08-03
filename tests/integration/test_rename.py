@@ -4,6 +4,7 @@ The mocked counterpart is tests/test_rename_entity.py, which asserts on the
 SQL issued; these assert on what actually ends up in the tables. Fixtures and
 helpers live in conftest.py.
 """
+
 import asyncio
 
 import pytest
@@ -29,7 +30,8 @@ async def test_e2e_rename_free_target(hass, writer, db):
     assert n == 5
 
     await writer.rename_entity(
-        "input_boolean.scribe_test", "input_boolean.scribe_test_bis")
+        "input_boolean.scribe_test", "input_boolean.scribe_test_bis"
+    )
 
     new_id, n_after = await entity_rows(db, "input_boolean.scribe_test_bis")
     assert new_id == original_id
@@ -56,17 +58,26 @@ async def test_e2e_dead_orphan_is_merged(hass, writer, db):
     assert phoenix_rows == 3
 
     await writer.rename_entity(
-        "input_boolean.scribe_phoenix", "input_boolean.scribe_victim")
+        "input_boolean.scribe_phoenix", "input_boolean.scribe_victim"
+    )
 
     final_id, final_rows = await entity_rows(db, "input_boolean.scribe_victim")
     assert final_id == phoenix_id
     assert final_rows == 10  # 7 merged + 3 own: one continuous history
     async with db.acquire() as conn:
-        assert await conn.fetchval(
-            "SELECT count(*) FROM entities WHERE id = $1", victim_id) == 0
-        assert await conn.fetchval(
-            "SELECT count(*) FROM entities "
-            "WHERE entity_id LIKE 'input_boolean.scribe%'") == 1
+        assert (
+            await conn.fetchval(
+                "SELECT count(*) FROM entities WHERE id = $1", victim_id
+            )
+            == 0
+        )
+        assert (
+            await conn.fetchval(
+                "SELECT count(*) FROM entities "
+                "WHERE entity_id LIKE 'input_boolean.scribe%'"
+            )
+            == 1
+        )
 
 
 @pytest.mark.asyncio
@@ -90,7 +101,8 @@ async def test_e2e_merge_with_colliding_timestamps(hass, writer, db):
     phoenix_id, _ = await entity_rows(db, "input_boolean.scribe_phoenix")
 
     await writer.rename_entity(
-        "input_boolean.scribe_phoenix", "input_boolean.scribe_victim")
+        "input_boolean.scribe_phoenix", "input_boolean.scribe_victim"
+    )
 
     final_id, final_rows = await entity_rows(db, "input_boolean.scribe_victim")
     assert final_id == phoenix_id, "rename was rolled back"
@@ -100,11 +112,17 @@ async def test_e2e_merge_with_colliding_timestamps(hass, writer, db):
         # The survivor's own values won at the shared timestamps.
         state = await conn.fetchval(
             "SELECT state FROM states_raw WHERE metadata_id = $1 AND time = $2",
-            final_id, BASE_TIME)
+            final_id,
+            BASE_TIME,
+        )
         assert state == "s0"
-        assert await conn.fetchval(
-            "SELECT count(*) FROM entities "
-            "WHERE entity_id LIKE 'input_boolean.scribe%'") == 1
+        assert (
+            await conn.fetchval(
+                "SELECT count(*) FROM entities "
+                "WHERE entity_id LIKE 'input_boolean.scribe%'"
+            )
+            == 1
+        )
 
 
 @pytest.mark.asyncio
@@ -140,7 +158,8 @@ async def test_e2e_self_collision_is_merged(hass, writer, db):
 
     # HA performs the rename; the registry now knows the new id.
     er.async_get(hass).async_update_entity(
-        "input_boolean.scribe_test", new_entity_id="input_boolean.scribe_test_bis")
+        "input_boolean.scribe_test", new_entity_id="input_boolean.scribe_test_bis"
+    )
     # The sync task wins the race and inserts the destination row.
     await sync_metadata(writer, hass, "input_boolean.scribe_test_bis")
     await write_states(writer, "input_boolean.scribe_test_bis", 2, start=100)
@@ -149,15 +168,20 @@ async def test_e2e_self_collision_is_merged(hass, writer, db):
 
     # Only now does the rename run — straight into a self-collision.
     await writer.rename_entity(
-        "input_boolean.scribe_test", "input_boolean.scribe_test_bis")
+        "input_boolean.scribe_test", "input_boolean.scribe_test_bis"
+    )
 
     final_id, final_rows = await entity_rows(db, "input_boolean.scribe_test_bis")
     assert final_id == old_id
     assert final_rows == 7  # 5 pre-rename + 2 post-rename, reunited
     async with db.acquire() as conn:
-        assert await conn.fetchval(
-            "SELECT count(*) FROM entities "
-            "WHERE entity_id LIKE 'input_boolean.scribe%'") == 1
+        assert (
+            await conn.fetchval(
+                "SELECT count(*) FROM entities "
+                "WHERE entity_id LIKE 'input_boolean.scribe%'"
+            )
+            == 1
+        )
 
 
 @pytest.mark.asyncio
@@ -173,19 +197,23 @@ async def test_e2e_concurrent_rename_and_sync(hass, writer, db):
     old_id, _ = await entity_rows(db, "input_boolean.scribe_race")
 
     er.async_get(hass).async_update_entity(
-        "input_boolean.scribe_race", new_entity_id="input_boolean.scribe_race2")
+        "input_boolean.scribe_race", new_entity_id="input_boolean.scribe_race2"
+    )
 
     await asyncio.gather(
-        writer.rename_entity(
-            "input_boolean.scribe_race", "input_boolean.scribe_race2"),
+        writer.rename_entity("input_boolean.scribe_race", "input_boolean.scribe_race2"),
         sync_metadata(writer, hass, "input_boolean.scribe_race2"),
     )
 
     # Exactly one row survives, carrying the full history.
     async with db.acquire() as conn:
-        assert await conn.fetchval(
-            "SELECT count(*) FROM entities "
-            "WHERE entity_id LIKE 'input_boolean.scribe%'") == 1
+        assert (
+            await conn.fetchval(
+                "SELECT count(*) FROM entities "
+                "WHERE entity_id LIKE 'input_boolean.scribe%'"
+            )
+            == 1
+        )
     final_id, final_rows = await entity_rows(db, "input_boolean.scribe_race2")
     assert final_id == old_id
     assert final_rows == 5

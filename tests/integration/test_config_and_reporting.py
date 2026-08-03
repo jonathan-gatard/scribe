@@ -4,6 +4,7 @@ The config flow's job is to reject a database it cannot reach, so testing it
 without one only ever tests the mock. Same for system health, which reports on
 a live connection.
 """
+
 import pytest
 
 from homeassistant import config_entries, data_entry_flow
@@ -23,11 +24,13 @@ from .conftest import DSN
 async def test_config_flow_accepts_a_reachable_database(hass, clean_db):
     """A working DSN creates the entry."""
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER})
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
     assert result["type"] == data_entry_flow.FlowResultType.FORM
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_DB_URL: DSN})
+        result["flow_id"], {CONF_DB_URL: DSN}
+    )
     await hass.async_block_till_done()
 
     assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
@@ -38,10 +41,11 @@ async def test_config_flow_accepts_a_reachable_database(hass, clean_db):
 async def test_config_flow_rejects_a_wrong_password(hass, clean_db):
     """Bad credentials must surface as a form error, not a broken entry."""
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER})
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {CONF_DB_URL: DSN.replace(":scribe@", ":wrong-password@")})
+        result["flow_id"], {CONF_DB_URL: DSN.replace(":scribe@", ":wrong-password@")}
+    )
 
     assert result["type"] == data_entry_flow.FlowResultType.FORM
     assert result["errors"]["base"] == "cannot_connect"
@@ -51,10 +55,12 @@ async def test_config_flow_rejects_a_wrong_password(hass, clean_db):
 async def test_config_flow_rejects_an_unreachable_host(hass, clean_db):
     """A host that does not answer is refused before the entry is created."""
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER})
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {CONF_DB_URL: "postgresql://postgres:scribe@127.0.0.1:1/scribe"})
+        {CONF_DB_URL: "postgresql://postgres:scribe@127.0.0.1:1/scribe"},
+    )
 
     assert result["type"] == data_entry_flow.FlowResultType.FORM
     assert result["errors"]["base"] == "cannot_connect"
@@ -64,10 +70,12 @@ async def test_config_flow_rejects_an_unreachable_host(hass, clean_db):
 async def test_config_flow_normalizes_a_sqlalchemy_dsn(hass, clean_db):
     """postgresql+asyncpg:// URLs are accepted: users copy them from LTSS docs."""
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER})
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {CONF_DB_URL: DSN.replace("postgresql://", "postgresql+asyncpg://")})
+        {CONF_DB_URL: DSN.replace("postgresql://", "postgresql+asyncpg://")},
+    )
 
     assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
 
@@ -78,7 +86,8 @@ async def test_only_one_entry_is_allowed(hass, scribe_entry):
     await scribe_entry()
 
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER})
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
 
     assert result["type"] == data_entry_flow.FlowResultType.ABORT
 
@@ -105,7 +114,8 @@ async def test_changing_options_reloads_and_applies_the_new_filter(hass, scribe_
     await new_writer._flush()
 
     rows = await new_writer.query(
-        "SELECT entity_id, count(*) AS n FROM states GROUP BY entity_id")
+        "SELECT entity_id, count(*) AS n FROM states GROUP BY entity_id"
+    )
     counts = {r["entity_id"]: r["n"] for r in rows}
     assert counts["sensor.will_be_excluded"] == 1, "new exclusion was not applied"
     assert counts["sensor.still_recorded"] == 1

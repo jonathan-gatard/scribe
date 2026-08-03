@@ -1,8 +1,10 @@
 """Test entities sync logic."""
+
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from homeassistant.core import HomeAssistant
 from custom_components.scribe import async_setup_entry
+
 
 @pytest.fixture
 def mock_writer():
@@ -14,11 +16,12 @@ def mock_writer():
     writer.write_entities = AsyncMock()
     return writer
 
+
 @pytest.fixture
 def mock_entity_registry():
     """Mock the entity registry."""
     registry = MagicMock()
-    
+
     # Create mock entities
     entity1 = MagicMock()
     entity1.entity_id = "light.living_room"
@@ -42,33 +45,40 @@ def mock_entity_registry():
     entity2.area_id = None
     entity2.capabilities = None
 
-    registry.entities = {
-        "light.living_room": entity1,
-        "sensor.temperature": entity2
-    }
+    registry.entities = {"light.living_room": entity1, "sensor.temperature": entity2}
     return registry
+
 
 @pytest.mark.asyncio
 async def test_entities_sync(hass: HomeAssistant, mock_writer, mock_entity_registry):
     """Test that entities are synced on startup."""
-    
+
     # Mock config entry
     entry = MagicMock()
     entry.data = {
         "db_url": "postgresql://user:pass@localhost/db",
         "record_states": True,
-        "record_events": True
+        "record_events": True,
     }
     entry.options = {}
     entry.entry_id = "test_entry"
 
     # Mock ScribeWriter constructor to return our mock
-    with patch("custom_components.scribe.ScribeWriter", return_value=mock_writer), \
-         patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_entity_registry), \
-         patch("homeassistant.auth.AuthManager.async_get_users", new_callable=AsyncMock) as mock_get_users, \
-         patch("homeassistant.config_entries.ConfigEntries.async_forward_entry_setups", new_callable=AsyncMock):
-        
-        mock_get_users.return_value = [] # Mock empty users to focus on entities
+    with (
+        patch("custom_components.scribe.ScribeWriter", return_value=mock_writer),
+        patch(
+            "homeassistant.helpers.entity_registry.async_get",
+            return_value=mock_entity_registry,
+        ),
+        patch(
+            "homeassistant.auth.AuthManager.async_get_users", new_callable=AsyncMock
+        ) as mock_get_users,
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+            new_callable=AsyncMock,
+        ),
+    ):
+        mock_get_users.return_value = []  # Mock empty users to focus on entities
 
         # Run setup
         await async_setup_entry(hass, entry)
@@ -76,11 +86,11 @@ async def test_entities_sync(hass: HomeAssistant, mock_writer, mock_entity_regis
 
         # Verify write_entities was called
         assert mock_writer.write_entities.called
-        
+
         # Check the data passed to write_entities
         call_args = mock_writer.write_entities.call_args[0][0]
         assert len(call_args) == 2
-        
+
         # Verify first entity
         ent1 = next(e for e in call_args if e["entity_id"] == "light.living_room")
         assert ent1["unique_id"] == "unique_id_1"

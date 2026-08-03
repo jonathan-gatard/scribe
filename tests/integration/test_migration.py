@@ -4,6 +4,7 @@ This is the riskiest path a real user hits: an existing installation upgrading
 carries years of history in a table Scribe must rename, backfill and index
 without losing a row. It only ever runs against a real database.
 """
+
 from datetime import timedelta
 
 import pytest
@@ -37,8 +38,10 @@ async def _create_legacy_states(pool, rows):
 async def legacy_pool(clean_db):
     """A bare pool used to set up pre-migration state before any writer runs."""
     import asyncpg
+
     pool = await asyncpg.create_pool(
-        DSN, min_size=1, max_size=2, max_inactive_connection_lifetime=0)
+        DSN, min_size=1, max_size=2, max_inactive_connection_lifetime=0
+    )
     yield pool
     await pool.close()
 
@@ -46,9 +49,12 @@ async def legacy_pool(clean_db):
 @pytest.mark.asyncio
 async def test_legacy_states_table_is_renamed_on_start(hass, legacy_pool):
     """Startup renames `states` out of the way so states_raw can take the name."""
-    await _create_legacy_states(legacy_pool, [
-        (BASE_TIME, "sensor.old_one", "on", 1.0, None),
-    ])
+    await _create_legacy_states(
+        legacy_pool,
+        [
+            (BASE_TIME, "sensor.old_one", "on", 1.0, None),
+        ],
+    )
 
     w = make_writer(hass)
     await w.start()
@@ -65,8 +71,13 @@ async def test_legacy_states_table_is_renamed_on_start(hass, legacy_pool):
 async def test_legacy_data_is_migrated_with_entities(hass, legacy_pool):
     """Every legacy row lands in states_raw under a resolved metadata_id."""
     rows = [
-        (BASE_TIME + timedelta(seconds=i), f"sensor.legacy_{i % 3}",
-         f"s{i}", float(i), None)
+        (
+            BASE_TIME + timedelta(seconds=i),
+            f"sensor.legacy_{i % 3}",
+            f"s{i}",
+            float(i),
+            None,
+        )
         for i in range(9)
     ]
     await _create_legacy_states(legacy_pool, rows)
@@ -78,14 +89,21 @@ async def test_legacy_data_is_migrated_with_entities(hass, legacy_pool):
 
         async with w._pool.acquire() as conn:
             # Three distinct entities were created from the legacy rows.
-            assert await conn.fetchval(
-                "SELECT count(*) FROM entities "
-                "WHERE entity_id LIKE 'sensor.legacy_%'") == 3
+            assert (
+                await conn.fetchval(
+                    "SELECT count(*) FROM entities "
+                    "WHERE entity_id LIKE 'sensor.legacy_%'"
+                )
+                == 3
+            )
             assert await conn.fetchval("SELECT count(*) FROM states_raw") == 9
             # And they resolve back through the view.
-            assert await conn.fetchval(
-                "SELECT count(*) FROM states "
-                "WHERE entity_id LIKE 'sensor.legacy_%'") == 9
+            assert (
+                await conn.fetchval(
+                    "SELECT count(*) FROM states WHERE entity_id LIKE 'sensor.legacy_%'"
+                )
+                == 9
+            )
     finally:
         await w.stop()
 
@@ -93,10 +111,13 @@ async def test_legacy_data_is_migrated_with_entities(hass, legacy_pool):
 @pytest.mark.asyncio
 async def test_migration_is_idempotent(hass, legacy_pool):
     """Running the data migration twice must not duplicate history."""
-    await _create_legacy_states(legacy_pool, [
-        (BASE_TIME, "sensor.once", "on", 1.0, None),
-        (BASE_TIME + timedelta(seconds=1), "sensor.once", "off", 0.0, None),
-    ])
+    await _create_legacy_states(
+        legacy_pool,
+        [
+            (BASE_TIME, "sensor.once", "on", 1.0, None),
+            (BASE_TIME + timedelta(seconds=1), "sensor.once", "off", 0.0, None),
+        ],
+    )
 
     w = make_writer(hass)
     await w.start()
@@ -135,7 +156,8 @@ async def test_empty_legacy_table_migrates_cleanly(hass, legacy_pool):
 async def test_constraint_migration_is_idempotent(writer):
     """states_raw already ships with its PK, so the migration step is a no-op."""
     result = await migration._migrate_states_raw_constraints(
-        writer._pool, has_timescaledb=True)
+        writer._pool, has_timescaledb=True
+    )
     assert result is False
 
 
@@ -148,9 +170,12 @@ async def test_timescaledb_is_detected(writer):
 @pytest.mark.asyncio
 async def test_states_raw_stays_a_hypertable_after_migration(hass, legacy_pool):
     """Migrated installs must end up with the same shape as fresh ones."""
-    await _create_legacy_states(legacy_pool, [
-        (BASE_TIME, "sensor.shape", "on", 1.0, None),
-    ])
+    await _create_legacy_states(
+        legacy_pool,
+        [
+            (BASE_TIME, "sensor.shape", "on", 1.0, None),
+        ],
+    )
 
     w = make_writer(hass)
     await w.start()
@@ -159,8 +184,12 @@ async def test_states_raw_stays_a_hypertable_after_migration(hass, legacy_pool):
         await migration._convert_to_hypertable(w._pool)
 
         async with w._pool.acquire() as conn:
-            names = {r["hypertable_name"] for r in await conn.fetch(
-                "SELECT hypertable_name FROM timescaledb_information.hypertables")}
+            names = {
+                r["hypertable_name"]
+                for r in await conn.fetch(
+                    "SELECT hypertable_name FROM timescaledb_information.hypertables"
+                )
+            }
         assert "states_raw" in names
     finally:
         await w.stop()

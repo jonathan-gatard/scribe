@@ -4,6 +4,7 @@ A recorder's worst day is not a happy path with ten rows: it is the database
 disappearing mid-flush, a restart with a full buffer, or a burst of thousands
 of states from an integration that just came online.
 """
+
 import asyncio
 
 import pytest
@@ -13,6 +14,7 @@ from .conftest import BASE_TIME, entity_rows, make_writer, reconnect, write_stat
 
 def _state(entity_id, seconds):
     from datetime import timedelta
+
     return {
         "type": "state",
         "time": BASE_TIME + timedelta(seconds=seconds),
@@ -95,8 +97,12 @@ async def test_large_batch_writes_in_one_flush(writer, db):
 
     async with db.acquire() as conn:
         assert await conn.fetchval("SELECT count(*) FROM states_raw") == 5000
-        assert await conn.fetchval(
-            "SELECT count(*) FROM entities WHERE entity_id LIKE 'sensor.bulk_%'") == 50
+        assert (
+            await conn.fetchval(
+                "SELECT count(*) FROM entities WHERE entity_id LIKE 'sensor.bulk_%'"
+            )
+            == 50
+        )
 
 
 @pytest.mark.asyncio
@@ -108,11 +114,17 @@ async def test_many_new_entities_resolve_in_one_pass(writer, db):
     await writer._flush()
 
     async with db.acquire() as conn:
-        assert await conn.fetchval(
-            "SELECT count(*) FROM entities WHERE entity_id LIKE 'sensor.fresh_%'") == 300
+        assert (
+            await conn.fetchval(
+                "SELECT count(*) FROM entities WHERE entity_id LIKE 'sensor.fresh_%'"
+            )
+            == 300
+        )
         # No entity_id resolved to two different ids.
-        assert await conn.fetchval(
-            "SELECT count(DISTINCT metadata_id) FROM states_raw") == 300
+        assert (
+            await conn.fetchval("SELECT count(DISTINCT metadata_id) FROM states_raw")
+            == 300
+        )
 
 
 @pytest.mark.asyncio

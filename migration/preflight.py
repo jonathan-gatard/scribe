@@ -75,9 +75,7 @@ def preflight_scribe_schema(scribe_cur) -> None:
     else:
         cols = _unique_constraint_columns(scribe_cur, "entities")
         if ["entity_id"] not in cols:
-            problems.append(
-                "table `entities` has no UNIQUE/PRIMARY KEY on `entity_id`"
-            )
+            problems.append("table `entities` has no UNIQUE/PRIMARY KEY on `entity_id`")
 
     if not _table_exists(scribe_cur, "states_raw"):
         problems.append("table `states_raw` is missing")
@@ -85,8 +83,7 @@ def preflight_scribe_schema(scribe_cur) -> None:
         cols = _unique_constraint_columns(scribe_cur, "states_raw")
         if ["metadata_id", "time"] not in cols:
             problems.append(
-                "table `states_raw` has no PRIMARY KEY/UNIQUE on "
-                "(metadata_id, time)"
+                "table `states_raw` has no PRIMARY KEY/UNIQUE on (metadata_id, time)"
             )
 
     if problems:

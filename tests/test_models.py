@@ -1,5 +1,7 @@
 """Test Scribe models."""
+
 from custom_components.scribe.models import State, Event
+
 
 def test_state_model():
     """Test State model definition."""
@@ -9,6 +11,7 @@ def test_state_model():
     assert hasattr(State, "state")
     assert hasattr(State, "value")
     assert hasattr(State, "attributes")
+
 
 def test_event_model():
     """Test Event model definition."""

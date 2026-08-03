@@ -3,6 +3,7 @@
 An issue that never clears is worse than no issue at all — users learn to
 ignore the Repairs panel — so every test here checks both directions.
 """
+
 import pytest
 
 from homeassistant.helpers import issue_registry as ir
@@ -29,6 +30,7 @@ def get_issue(hass, issue_id):
 
 def _state(entity_id="sensor.repairs", seconds=0):
     from datetime import timedelta
+
     return {
         "type": "state",
         "time": BASE_TIME + timedelta(seconds=seconds),
@@ -88,7 +90,8 @@ async def test_repeated_write_failures_raise_an_issue(hass, clean_db):
         assert issue is not None
         assert issue.severity == ir.IssueSeverity.ERROR
         assert issue.translation_placeholders["failures"] == str(
-            WRITE_FAILURE_ISSUE_THRESHOLD)
+            WRITE_FAILURE_ISSUE_THRESHOLD
+        )
     finally:
         w._pool = None
         await w.stop()
@@ -181,6 +184,7 @@ async def test_missing_timescaledb_raises_an_issue(hass, clean_db, monkeypatch):
     w = make_writer(hass)
     await w.start()
     try:
+
         async def pretend_absent(sql, *args):
             if "pg_extension" in sql:
                 return False
@@ -216,6 +220,7 @@ async def test_failed_migration_raises_an_issue(hass, writer, monkeypatch):
 
     # Drive the same handler the HA-started event triggers.
     from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+
     hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
 
@@ -233,9 +238,15 @@ async def test_every_issue_has_translations(hass):
 
     root = Path(__file__).resolve().parents[2] / "custom_components" / "scribe"
     keys = {
-        "db_unreachable", "write_failing", "buffer_full", "data_dropped",
-        "no_timescaledb", "migration_failed",
-        "rename_refused_live", "rename_refused_unprovable", "rename_failed",
+        "db_unreachable",
+        "write_failing",
+        "buffer_full",
+        "data_dropped",
+        "no_timescaledb",
+        "migration_failed",
+        "rename_refused_live",
+        "rename_refused_unprovable",
+        "rename_failed",
     }
     for name in ("strings.json", "translations/en.json", "translations/fr.json"):
         data = json.loads((root / name).read_text())

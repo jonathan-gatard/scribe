@@ -4,6 +4,7 @@ Every other integration module pokes the writer directly. These tests go the
 whole way round — a real config entry, real state changes on the real event
 bus, through the real filters, into the real database.
 """
+
 import pytest
 
 from homeassistant.core import HomeAssistantError
@@ -30,7 +31,9 @@ async def _flush(hass, writer):
 
 async def _recorded_entities(pool):
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT DISTINCT entity_id FROM states ORDER BY entity_id")
+        rows = await conn.fetch(
+            "SELECT DISTINCT entity_id FROM states ORDER BY entity_id"
+        )
     return [r["entity_id"] for r in rows]
 
 
@@ -45,7 +48,8 @@ async def test_setup_creates_schema_and_services(hass, scribe_entry):
     async with writer._pool.acquire() as conn:
         assert await conn.fetchval(
             "SELECT EXISTS (SELECT FROM information_schema.tables "
-            "WHERE table_name = 'states_raw')")
+            "WHERE table_name = 'states_raw')"
+        )
 
 
 @pytest.mark.asyncio
@@ -59,7 +63,8 @@ async def test_state_changes_reach_the_database(hass, scribe_entry):
 
     rows = await writer.query(
         "SELECT state, value, attributes FROM states "
-        "WHERE entity_id = 'sensor.living_room' ORDER BY time")
+        "WHERE entity_id = 'sensor.living_room' ORDER BY time"
+    )
     assert len(rows) == 2
     # Numeric states are parsed into `value`, leaving `state` NULL.
     assert rows[0]["value"] == 21.5
@@ -76,7 +81,8 @@ async def test_non_numeric_states_keep_their_text(hass, scribe_entry):
     await _flush(hass, writer)
 
     rows = await writer.query(
-        "SELECT state, value FROM states WHERE entity_id = 'binary_sensor.door'")
+        "SELECT state, value FROM states WHERE entity_id = 'binary_sensor.door'"
+    )
     assert rows[0]["state"] == "on"
     assert rows[0]["value"] is None
 
@@ -84,8 +90,7 @@ async def test_non_numeric_states_keep_their_text(hass, scribe_entry):
 @pytest.mark.asyncio
 async def test_excluded_entities_never_reach_the_database(hass, scribe_entry):
     """exclude_entities drops matching states before they are queued."""
-    entry, writer = await scribe_entry(
-        **{CONF_EXCLUDE_ENTITIES: ["sensor.secret"]})
+    entry, writer = await scribe_entry(**{CONF_EXCLUDE_ENTITIES: ["sensor.secret"]})
 
     hass.states.async_set("sensor.secret", "1")
     hass.states.async_set("sensor.public", "2")
@@ -96,8 +101,7 @@ async def test_excluded_entities_never_reach_the_database(hass, scribe_entry):
 
 @pytest.mark.asyncio
 async def test_excluded_domains_never_reach_the_database(hass, scribe_entry):
-    entry, writer = await scribe_entry(
-        **{CONF_EXCLUDE_DOMAINS: ["binary_sensor"]})
+    entry, writer = await scribe_entry(**{CONF_EXCLUDE_DOMAINS: ["binary_sensor"]})
 
     hass.states.async_set("binary_sensor.motion", "on")
     hass.states.async_set("sensor.kept", "1")
@@ -126,10 +130,12 @@ async def test_exclude_glob_overrides_include_glob(hass, scribe_entry):
     short-circuit past exclude_entity_globs; Scribe wraps it so an exclude
     match is always a hard reject.
     """
-    entry, writer = await scribe_entry(**{
-        CONF_INCLUDE_ENTITY_GLOBS: ["sensor.temp_*"],
-        CONF_EXCLUDE_ENTITY_GLOBS: ["sensor.temp_private_*"],
-    })
+    entry, writer = await scribe_entry(
+        **{
+            CONF_INCLUDE_ENTITY_GLOBS: ["sensor.temp_*"],
+            CONF_EXCLUDE_ENTITY_GLOBS: ["sensor.temp_private_*"],
+        }
+    )
 
     hass.states.async_set("sensor.temp_kitchen", "20")
     hass.states.async_set("sensor.temp_private_bedroom", "21")
@@ -142,15 +148,19 @@ async def test_exclude_glob_overrides_include_glob(hass, scribe_entry):
 async def test_excluded_attributes_are_stripped(hass, scribe_entry):
     """exclude_attributes removes keys before the row is built, not after."""
     entry, writer = await scribe_entry(
-        **{CONF_EXCLUDE_ATTRIBUTES: ["icon", "friendly_name"]})
+        **{CONF_EXCLUDE_ATTRIBUTES: ["icon", "friendly_name"]}
+    )
 
     hass.states.async_set(
-        "sensor.noisy", "1",
-        {"icon": "mdi:foo", "friendly_name": "Noisy", "keep": "yes"})
+        "sensor.noisy",
+        "1",
+        {"icon": "mdi:foo", "friendly_name": "Noisy", "keep": "yes"},
+    )
     await _flush(hass, writer)
 
     rows = await writer.query(
-        "SELECT attributes FROM states WHERE entity_id = 'sensor.noisy'")
+        "SELECT attributes FROM states WHERE entity_id = 'sensor.noisy'"
+    )
     assert rows[0]["attributes"] == {"keep": "yes"}
 
 
@@ -163,16 +173,15 @@ async def test_events_are_recorded(hass, scribe_entry):
     await _flush(hass, writer)
 
     rows = await writer.query(
-        "SELECT event_type, event_data FROM events "
-        "WHERE event_type = 'my_custom_event'")
+        "SELECT event_type, event_data FROM events WHERE event_type = 'my_custom_event'"
+    )
     assert len(rows) == 1
     assert rows[0]["event_data"]["payload"] == 42
 
 
 @pytest.mark.asyncio
 async def test_excluded_events_are_dropped(hass, scribe_entry):
-    entry, writer = await scribe_entry(
-        **{CONF_EXCLUDE_EVENTS: ["boring_event"]})
+    entry, writer = await scribe_entry(**{CONF_EXCLUDE_EVENTS: ["boring_event"]})
 
     hass.bus.async_fire("boring_event", {})
     hass.bus.async_fire("interesting_event", {})
@@ -195,7 +204,8 @@ async def test_flush_service_writes_pending_states(hass, scribe_entry):
     await hass.services.async_call(DOMAIN, "flush", {}, blocking=True)
 
     rows = await writer.query(
-        "SELECT count(*) AS n FROM states WHERE entity_id = 'sensor.service_flushed'")
+        "SELECT count(*) AS n FROM states WHERE entity_id = 'sensor.service_flushed'"
+    )
     assert rows[0]["n"] == 1
 
 
@@ -207,9 +217,14 @@ async def test_query_service_returns_rows(hass, scribe_entry):
     await _flush(hass, writer)
 
     response = await hass.services.async_call(
-        DOMAIN, "query",
-        {"sql": "SELECT entity_id, value FROM states WHERE entity_id = 'sensor.queried'"},
-        blocking=True, return_response=True)
+        DOMAIN,
+        "query",
+        {
+            "sql": "SELECT entity_id, value FROM states WHERE entity_id = 'sensor.queried'"
+        },
+        blocking=True,
+        return_response=True,
+    )
 
     assert response["result"][0]["entity_id"] == "sensor.queried"
     assert response["result"][0]["value"] == 3.0
@@ -222,8 +237,12 @@ async def test_query_service_reports_errors(hass, scribe_entry):
 
     with pytest.raises(HomeAssistantError):
         await hass.services.async_call(
-            DOMAIN, "query", {"sql": "SELECT * FROM nope"},
-            blocking=True, return_response=True)
+            DOMAIN,
+            "query",
+            {"sql": "SELECT * FROM nope"},
+            blocking=True,
+            return_response=True,
+        )
 
 
 @pytest.mark.asyncio
@@ -254,10 +273,12 @@ async def test_stats_coordinators_are_off_by_default(hass, scribe_entry):
 @pytest.mark.asyncio
 async def test_enabled_stats_coordinator_reads_the_real_database(hass, scribe_entry):
     """Once enabled, the coordinator's data comes from TimescaleDB itself."""
-    entry, writer = await scribe_entry(**{
-        CONF_ENABLE_STATS_CHUNK: True,
-        CONF_ENABLE_STATS_SIZE: True,
-    })
+    entry, writer = await scribe_entry(
+        **{
+            CONF_ENABLE_STATS_CHUNK: True,
+            CONF_ENABLE_STATS_SIZE: True,
+        }
+    )
     hass.states.async_set("sensor.for_stats", "1")
     await _flush(hass, writer)
 
@@ -280,7 +301,8 @@ async def test_stats_sensor_entities_report_values(hass, scribe_entry):
     await hass.async_block_till_done()
 
     matching = [
-        s for s in hass.states.async_all("sensor")
+        s
+        for s in hass.states.async_all("sensor")
         if s.entity_id.startswith("sensor.scribe_")
         and s.state not in ("unknown", "unavailable")
     ]

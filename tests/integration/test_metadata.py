@@ -1,4 +1,5 @@
 """End-to-end metadata sync: entities, users, areas, devices, integrations."""
+
 import pytest
 
 from .conftest import register_entity, sync_metadata
@@ -25,7 +26,8 @@ async def test_entities_insert_and_update(writer, db):
     await writer.write_entities([_entity()])
     async with db.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM entities WHERE entity_id = 'sensor.meta'")
+            "SELECT * FROM entities WHERE entity_id = 'sensor.meta'"
+        )
     original_id = row["id"]
     assert row["unique_id"] == "uid-1"
     assert row["capabilities"] == {"options": ["a", "b"]}
@@ -33,7 +35,8 @@ async def test_entities_insert_and_update(writer, db):
     await writer.write_entities([_entity(name="Renamed", area_id="area-2")])
     async with db.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM entities WHERE entity_id = 'sensor.meta'")
+            "SELECT * FROM entities WHERE entity_id = 'sensor.meta'"
+        )
         count = await conn.fetchval("SELECT count(*) FROM entities")
     assert row["id"] == original_id, "update must not create a new row"
     assert row["name"] == "Renamed"
@@ -70,7 +73,8 @@ async def test_entities_sync_from_a_real_registry(writer, hass, db):
 
     async with db.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM entities WHERE entity_id = 'sensor.from_registry'")
+            "SELECT * FROM entities WHERE entity_id = 'sensor.from_registry'"
+        )
     assert row["unique_id"] == "uid-registry"
     assert row["platform"] == "mqtt"
     assert row["domain"] == "sensor"
@@ -80,14 +84,20 @@ async def test_entities_sync_from_a_real_registry(writer, hass, db):
 async def test_entities_batch_mixes_inserts_and_updates(writer, db):
     """A batch containing new and existing entities handles both correctly."""
     await writer.write_entities([_entity("sensor.a", unique_id="uid-a")])
-    await writer.write_entities([
-        _entity("sensor.a", unique_id="uid-a", name="A updated"),
-        _entity("sensor.b", unique_id="uid-b"),
-    ])
+    await writer.write_entities(
+        [
+            _entity("sensor.a", unique_id="uid-a", name="A updated"),
+            _entity("sensor.b", unique_id="uid-b"),
+        ]
+    )
 
     async with db.acquire() as conn:
-        rows = {r["entity_id"]: r for r in await conn.fetch(
-            "SELECT entity_id, name FROM entities ORDER BY entity_id")}
+        rows = {
+            r["entity_id"]: r
+            for r in await conn.fetch(
+                "SELECT entity_id, name FROM entities ORDER BY entity_id"
+            )
+        }
     assert rows["sensor.a"]["name"] == "A updated"
     assert rows["sensor.b"]["name"] == "Meta Sensor"
 
@@ -97,21 +107,41 @@ async def test_null_bytes_stripped_from_entity_metadata(writer, db):
     """Text fields are cleaned before they reach Postgres."""
     await writer.write_entities([_entity(name="na\0me")])
     async with db.acquire() as conn:
-        assert await conn.fetchval(
-            "SELECT name FROM entities WHERE entity_id = 'sensor.meta'") == "name"
+        assert (
+            await conn.fetchval(
+                "SELECT name FROM entities WHERE entity_id = 'sensor.meta'"
+            )
+            == "name"
+        )
 
 
 @pytest.mark.asyncio
 async def test_users_upsert(writer, db):
     """Users are inserted then updated in place, keyed by user_id."""
-    await writer.write_users([{
-        "user_id": "u1", "name": "Jonathan", "is_owner": True,
-        "is_active": True, "system_generated": False, "group_ids": ["admin"],
-    }])
-    await writer.write_users([{
-        "user_id": "u1", "name": "Jonathan G", "is_owner": True,
-        "is_active": False, "system_generated": False, "group_ids": ["admin", "users"],
-    }])
+    await writer.write_users(
+        [
+            {
+                "user_id": "u1",
+                "name": "Jonathan",
+                "is_owner": True,
+                "is_active": True,
+                "system_generated": False,
+                "group_ids": ["admin"],
+            }
+        ]
+    )
+    await writer.write_users(
+        [
+            {
+                "user_id": "u1",
+                "name": "Jonathan G",
+                "is_owner": True,
+                "is_active": False,
+                "system_generated": False,
+                "group_ids": ["admin", "users"],
+            }
+        ]
+    )
 
     async with db.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM users")
@@ -138,13 +168,19 @@ async def test_areas_upsert(writer, db):
 async def test_devices_upsert(writer, db):
     """Devices are keyed by device_id."""
     device = {
-        "device_id": "d1", "name": "Thermostat", "name_by_user": None,
-        "model": "T1", "manufacturer": "Acme", "sw_version": "1.0",
-        "area_id": "a1", "primary_config_entry": "entry-1",
+        "device_id": "d1",
+        "name": "Thermostat",
+        "name_by_user": None,
+        "model": "T1",
+        "manufacturer": "Acme",
+        "sw_version": "1.0",
+        "area_id": "a1",
+        "primary_config_entry": "entry-1",
     }
     await writer.write_devices([device])
-    await writer.write_devices([{**device, "sw_version": "2.0",
-                                 "name_by_user": "Chaudière"}])
+    await writer.write_devices(
+        [{**device, "sw_version": "2.0", "name_by_user": "Chaudière"}]
+    )
 
     async with db.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM devices")
@@ -157,8 +193,11 @@ async def test_devices_upsert(writer, db):
 async def test_integrations_upsert(writer, db):
     """Integrations are keyed by entry_id."""
     entry = {
-        "entry_id": "e1", "domain": "mqtt", "title": "MQTT",
-        "state": "loaded", "source": "user",
+        "entry_id": "e1",
+        "domain": "mqtt",
+        "title": "MQTT",
+        "state": "loaded",
+        "source": "user",
     }
     await writer.write_integrations([entry])
     await writer.write_integrations([{**entry, "state": "setup_error"}])

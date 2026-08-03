@@ -1,8 +1,10 @@
 """Test metadata sync logic."""
+
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from homeassistant.core import HomeAssistant
 from custom_components.scribe import async_setup_entry
+
 
 @pytest.fixture
 def mock_writer():
@@ -16,6 +18,7 @@ def mock_writer():
     writer.write_devices = AsyncMock()
     writer.write_integrations = AsyncMock()
     return writer
+
 
 @pytest.fixture
 def mock_registries():
@@ -47,17 +50,18 @@ def mock_registries():
 
     return er, ar, dr
 
+
 @pytest.mark.asyncio
 async def test_metadata_sync(hass: HomeAssistant, mock_writer, mock_registries):
     """Test that metadata is synced on startup."""
     mock_er, mock_ar, mock_dr = mock_registries
-    
+
     # Mock config entry
     entry = MagicMock()
     entry.data = {
         "db_url": "postgresql://user:pass@localhost/db",
         "record_states": True,
-        "record_events": True
+        "record_events": True,
     }
     entry.options = {}
     entry.entry_id = "test_entry"
@@ -79,13 +83,16 @@ async def test_metadata_sync(hass: HomeAssistant, mock_writer, mock_registries):
     hass.config_entries.async_forward_entry_setups = AsyncMock()
 
     # Mock ScribeWriter constructor to return our mock
-    with patch("custom_components.scribe.ScribeWriter", return_value=mock_writer), \
-         patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_er), \
-         patch("homeassistant.helpers.area_registry.async_get", return_value=mock_ar), \
-         patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr), \
-         patch("homeassistant.auth.AuthManager.async_get_users", new_callable=AsyncMock) as mock_get_users:
-        
-        mock_get_users.return_value = [] # Mock empty users
+    with (
+        patch("custom_components.scribe.ScribeWriter", return_value=mock_writer),
+        patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_er),
+        patch("homeassistant.helpers.area_registry.async_get", return_value=mock_ar),
+        patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr),
+        patch(
+            "homeassistant.auth.AuthManager.async_get_users", new_callable=AsyncMock
+        ) as mock_get_users,
+    ):
+        mock_get_users.return_value = []  # Mock empty users
 
         # Run setup
         await async_setup_entry(hass, entry)
@@ -114,21 +121,24 @@ async def test_metadata_sync(hass: HomeAssistant, mock_writer, mock_registries):
         assert integrations_arg[0]["domain"] == "hue"
         assert integrations_arg[0]["state"] == "loaded"
 
+
 @pytest.mark.asyncio
-async def test_realtime_metadata_sync(hass: HomeAssistant, mock_writer, mock_registries):
+async def test_realtime_metadata_sync(
+    hass: HomeAssistant, mock_writer, mock_registries
+):
     """Test real-time metadata synchronization."""
     mock_er, mock_ar, mock_dr = mock_registries
-    
+
     # Setup entry
     entry = MagicMock()
     entry.data = {
         "db_url": "postgresql://user:pass@localhost/db",
         "record_states": True,
-        "record_events": True
+        "record_events": True,
     }
     entry.options = {}
     entry.entry_id = "test_entry"
-    
+
     # Mock Config Entries
     mock_config_entry = MagicMock()
     mock_config_entry.entry_id = "entry_1"
@@ -140,14 +150,17 @@ async def test_realtime_metadata_sync(hass: HomeAssistant, mock_writer, mock_reg
     hass.config_entries.async_forward_entry_setups = AsyncMock()
 
     # Mock ScribeWriter constructor
-    with patch("custom_components.scribe.ScribeWriter", return_value=mock_writer), \
-         patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_er), \
-         patch("homeassistant.helpers.area_registry.async_get", return_value=mock_ar), \
-         patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr), \
-         patch("homeassistant.auth.AuthManager.async_get_users", new_callable=AsyncMock) as mock_get_users:
-        
+    with (
+        patch("custom_components.scribe.ScribeWriter", return_value=mock_writer),
+        patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_er),
+        patch("homeassistant.helpers.area_registry.async_get", return_value=mock_ar),
+        patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr),
+        patch(
+            "homeassistant.auth.AuthManager.async_get_users", new_callable=AsyncMock
+        ) as mock_get_users,
+    ):
         mock_get_users.return_value = []
-        
+
         await async_setup_entry(hass, entry)
         await hass.async_block_till_done()
 
@@ -169,7 +182,9 @@ async def test_realtime_metadata_sync(hass: HomeAssistant, mock_writer, mock_reg
         new_entity.capabilities = None
         mock_er.async_get.return_value = new_entity
 
-        hass.bus.async_fire("entity_registry_updated", {"action": "create", "entity_id": "light.new"})
+        hass.bus.async_fire(
+            "entity_registry_updated", {"action": "create", "entity_id": "light.new"}
+        )
         await hass.async_block_till_done()
 
         assert mock_writer.write_entities.called
@@ -189,7 +204,9 @@ async def test_realtime_metadata_sync(hass: HomeAssistant, mock_writer, mock_reg
         new_device.config_entries = {"entry_1"}
         mock_dr.async_get.return_value = new_device
 
-        hass.bus.async_fire("device_registry_updated", {"action": "update", "device_id": "device_new"})
+        hass.bus.async_fire(
+            "device_registry_updated", {"action": "update", "device_id": "device_new"}
+        )
         await hass.async_block_till_done()
 
         assert mock_writer.write_devices.called
@@ -204,7 +221,9 @@ async def test_realtime_metadata_sync(hass: HomeAssistant, mock_writer, mock_reg
         new_area.picture = None
         mock_ar.async_get_area.return_value = new_area
 
-        hass.bus.async_fire("area_registry_updated", {"action": "create", "area_id": "area_new"})
+        hass.bus.async_fire(
+            "area_registry_updated", {"action": "create", "area_id": "area_new"}
+        )
         await hass.async_block_till_done()
 
         assert mock_writer.write_areas.called
@@ -220,7 +239,7 @@ async def test_realtime_metadata_sync(hass: HomeAssistant, mock_writer, mock_reg
         new_user.is_active = True
         new_user.system_generated = False
         new_user.groups = []
-        
+
         # Mock async_get_user
         hass.auth.async_get_user = AsyncMock(return_value=new_user)
 

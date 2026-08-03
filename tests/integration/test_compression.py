@@ -5,11 +5,18 @@ real installation: compressed chunks are read-mostly, and operations that are
 trivial on a fresh database (UPDATE, DELETE) either fail or force a
 decompression. Every test here compresses a chunk for real before acting on it.
 """
+
 from datetime import timedelta
 
 import pytest
 
-from .conftest import BASE_TIME, entity_rows, register_entity, sync_metadata, write_states
+from .conftest import (
+    BASE_TIME,
+    entity_rows,
+    register_entity,
+    sync_metadata,
+    write_states,
+)
 
 
 async def _compress_all_states_chunks(pool):
@@ -17,10 +24,12 @@ async def _compress_all_states_chunks(pool):
     async with pool.acquire() as conn:
         chunks = await conn.fetch(
             "SELECT chunk_schema, chunk_name FROM timescaledb_information.chunks "
-            "WHERE hypertable_name = 'states_raw' AND NOT is_compressed")
+            "WHERE hypertable_name = 'states_raw' AND NOT is_compressed"
+        )
         for c in chunks:
             await conn.execute(
-                f"SELECT compress_chunk('{c['chunk_schema']}.{c['chunk_name']}')")
+                f"SELECT compress_chunk('{c['chunk_schema']}.{c['chunk_name']}')"
+            )
         return len(chunks)
 
 
@@ -28,7 +37,8 @@ async def _compressed_chunk_count(pool):
     async with pool.acquire() as conn:
         return await conn.fetchval(
             "SELECT count(*) FROM timescaledb_information.chunks "
-            "WHERE hypertable_name = 'states_raw' AND is_compressed")
+            "WHERE hypertable_name = 'states_raw' AND is_compressed"
+        )
 
 
 @pytest.mark.asyncio
@@ -41,8 +51,12 @@ async def test_chunks_can_be_compressed_and_still_read(writer, db):
 
     # Reading through the view still returns every row.
     async with db.acquire() as conn:
-        assert await conn.fetchval(
-            "SELECT count(*) FROM states WHERE entity_id = 'sensor.compressed'") == 20
+        assert (
+            await conn.fetchval(
+                "SELECT count(*) FROM states WHERE entity_id = 'sensor.compressed'"
+            )
+            == 20
+        )
 
 
 @pytest.mark.asyncio
@@ -60,8 +74,10 @@ async def test_stats_report_compressed_chunks(writer, db):
     # hypertable, not the `states` view, which reports nothing.
     assert stats["states_before_compression_total_bytes"] > 0
     assert stats["states_after_compression_total_bytes"] > 0
-    assert (stats["states_before_compression_total_bytes"]
-            > stats["states_after_compression_total_bytes"]), "compression saved nothing"
+    assert (
+        stats["states_before_compression_total_bytes"]
+        > stats["states_after_compression_total_bytes"]
+    ), "compression saved nothing"
 
 
 @pytest.mark.asyncio
@@ -97,6 +113,7 @@ async def test_rename_merges_history_across_compressed_chunks(writer, hass, db):
     assert compressed >= 1, "test would be vacuous without a compressed chunk"
 
     from homeassistant.helpers import entity_registry as er
+
     er.async_get(hass).async_remove("sensor.victim")
 
     await register_entity(hass, "sensor.phoenix", "uid-phoenix")
@@ -109,8 +126,12 @@ async def test_rename_merges_history_across_compressed_chunks(writer, hass, db):
     assert final_id is not None
     assert final_rows == 13, "compressed history was not merged"
     async with db.acquire() as conn:
-        assert await conn.fetchval(
-            "SELECT count(*) FROM entities WHERE id = $1", victim_id) == 0
+        assert (
+            await conn.fetchval(
+                "SELECT count(*) FROM entities WHERE id = $1", victim_id
+            )
+            == 0
+        )
 
 
 @pytest.mark.asyncio
@@ -120,6 +141,7 @@ async def test_duplicate_timestamp_cleanup_works_on_compressed_chunks(writer, ha
     await sync_metadata(writer, hass, "sensor.victim")
     await write_states(writer, "sensor.victim", 6, start=0)
     from homeassistant.helpers import entity_registry as er
+
     er.async_get(hass).async_remove("sensor.victim")
 
     await register_entity(hass, "sensor.phoenix", "uid-phoenix")
@@ -142,7 +164,8 @@ async def test_compression_policy_is_registered(writer, db):
     async with db.acquire() as conn:
         jobs = await conn.fetch(
             "SELECT hypertable_name, config FROM timescaledb_information.jobs "
-            "WHERE proc_name = 'policy_compression'")
+            "WHERE proc_name = 'policy_compression'"
+        )
     tables = {j["hypertable_name"] for j in jobs}
     assert "states_raw" in tables
     assert "events" in tables
@@ -157,7 +180,8 @@ async def test_states_view_reads_mixed_compressed_and_live_chunks(writer, db):
 
     rows = await writer.query(
         "SELECT time, state FROM states WHERE entity_id = 'sensor.mixed_chunks' "
-        "ORDER BY time")
+        "ORDER BY time"
+    )
 
     assert len(rows) == 10
     assert rows[0]["time"] == BASE_TIME

@@ -1,4 +1,5 @@
 """End-to-end stats and the read-only query service, against real data."""
+
 import pytest
 
 from .conftest import make_writer, write_event, write_states
@@ -63,7 +64,8 @@ async def test_query_returns_rows_as_dicts(writer, db):
 
     rows = await writer.query(
         "SELECT entity_id, state, value FROM states "
-        "WHERE entity_id = 'sensor.queried' ORDER BY time")
+        "WHERE entity_id = 'sensor.queried' ORDER BY time"
+    )
 
     assert len(rows) == 3
     assert isinstance(rows[0], dict)
@@ -94,7 +96,8 @@ async def test_query_rejects_ddl_too(writer, db):
     async with db.acquire() as conn:
         assert await conn.fetchval(
             "SELECT EXISTS (SELECT FROM information_schema.tables "
-            "WHERE table_name = 'entities')")
+            "WHERE table_name = 'entities')"
+        )
 
 
 @pytest.mark.asyncio
