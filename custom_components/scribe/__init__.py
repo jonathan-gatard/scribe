@@ -91,88 +91,50 @@ CONFIG_SCHEMA = vol.Schema(
         DOMAIN: vol.Schema(
             {
                 vol.Required(CONF_DB_URL): cv.string,
-                vol.Optional(CONF_DB_SSL, default=DEFAULT_DB_SSL): cv.boolean,
+                vol.Optional(CONF_DB_SSL): cv.boolean,
                 vol.Optional(CONF_SSL_ROOT_CERT): cv.string,
                 vol.Optional(CONF_SSL_CERT_FILE): cv.string,
                 vol.Optional(CONF_SSL_KEY_FILE): cv.string,
-                vol.Optional(
-                    CONF_CHUNK_TIME_INTERVAL, default=DEFAULT_CHUNK_TIME_INTERVAL
-                ): cv.string,
-                vol.Optional(
-                    CONF_COMPRESS_AFTER, default=DEFAULT_COMPRESS_AFTER
-                ): cv.string,
-                vol.Optional(
-                    CONF_RECORD_STATES, default=DEFAULT_RECORD_STATES
-                ): cv.boolean,
-                vol.Optional(
-                    CONF_RECORD_EVENTS, default=DEFAULT_RECORD_EVENTS
-                ): cv.boolean,
-                vol.Optional(
-                    CONF_BATCH_SIZE, default=DEFAULT_BATCH_SIZE
-                ): cv.positive_int,
-                vol.Optional(
-                    CONF_FLUSH_INTERVAL, default=DEFAULT_FLUSH_INTERVAL
-                ): cv.positive_int,
-                vol.Optional(
-                    CONF_MAX_QUEUE_SIZE, default=DEFAULT_MAX_QUEUE_SIZE
-                ): cv.positive_int,
-                vol.Optional(
-                    CONF_BUFFER_ON_FAILURE, default=DEFAULT_BUFFER_ON_FAILURE
-                ): cv.boolean,
-                vol.Optional(
-                    CONF_ENABLE_STATS_IO, default=DEFAULT_ENABLE_STATS_IO
-                ): cv.boolean,
-                vol.Optional(
-                    CONF_ENABLE_STATS_CHUNK, default=DEFAULT_ENABLE_STATS_CHUNK
-                ): cv.boolean,
-                vol.Optional(
-                    CONF_ENABLE_STATS_SIZE, default=DEFAULT_ENABLE_STATS_SIZE
-                ): cv.boolean,
-                vol.Optional(
-                    CONF_STATS_CHUNK_INTERVAL, default=DEFAULT_STATS_CHUNK_INTERVAL
-                ): cv.positive_int,
-                vol.Optional(
-                    CONF_STATS_SIZE_INTERVAL, default=DEFAULT_STATS_SIZE_INTERVAL
-                ): cv.positive_int,
-                vol.Optional(CONF_INCLUDE_DOMAINS, default=[]): vol.All(
+                vol.Optional(CONF_CHUNK_TIME_INTERVAL): cv.string,
+                vol.Optional(CONF_COMPRESS_AFTER): cv.string,
+                vol.Optional(CONF_RECORD_STATES): cv.boolean,
+                vol.Optional(CONF_RECORD_EVENTS): cv.boolean,
+                vol.Optional(CONF_BATCH_SIZE): cv.positive_int,
+                vol.Optional(CONF_FLUSH_INTERVAL): cv.positive_int,
+                vol.Optional(CONF_MAX_QUEUE_SIZE): cv.positive_int,
+                vol.Optional(CONF_BUFFER_ON_FAILURE): cv.boolean,
+                vol.Optional(CONF_ENABLE_STATS_IO): cv.boolean,
+                vol.Optional(CONF_ENABLE_STATS_CHUNK): cv.boolean,
+                vol.Optional(CONF_ENABLE_STATS_SIZE): cv.boolean,
+                vol.Optional(CONF_STATS_CHUNK_INTERVAL): cv.positive_int,
+                vol.Optional(CONF_STATS_SIZE_INTERVAL): cv.positive_int,
+                vol.Optional(CONF_INCLUDE_DOMAINS): vol.All(
                     cv.ensure_list, [cv.string]
                 ),
-                vol.Optional(CONF_INCLUDE_ENTITIES, default=[]): vol.All(
+                vol.Optional(CONF_INCLUDE_ENTITIES): vol.All(
                     cv.ensure_list, [cv.entity_id]
                 ),
-                vol.Optional(CONF_INCLUDE_ENTITY_GLOBS, default=[]): vol.All(
+                vol.Optional(CONF_INCLUDE_ENTITY_GLOBS): vol.All(
                     cv.ensure_list, [cv.string]
                 ),
-                vol.Optional(CONF_EXCLUDE_DOMAINS, default=[]): vol.All(
+                vol.Optional(CONF_EXCLUDE_DOMAINS): vol.All(
                     cv.ensure_list, [cv.string]
                 ),
-                vol.Optional(CONF_EXCLUDE_ENTITIES, default=[]): vol.All(
+                vol.Optional(CONF_EXCLUDE_ENTITIES): vol.All(
                     cv.ensure_list, [cv.entity_id]
                 ),
-                vol.Optional(CONF_EXCLUDE_ENTITY_GLOBS, default=[]): vol.All(
+                vol.Optional(CONF_EXCLUDE_ENTITY_GLOBS): vol.All(
                     cv.ensure_list, [cv.string]
                 ),
-                vol.Optional(CONF_EXCLUDE_ATTRIBUTES, default=[]): vol.All(
+                vol.Optional(CONF_EXCLUDE_ATTRIBUTES): vol.All(
                     cv.ensure_list, [cv.string]
                 ),
-                vol.Optional(CONF_INCLUDE_EVENTS, default=[]): vol.All(
-                    cv.ensure_list, [cv.string]
-                ),
-                vol.Optional(CONF_EXCLUDE_EVENTS, default=[]): vol.All(
-                    cv.ensure_list, [cv.string]
-                ),
-                vol.Optional(
-                    CONF_ENABLE_AREAS, default=DEFAULT_ENABLE_AREAS
-                ): cv.boolean,
-                vol.Optional(
-                    CONF_ENABLE_DEVICES, default=DEFAULT_ENABLE_DEVICES
-                ): cv.boolean,
-                vol.Optional(
-                    CONF_ENABLE_INTEGRATIONS, default=DEFAULT_ENABLE_INTEGRATIONS
-                ): cv.boolean,
-                vol.Optional(
-                    CONF_ENABLE_USERS, default=DEFAULT_ENABLE_USERS
-                ): cv.boolean,
+                vol.Optional(CONF_INCLUDE_EVENTS): vol.All(cv.ensure_list, [cv.string]),
+                vol.Optional(CONF_EXCLUDE_EVENTS): vol.All(cv.ensure_list, [cv.string]),
+                vol.Optional(CONF_ENABLE_AREAS): cv.boolean,
+                vol.Optional(CONF_ENABLE_DEVICES): cv.boolean,
+                vol.Optional(CONF_ENABLE_INTEGRATIONS): cv.boolean,
+                vol.Optional(CONF_ENABLE_USERS): cv.boolean,
             },
             extra=vol.ALLOW_EXTRA,
         )
