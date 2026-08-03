@@ -2,7 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [3.8.0] - 2026-08-03
+
+First published as `3.8.0rc1`, a pre-release: HACS only offers it to users who
+enabled beta versions for this repository.
 
 ### Added
 - **Repairs issues for the failures that used to be log-only**: Scribe now surfaces six more conditions in Home Assistant's Repairs dashboard, each explaining the consequence and the fix, and each retiring itself automatically once resolved — an unreachable database (nothing is being recorded), repeated write failures (data held in memory, lost on restart), a saturated buffer (history being discarded), records dropped because buffering is disabled, a missing TimescaleDB extension (no chunking or compression, database grows much faster, size sensors stay empty), and a failed legacy migration (old history stranded in `states_legacy`). Write failures only raise an issue after three consecutive flushes fail, so a database restart or a brief network drop stays silent. Translated in English and French, and documented in the README's Troubleshooting section.
