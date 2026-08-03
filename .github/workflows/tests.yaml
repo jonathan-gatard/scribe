@@ -47,10 +47,15 @@ jobs:
           pip install -r requirements_test.txt
           
       - name: Lint with ruff
-        # ruff is pinned in requirements_test.txt: an unpinned linter on the
-        # release gate means any ruff release can block publishing at random.
+        # ruff is pinned in requirements_test.txt and its rule set is declared
+        # in ruff.toml: an unpinned linter on the release gate means any ruff
+        # release can block publishing at random.
         run: |
           ruff check .
+
+      - name: Check formatting
+        run: |
+          ruff format --check .
           
       - name: Test with pytest
         env:
