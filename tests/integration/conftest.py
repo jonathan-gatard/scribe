@@ -150,6 +150,56 @@ async def db(writer):
     return writer._pool
 
 
+@pytest.fixture
+async def scribe_entry(hass, clean_db):
+    """Set up the real integration against the real database.
+
+    Returns (entry, writer). This is the only fixture that exercises what
+    async_setup_entry actually wires: bus listeners, filters, services,
+    coordinators and platforms.
+    """
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.scribe.const import (
+        CONF_DB_URL, CONF_RECORD_EVENTS, CONF_RECORD_STATES, DOMAIN,
+    )
+
+    def _factory(**options):
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_DB_URL: DSN,
+                CONF_RECORD_STATES: True,
+                CONF_RECORD_EVENTS: True,
+            },
+            options={
+                CONF_RECORD_STATES: True,
+                CONF_RECORD_EVENTS: True,
+                **options,
+            },
+            entry_id="integration_entry",
+        )
+        entry.add_to_hass(hass)
+        return entry
+
+    created = []
+
+    async def setup(**options):
+        entry = _factory(**options)
+        created.append(entry)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        writer = hass.data[DOMAIN][entry.entry_id]["writer"]
+        return entry, writer
+
+    yield setup
+
+    for entry in created:
+        if entry.state is not None:
+            await hass.config_entries.async_unload(entry.entry_id)
+            await hass.async_block_till_done()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

@@ -254,21 +254,42 @@ class ScribeWriter:
             async with conn.transaction():
                 await conn.executemany(sql, args_list)
 
-    async def _copy_records(self, conn: asyncpg.Connection, table_name: str, columns: list[str], records: list[tuple[Any, ...]]):
-        """Write batched records via PostgreSQL COPY, falling back to executemany if unavailable."""
+    async def _copy_records(self, conn: asyncpg.Connection, table_name: str, columns: list[str], records: list[tuple[Any, ...]], conflict_target: str = None):
+        """Write batched records via PostgreSQL COPY, falling back to executemany if unavailable.
+
+        COPY has no ON CONFLICT clause, so a row colliding with one already in
+        the table aborts the batch. When `conflict_target` is given, such a
+        collision is retried row-by-row with ON CONFLICT DO NOTHING: slower,
+        but only on the failure path, and it keeps a re-buffered batch that
+        overlaps already-written history from failing forever.
+        """
         if not records:
             return
 
         if hasattr(conn, "copy_records_to_table"):
-            await conn.copy_records_to_table(
-                table_name=table_name,
-                records=records,
-                columns=columns,
-            )
-            return
+            try:
+                # SAVEPOINT: Postgres marks a transaction failed after any
+                # error, so the fallback below needs the error contained.
+                async with conn.transaction():
+                    await conn.copy_records_to_table(
+                        table_name=table_name,
+                        records=records,
+                        columns=columns,
+                    )
+                return
+            except asyncpg.UniqueViolationError:
+                if conflict_target is None:
+                    raise
+                _LOGGER.warning(
+                    "[writer._copy_records] COPY into %s hit an existing row; "
+                    "retrying %d records with ON CONFLICT (%s) DO NOTHING.",
+                    table_name, len(records), conflict_target,
+                )
 
         placeholders = ", ".join(f"${idx}" for idx in range(1, len(columns) + 1))
         fallback_sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+        if conflict_target:
+            fallback_sql += f" ON CONFLICT ({conflict_target}) DO NOTHING"
         await conn.executemany(fallback_sql, records)
 
     async def _fetchval(self, sql: str, *args):
@@ -1264,7 +1285,24 @@ class ScribeWriter:
                             else:
                                 _LOGGER.warning("[writer._flush] Skipping state for unknown entity_id: %r (not in cache — INSERT into entities may have failed)", eid)
 
-                        states_data = final_states_data
+                        # states_raw is keyed by (metadata_id, time). Home
+                        # Assistant can emit two states for one entity at the
+                        # same instant — a restored state alongside a live one,
+                        # or a force_update — and COPY has no ON CONFLICT, so a
+                        # single duplicate would abort the whole batch. Since
+                        # the batch would then be re-buffered and fail again on
+                        # every retry, that is a permanent stall, not a hiccup.
+                        # Keep the last state seen for each key.
+                        deduped = {}
+                        for s in final_states_data:
+                            deduped[(s['metadata_id'], s['time'])] = s
+                        if len(deduped) != len(final_states_data):
+                            _LOGGER.debug(
+                                "[writer._flush] Dropped %d state(s) sharing a "
+                                "(metadata_id, time) key within the batch",
+                                len(final_states_data) - len(deduped),
+                            )
+                        states_data = list(deduped.values())
 
                     async with self._pool.acquire() as conn:
                         async with conn.transaction():
@@ -1277,6 +1315,7 @@ class ScribeWriter:
                                         (s['time'], s['metadata_id'], s.get('state'), s.get('value'), s.get('attributes'))
                                         for s in states_data
                                     ],
+                                    conflict_target="metadata_id, time",
                                 )
                             if events_data:
                                 await self._copy_records(
@@ -1768,43 +1807,17 @@ class ScribeWriter:
                 "events_after_compression_total_bytes": after_bytes
             }
 
-        async def get_states_compression_stats():
-            try:
-                row = await self._fetchrow(f"SELECT * FROM hypertable_compression_stats('{self.table_name_states}')")
-                if row:
-                    return {
-                        "states_before_compression_total_bytes": row['before_compression_total_bytes'] or 0,
-                        "states_after_compression_total_bytes": row['after_compression_total_bytes'] or 0
-                    }
-            except Exception as e:
-                _LOGGER.debug("[writer.get_db_stats:states_compression] Failed: %s (%s)", e, type(e).__name__)
-            return {}
-
-        async def get_events_compression_stats():
-            try:
-                row = await self._fetchrow(f"SELECT * FROM hypertable_compression_stats('{self.table_name_events}')")
-                if row:
-                    return {
-                        "events_before_compression_total_bytes": row['before_compression_total_bytes'] or 0,
-                        "events_after_compression_total_bytes": row['after_compression_total_bytes'] or 0
-                    }
-            except Exception as e:
-                _LOGGER.debug("[writer.get_db_stats:events_compression] Failed: %s (%s)", e, type(e).__name__)
-            return {}
-
         if self.record_states:
             if stats_type in ("chunk", "all"):
                 tasks.append(get_states_chunk_stats())
             if stats_type in ("size", "all"):
                 tasks.append(get_states_size_stats())
-                tasks.append(get_states_compression_stats())
 
         if self.record_events:
             if stats_type in ("chunk", "all"):
                 tasks.append(get_events_chunk_stats())
             if stats_type in ("size", "all"):
                 tasks.append(get_events_size_stats())
-                tasks.append(get_events_compression_stats())
 
         if tasks:
             results = await asyncio.gather(*tasks)
