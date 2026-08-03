@@ -12,6 +12,24 @@ jobs:
   test:
     name: Run Unit Tests
     runs-on: ubuntu-latest
+
+    # Real TimescaleDB for tests/test_rename_integration.py. Without it those
+    # tests skip themselves, and the rename paths are only covered by mocks —
+    # which is how a primary-key violation in the history merge reached a beta.
+    services:
+      timescaledb:
+        image: timescale/timescaledb:latest-pg17
+        env:
+          POSTGRES_PASSWORD: scribe
+          POSTGRES_DB: scribe
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,5 +53,20 @@ jobs:
           ruff check .
           
       - name: Test with pytest
+        env:
+          SCRIBE_TEST_DSN: postgresql://postgres:scribe@127.0.0.1:55432/scribe
         run: |
           pytest tests
+
+      - name: Verify integration tests actually ran
+        # They skip silently when no database answers; without this check a
+        # broken service container would quietly reduce coverage to mocks.
+        env:
+          SCRIBE_TEST_DSN: postgresql://postgres:scribe@127.0.0.1:55432/scribe
+        run: |
+          pytest tests/test_rename_integration.py -q --no-header -p no:cacheprovider \
+            | tee /tmp/integration.txt
+          if grep -q "skipped" /tmp/integration.txt; then
+            echo "::error::Integration tests skipped — the TimescaleDB service is unreachable."
+            exit 1
+          fi

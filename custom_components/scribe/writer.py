@@ -109,6 +109,14 @@ def _normalize_dsn(db_url: str) -> str:
     return db_url.replace("postgresql+asyncpg://", "postgresql://")
 
 
+def _affected_rows(status: str) -> int:
+    """Row count from an asyncpg command tag ('UPDATE 12'), or -1 if unparsable."""
+    try:
+        return int(str(status).rsplit(" ", 1)[-1])
+    except (ValueError, IndexError):
+        return -1
+
+
 def _validate_table_name(name: str) -> str:
     """Validate that a table name contains only safe characters.
 
@@ -1372,6 +1380,7 @@ class ScribeWriter:
         _LOGGER.info("[writer.rename_entity] Renaming entity %s -> %s", old_entity_id, new_entity_id)
 
         merged_orphan_rows = None
+        dropped_duplicate_rows = 0
         merge_reason = None
         # Serialized with write_entities and the flush metadata section — see
         # _metadata_lock. Held through cache invalidation so no flush can
@@ -1398,12 +1407,25 @@ class ScribeWriter:
                             "SELECT id, unique_id, domain, platform FROM entities WHERE entity_id = $1",
                             new_entity_id,
                         )
+                        src = await conn.fetchrow(
+                            "SELECT id, unique_id FROM entities WHERE entity_id = $1",
+                            old_entity_id,
+                        )
                         if occ is None:
                             # Freed between the failed UPDATE and now — just rename.
                             await conn.execute(
                                 "UPDATE entities SET entity_id = $1 WHERE entity_id = $2",
                                 new_entity_id, old_entity_id,
                             )
+                        elif src is None:
+                            # The UniqueViolation proved this row existed moments
+                            # ago; only a concurrent delete can land here.
+                            _LOGGER.warning(
+                                "[writer.rename_entity] Source %s vanished during "
+                                "rename to %s; nothing to do.",
+                                old_entity_id, new_entity_id,
+                            )
+                            return
                         else:
                             # Death is only provable when all three registry
                             # coordinates are known — a partial row (e.g. created by
@@ -1416,15 +1438,18 @@ class ScribeWriter:
                                 occupant_live_eid = reg.async_get_entity_id(
                                     occ["domain"], occ["platform"], occ["unique_id"],
                                 )
-                            if occupant_live_eid == new_entity_id:
-                                # Self-collision: the occupant row belongs to the
-                                # renamed entity itself — a concurrent metadata sync
-                                # (registry event task) inserted the destination row
-                                # before this rename ran. Every row involved belongs
-                                # to this one entity, so merging is unconditionally
-                                # safe. The _metadata_lock prevents new occurrences;
-                                # this branch heals rows created before the lock
-                                # existed or by paths outside it.
+                            if occ["unique_id"] and occ["unique_id"] == src["unique_id"]:
+                                # Self-collision: both rows carry the same unique_id,
+                                # so they are two rows for ONE entity — a concurrent
+                                # metadata sync inserted the destination row before
+                                # this rename ran. Merging is unconditionally safe.
+                                # (The live registry cannot tell this case apart from
+                                # a different entity legitimately living at the
+                                # destination: in both, the occupant's unique_id
+                                # resolves to new_entity_id. Only the stored
+                                # unique_ids distinguish them.) The _metadata_lock
+                                # prevents new occurrences; this heals rows left by
+                                # earlier versions.
                                 merge_reason = "self-collision (row created by a concurrent metadata sync)"
                             elif occupant_live_eid is not None or not provable:
                                 # Occupant is a *different* live entity, or cannot be
@@ -1466,27 +1491,30 @@ class ScribeWriter:
                             # Fold the occupant's history into the renamed entity's
                             # metadata_id, drop its row, then rename — one
                             # continuous history under the new name.
-                            live = await conn.fetchrow(
-                                "SELECT id FROM entities WHERE entity_id = $1",
-                                old_entity_id,
+                            #
+                            # states_raw's primary key is (metadata_id, time), so
+                            # any occupant row at a timestamp the surviving entity
+                            # already holds would violate it and abort the whole
+                            # rename. Both rows describe the same instant of what
+                            # is now one entity: the survivor's own row wins and
+                            # the duplicate is dropped first.
+                            dropped = await conn.execute(
+                                """
+                                DELETE FROM states_raw o
+                                WHERE o.metadata_id = $2
+                                  AND EXISTS (
+                                      SELECT 1 FROM states_raw l
+                                      WHERE l.metadata_id = $1 AND l.time = o.time
+                                  )
+                                """,
+                                src["id"], occ["id"],
                             )
-                            if live is None:
-                                # The UniqueViolation proved this row existed moments
-                                # ago; only a concurrent delete can land here.
-                                _LOGGER.warning(
-                                    "[writer.rename_entity] Source %s vanished during "
-                                    "rename to %s; nothing to do.",
-                                    old_entity_id, new_entity_id,
-                                )
-                                return
                             status = await conn.execute(
                                 "UPDATE states_raw SET metadata_id = $1 WHERE metadata_id = $2",
-                                live["id"], occ["id"],
+                                src["id"], occ["id"],
                             )
-                            try:
-                                merged_orphan_rows = int(str(status).rsplit(" ", 1)[-1])
-                            except (ValueError, IndexError):
-                                merged_orphan_rows = -1
+                            merged_orphan_rows = _affected_rows(status)
+                            dropped_duplicate_rows = _affected_rows(dropped)
                             await conn.execute(
                                 "DELETE FROM entities WHERE id = $1", occ["id"],
                             )
@@ -1510,9 +1538,12 @@ class ScribeWriter:
                 _LOGGER.warning(
                     "[writer.rename_entity] Renamed entity %s -> %s: destination was a "
                     "%s; reused it by merging %s history rows into the "
-                    "renamed entity and deleting the occupant metadata row.",
+                    "renamed entity and deleting the occupant metadata row%s.",
                     old_entity_id, new_entity_id, merge_reason,
                     "an unknown number of" if merged_orphan_rows < 0 else merged_orphan_rows,
+                    f" ({dropped_duplicate_rows} duplicate rows at timestamps the "
+                    "renamed entity already had were dropped)"
+                    if dropped_duplicate_rows else "",
                 )
             else:
                 _LOGGER.info(

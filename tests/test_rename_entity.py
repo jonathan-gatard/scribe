@@ -1,4 +1,9 @@
-"""Tests for ScribeWriter.rename_entity collision handling."""
+"""Unit tests for ScribeWriter.rename_entity collision handling.
+
+These mock asyncpg and assert on the SQL issued, so they run anywhere.
+test_rename_integration.py covers the same paths against a real TimescaleDB
+and asserts on the resulting table contents instead.
+"""
 import asyncio
 
 import pytest
@@ -61,6 +66,23 @@ def _raise_unique_violation_once(mock_db_connection):
     mock_db_connection.execute.side_effect = execute_side_effect
 
 
+def _set_rows(mock_db_connection, occupant, source={"id": 17, "unique_id": "uid-src"}):
+    """Serve `occupant` for the destination lookup and `source` for the origin.
+
+    rename_entity fetches both rows and compares their unique_ids, so the two
+    must be distinguishable — a single return_value would look like the same
+    entity twice (a self-collision).
+    """
+    async def fetchrow_side_effect(sql, *args):
+        if args and args[0] == "sensor.new":
+            return occupant
+        if args and args[0] == "sensor.old":
+            return source
+        return None
+
+    mock_db_connection.fetchrow.side_effect = fetchrow_side_effect
+
+
 @pytest.mark.asyncio
 async def test_rename_free_target(writer, mock_db_connection):
     """Target name free: single UPDATE on entities, nothing else touched."""
@@ -82,13 +104,13 @@ async def test_rename_free_target(writer, mock_db_connection):
 
 @pytest.mark.asyncio
 async def test_rename_refuses_live_occupant(writer, mock_db_connection):
-    """Occupant resolves in the live registry: refuse, modify nothing."""
+    """Occupant is a different entity that resolves live: refuse, modify nothing."""
     _raise_unique_violation_once(mock_db_connection)
-    mock_db_connection.fetchrow.return_value = {
+    _set_rows(mock_db_connection, {
         "id": 42, "unique_id": "uid-b", "domain": "sensor", "platform": "mqtt",
-    }
+    })
     registry = MagicMock()
-    registry.async_get_entity_id.return_value = "sensor.still_alive"
+    registry.async_get_entity_id.return_value = "sensor.new"
 
     with patch(
         "custom_components.scribe.writer.er.async_get", return_value=registry
@@ -115,7 +137,7 @@ async def test_rename_refuses_live_occupant(writer, mock_db_connection):
 async def test_rename_refuses_unprovable_occupant(writer, mock_db_connection, occupant):
     """Any missing registry coordinate makes death unprovable: refuse."""
     _raise_unique_violation_once(mock_db_connection)
-    mock_db_connection.fetchrow.return_value = occupant
+    _set_rows(mock_db_connection, occupant)
     registry = MagicMock()
     registry.async_get_entity_id.return_value = None  # must not be trusted
 
@@ -134,16 +156,9 @@ async def test_rename_refuses_unprovable_occupant(writer, mock_db_connection, oc
 async def test_rename_reuses_dead_orphan(writer, mock_db_connection):
     """Provably dead occupant: history merged, orphan row deleted, rename done."""
     _raise_unique_violation_once(mock_db_connection)
-
-    async def fetchrow_side_effect(sql, *args):
-        if "WHERE entity_id = $1" in sql and args == ("sensor.new",):
-            return {"id": 42, "unique_id": "uid-dead",
-                    "domain": "sensor", "platform": "mqtt"}
-        if "WHERE entity_id = $1" in sql and args == ("sensor.old",):
-            return {"id": 17}
-        return None
-
-    mock_db_connection.fetchrow.side_effect = fetchrow_side_effect
+    _set_rows(mock_db_connection, {
+        "id": 42, "unique_id": "uid-dead", "domain": "sensor", "platform": "mqtt",
+    })
     registry = MagicMock()
     registry.async_get_entity_id.return_value = None  # dead: absent from registry
     writer._entity_id_map["sensor.old"] = 17
@@ -157,15 +172,18 @@ async def test_rename_reuses_dead_orphan(writer, mock_db_connection):
         await writer.rename_entity("sensor.old", "sensor.new")
 
     executed = _executed_sql(mock_db_connection)
-    # 1: failed rename, 2: merge states, 3: delete orphan row, 4: rename.
-    assert executed[1] == (
+    # 1: failed rename, 2: drop colliding timestamps, 3: merge history,
+    # 4: delete occupant row, 5: rename.
+    assert "DELETE FROM states_raw" in executed[1][0]
+    assert executed[1][1] == (17, 42)
+    assert executed[2] == (
         "UPDATE states_raw SET metadata_id = $1 WHERE metadata_id = $2", (17, 42))
-    assert executed[2] == ("DELETE FROM entities WHERE id = $1", (42,))
-    assert executed[3] == (
+    assert executed[3] == ("DELETE FROM entities WHERE id = $1", (42,))
+    assert executed[4] == (
         "UPDATE entities SET entity_id = $1 WHERE entity_id = $2",
         ("sensor.new", "sensor.old"))
-    assert len(executed) == 4
-    # Both cache entries invalidated (old id and absorbed orphan id).
+    assert len(executed) == 5
+    # Both cache entries invalidated (old id and absorbed occupant id).
     assert "sensor.old" not in writer._entity_id_map
     assert "sensor.new" not in writer._entity_id_map
     assert 17 not in writer._metadata_id_map
@@ -174,25 +192,22 @@ async def test_rename_reuses_dead_orphan(writer, mock_db_connection):
 
 @pytest.mark.asyncio
 async def test_rename_self_collision_merges(hass, writer, mock_db_connection):
-    """Occupant row belongs to the renamed entity itself: merge, no refusal.
+    """Both rows carry the same unique_id: one entity, two rows — merge.
 
     Reproduces the race seen live on 3.7.0b1: a concurrent registry-sync task
-    inserted the destination row (full metadata, same entity) before
-    rename_entity ran, so the occupant's unique_id resolved to new_entity_id.
+    inserted the destination row for the very entity being renamed. Note the
+    occupant resolves live to the destination — exactly like a different entity
+    legitimately living there — so only the matching unique_ids separate the
+    two cases.
     """
     _raise_unique_violation_once(mock_db_connection)
-
-    async def fetchrow_side_effect(sql, *args):
-        if args == ("sensor.new",):
-            return {"id": 42, "unique_id": "uid-self",
-                    "domain": "sensor", "platform": "mqtt"}
-        if args == ("sensor.old",):
-            return {"id": 17}
-        return None
-
-    mock_db_connection.fetchrow.side_effect = fetchrow_side_effect
+    _set_rows(
+        mock_db_connection,
+        occupant={"id": 42, "unique_id": "uid-self",
+                  "domain": "sensor", "platform": "mqtt"},
+        source={"id": 17, "unique_id": "uid-self"},
+    )
     registry = MagicMock()
-    # The occupant's unique_id resolves to the destination itself.
     registry.async_get_entity_id.return_value = "sensor.new"
 
     with patch(
@@ -202,13 +217,10 @@ async def test_rename_self_collision_merges(hass, writer, mock_db_connection):
 
     executed = _executed_sql(mock_db_connection)
     # Same merge sequence as the dead-orphan path.
-    assert executed[1] == (
+    assert executed[2] == (
         "UPDATE states_raw SET metadata_id = $1 WHERE metadata_id = $2", (17, 42))
-    assert executed[2] == ("DELETE FROM entities WHERE id = $1", (42,))
-    assert executed[3] == (
-        "UPDATE entities SET entity_id = $1 WHERE entity_id = $2",
-        ("sensor.new", "sensor.old"))
-    assert len(executed) == 4
+    assert executed[3] == ("DELETE FROM entities WHERE id = $1", (42,))
+    assert len(executed) == 5
     # No repair issue: nothing was refused.
     assert _get_issue(hass) is None
 
@@ -243,6 +255,22 @@ async def test_rename_target_freed_meanwhile(writer, mock_db_connection):
 
 
 @pytest.mark.asyncio
+async def test_rename_source_vanished(writer, mock_db_connection):
+    """Occupant present but the source row is gone: no-op, nothing modified."""
+    _raise_unique_violation_once(mock_db_connection)
+    _set_rows(
+        mock_db_connection,
+        occupant={"id": 42, "unique_id": "uid-b",
+                  "domain": "sensor", "platform": "mqtt"},
+        source=None,
+    )
+
+    await writer.rename_entity("sensor.old", "sensor.new")
+
+    assert len(_executed_sql(mock_db_connection)) == 1
+
+
+@pytest.mark.asyncio
 async def test_rename_no_pool_is_noop(hass, writer, mock_db_connection):
     """Without a pool the call returns immediately."""
     writer._pool = None
@@ -258,9 +286,9 @@ def _get_issue(hass):
 async def test_refusal_live_raises_repair_issue(hass, writer, mock_db_connection):
     """Refusing because of a live occupant surfaces a Repairs issue."""
     _raise_unique_violation_once(mock_db_connection)
-    mock_db_connection.fetchrow.return_value = {
+    _set_rows(mock_db_connection, {
         "id": 42, "unique_id": "uid-b", "domain": "sensor", "platform": "mqtt",
-    }
+    })
     registry = MagicMock()
     registry.async_get_entity_id.return_value = "sensor.still_alive"
 
@@ -284,9 +312,9 @@ async def test_refusal_live_raises_repair_issue(hass, writer, mock_db_connection
 async def test_refusal_unprovable_raises_repair_issue(hass, writer, mock_db_connection):
     """Refusing because death is unprovable surfaces a Repairs issue."""
     _raise_unique_violation_once(mock_db_connection)
-    mock_db_connection.fetchrow.return_value = {
+    _set_rows(mock_db_connection, {
         "id": 42, "unique_id": None, "domain": "sensor", "platform": "mqtt",
-    }
+    })
 
     await writer.rename_entity("sensor.old", "sensor.new")
 
@@ -318,15 +346,16 @@ async def test_successful_rename_clears_repair_issue(hass, writer, mock_db_conne
     """A later successful rename to the same destination retires the issue."""
     # First attempt: refused (unprovable occupant) -> issue raised.
     _raise_unique_violation_once(mock_db_connection)
-    mock_db_connection.fetchrow.return_value = {
+    _set_rows(mock_db_connection, {
         "id": 42, "unique_id": None, "domain": None, "platform": None,
-    }
+    })
     await writer.rename_entity("sensor.old", "sensor.new")
     assert _get_issue(hass) is not None
 
     # Second attempt: the occupant row is gone, plain rename succeeds.
     mock_db_connection.execute.side_effect = None
     mock_db_connection.execute.return_value = "UPDATE 1"
+    mock_db_connection.fetchrow.side_effect = None
     mock_db_connection.fetchrow.return_value = None
     await writer.rename_entity("sensor.old", "sensor.new")
     assert _get_issue(hass) is None
