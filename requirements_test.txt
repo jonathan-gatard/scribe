@@ -1,5 +1,18 @@
 pytest
-pytest-homeassistant-custom-component
+# This package is released once per Home Assistant version and it is what pulls
+# `homeassistant` in, so its version decides which HA the suite runs against.
+# Unpinned, that moved on its own — one run tested 2026.7.4, the next a 2026.8
+# beta — which makes CI irreproducible and lets an unrelated upstream release
+# turn the build red and block a tag. Bumping it is a Dependabot PR whose CI
+# shows exactly what the new Home Assistant breaks.
+# The upstream-watch workflow deliberately ignores this pin.
+#
+# Needs Python 3.14: every release after 0.13.316 requires it, because Home
+# Assistant moved to it. Installing this on 3.13 fails loudly, which is the
+# point — a dev environment silently stuck on an older interpreter tests an
+# older Home Assistant than CI does, and that gap is invisible until something
+# passes locally and breaks in CI.
+pytest-homeassistant-custom-component==0.13.351
 pytest-asyncio
 psycopg2-binary
 sqlalchemy

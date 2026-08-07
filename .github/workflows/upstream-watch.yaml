@@ -1,0 +1,93 @@
+name: Upstream watch
+
+# Early warning against the Home Assistant release Scribe is not pinned to yet.
+#
+# tests.yaml pins pytest-homeassistant-custom-component so a release is never
+# blocked by an upstream change nobody chose. That determinism costs the ability
+# to notice a breaking Home Assistant version before users do — which is what
+# this workflow buys back.
+#
+# It runs on a schedule only, so it can never gate a pull request or a tag. Its
+# failure IS the notification: GitHub emails the repository owner when a
+# scheduled workflow fails. Home Assistant publishes betas roughly two weeks
+# before the stable release, so a Monday run lands inside that window.
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+jobs:
+  next-home-assistant:
+    name: Next Home Assistant
+    runs-on: ubuntu-latest
+
+    services:
+      timescaledb:
+        image: timescale/timescaledb:latest-pg17
+        env:
+          POSTGRES_PASSWORD: scribe
+          POSTGRES_DB: scribe
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          allow-prereleases: true
+
+      - name: Install against the newest Home Assistant
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_test.txt
+          # --pre reaches the pre-releases, which track Home Assistant's betas.
+          pip install --upgrade --pre pytest-homeassistant-custom-component
+
+      - name: Report the versions under test
+        run: |
+          HA=$(python -c "import homeassistant.const as c; print(c.__version__)")
+          PLUGIN=$(pip show pytest-homeassistant-custom-component | awk '/^Version/{print $2}')
+          echo "HA_VERSION=$HA" >> "$GITHUB_ENV"
+          {
+            echo "## Tested against"
+            echo
+            echo "| | Version |"
+            echo "| --- | --- |"
+            echo "| Home Assistant | \`$HA\` |"
+            echo "| pytest-homeassistant-custom-component | \`$PLUGIN\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run the suite
+        env:
+          SCRIBE_TEST_DSN: postgresql://postgres:scribe@127.0.0.1:55432/scribe
+        run: |
+          pytest tests -q -W "default::DeprecationWarning" \
+            | tee /tmp/upstream.txt
+
+      - name: Surface deprecation warnings
+        # Home Assistant warns months before it removes an API. Buried in pytest
+        # output nobody reads them; here they are the point of the run.
+        if: always()
+        run: |
+          {
+            echo
+            echo "## Deprecation warnings"
+            echo
+            if grep -iE "deprecat" /tmp/upstream.txt > /tmp/deprecations.txt; then
+              echo '```'
+              sort -u /tmp/deprecations.txt | head -40
+              echo '```'
+            else
+              echo "None on Home Assistant \`${HA_VERSION}\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
