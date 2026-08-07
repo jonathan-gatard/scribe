@@ -12,7 +12,11 @@ pytest
 # point — a dev environment silently stuck on an older interpreter tests an
 # older Home Assistant than CI does, and that gap is invisible until something
 # passes locally and breaks in CI.
-pytest-homeassistant-custom-component==0.13.351
+#
+# 0.13.348 is the last release that pins a *stable* Home Assistant (2026.7.4);
+# 0.13.351 pins 2026.8.0b3. The gating job must not depend on a beta — that is
+# what upstream-watch.yaml is for.
+pytest-homeassistant-custom-component==0.13.348
 pytest-asyncio
 psycopg2-binary
 sqlalchemy
