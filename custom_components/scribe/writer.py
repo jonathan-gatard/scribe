@@ -169,6 +169,12 @@ WRITE_FAILURE_ISSUE_THRESHOLD = 3
 # cannot hold a pooled connection and hammer the server indefinitely.
 QUERY_TIMEOUT_MS = 120_000
 
+# Above this many rows, the startup counter settles for TimescaleDB's estimate
+# rather than an exact count. Below it, counting is cheap enough that there is
+# no reason to lose precision — the point is "exact while it is affordable",
+# not "always an estimate".
+EXACT_COUNT_CEILING = 1_000_000
+
 
 def _json_default(obj):
     """Encode values json cannot serialize natively, for the jsonb codec.
@@ -512,10 +518,15 @@ class ScribeWriter:
 
         `SELECT count(*)` here is not cheap: on a year-old install it aggregates
         tens of millions of rows across every chunk, decompressing each one, at
-        every Home Assistant start. TimescaleDB's approximate_row_count() reads
-        the planner statistics instead and answers in milliseconds — accurate
-        enough for a "total written" counter. Plain PostgreSQL still gets the
-        exact count, where the table is small enough for it not to matter.
+        every Home Assistant start — measured at 90 million rows over 103 chunks
+        on the author's database, against 21 ms for the estimate.
+
+        So the exact count is kept while it stays affordable (under
+        EXACT_COUNT_CEILING rows) and TimescaleDB's approximate_row_count()
+        takes over beyond it. The estimate is accurate enough for this counter,
+        which is a gauge rather than an accounting figure: after startup it is
+        incremented in memory per flush, so it already reflects what this
+        process wrote rather than what the table contains.
         """
         try:
             approx = await self._fetchval(
@@ -525,8 +536,9 @@ class ScribeWriter:
             # statistics that have not been gathered yet (a fresh install, or a
             # bulk import before autovacuum caught up). Both are worth the exact
             # count: the first answers instantly, and the second would otherwise
-            # leave the counter stuck at zero.
-            if approx:
+            # leave the counter stuck at zero. Small tables are counted exactly
+            # too, since scanning them costs nothing.
+            if approx and approx > EXACT_COUNT_CEILING:
                 return int(approx)
         except Exception as e:
             _LOGGER.debug(

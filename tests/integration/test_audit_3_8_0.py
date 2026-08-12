@@ -16,7 +16,7 @@ from custom_components.scribe.const import (
     CONF_INCLUDE_EVENTS,
     DOMAIN,
 )
-from custom_components.scribe.writer import QUERY_TIMEOUT_MS
+from custom_components.scribe.writer import EXACT_COUNT_CEILING, QUERY_TIMEOUT_MS
 
 from .conftest import write_states
 
@@ -161,3 +161,39 @@ async def test_exclude_events_beats_include_events_on_overlap(hass, scribe_entry
     types = {r["event_type"] for r in rows}
     assert "audit_kept" in types
     assert "audit_dropped" not in types
+
+
+@pytest.mark.asyncio
+async def test_small_tables_are_still_counted_exactly(hass, writer, db, monkeypatch):
+    """Precision is only traded away once counting actually costs something."""
+    await write_states(writer, "sensor.small", 7)
+    issued = []
+    real_fetchval = writer._fetchval
+
+    async def spy(sql, *args):
+        issued.append(sql)
+        return await real_fetchval(sql, *args)
+
+    monkeypatch.setattr(writer, "_fetchval", spy)
+    count = await writer._row_count("states_raw", "states")
+
+    assert count == 7, "a small table must report its real size"
+    assert any("count(*)" in s.lower() for s in issued)
+
+
+@pytest.mark.asyncio
+async def test_large_tables_use_the_estimate(hass, writer, monkeypatch):
+    """Past the ceiling the exact count must not be attempted at all."""
+    issued = []
+
+    async def spy(sql, *args):
+        issued.append(sql)
+        if "approximate_row_count" in sql:
+            return EXACT_COUNT_CEILING + 1
+        raise AssertionError(f"unexpected query past the ceiling: {sql}")
+
+    monkeypatch.setattr(writer, "_fetchval", spy)
+    count = await writer._row_count("states_raw", "states")
+
+    assert count == EXACT_COUNT_CEILING + 1
+    assert not any("count(*)" in s.lower() for s in issued)
