@@ -169,12 +169,6 @@ WRITE_FAILURE_ISSUE_THRESHOLD = 3
 # cannot hold a pooled connection and hammer the server indefinitely.
 QUERY_TIMEOUT_MS = 120_000
 
-# Above this many rows, the startup counter settles for TimescaleDB's estimate
-# rather than an exact count. Below it, counting is cheap enough that there is
-# no reason to lose precision — the point is "exact while it is affordable",
-# not "always an estimate".
-EXACT_COUNT_CEILING = 1_000_000
-
 
 def _json_default(obj):
     """Encode values json cannot serialize natively, for the jsonb codec.
@@ -248,6 +242,7 @@ class ScribeWriter:
         enable_table_devices: bool = True,
         enable_table_integrations: bool = True,
         enable_table_users: bool = True,
+        enable_stats_io: bool = False,
     ):
         """Initialize the writer."""
         self.hass = hass
@@ -273,6 +268,7 @@ class ScribeWriter:
         self.enable_table_devices = enable_table_devices
         self.enable_table_integrations = enable_table_integrations
         self.enable_table_users = enable_table_users
+        self.enable_stats_io = enable_stats_io
 
         # Stats for sensors
         self._states_written = 0
@@ -513,56 +509,43 @@ class ScribeWriter:
             )
             raise
 
-    async def _row_count(self, hypertable: str, fallback_relation: str) -> int:
-        """Row count for a table, without scanning it when that can be avoided.
+    async def _row_count(self, relation: str) -> int:
+        """Exact row count for a relation.
 
-        `SELECT count(*)` here is not cheap: on a year-old install it aggregates
-        tens of millions of rows across every chunk, decompressing each one, at
-        every Home Assistant start — measured at 90 million rows over 103 chunks
-        on the author's database, against 21 ms for the estimate.
-
-        So the exact count is kept while it stays affordable (under
-        EXACT_COUNT_CEILING rows) and TimescaleDB's approximate_row_count()
-        takes over beyond it. The estimate is accurate enough for this counter,
-        which is a gauge rather than an accounting figure: after startup it is
-        incremented in memory per flush, so it already reflects what this
-        process wrote rather than what the table contains.
+        There is no cheap shortcut here. TimescaleDB's approximate_row_count()
+        looks tempting — 21 ms against a full scan — but it derives compressed
+        chunks from `reltuples`, which counts *batches* and assumes each is
+        full. Measured on a real chunk: 1 270 000 estimated against 444 968
+        actual, 2.85x too high. A "total written" counter that overstates by
+        nearly three times is worse than a slow one, so the exact count stands
+        and the cost is avoided by not asking unless someone is looking (see
+        _get_initial_counts).
         """
-        try:
-            approx = await self._fetchval(
-                "SELECT approximate_row_count($1::regclass)", hypertable
-            )
-            # A zero estimate means either a genuinely empty table or planner
-            # statistics that have not been gathered yet (a fresh install, or a
-            # bulk import before autovacuum caught up). Both are worth the exact
-            # count: the first answers instantly, and the second would otherwise
-            # leave the counter stuck at zero. Small tables are counted exactly
-            # too, since scanning them costs nothing.
-            if approx and approx > EXACT_COUNT_CEILING:
-                return int(approx)
-        except Exception as e:
-            _LOGGER.debug(
-                "[writer._row_count] approximate_row_count unavailable for %s: %s (%s)"
-                " — falling back to an exact count",
-                hypertable,
-                e,
-                type(e).__name__,
-            )
-        return await self._fetchval(f"SELECT count(*) FROM {fallback_relation}") or 0
+        return await self._fetchval(f"SELECT count(*) FROM {relation}") or 0
 
     async def _get_initial_counts(self):
-        """Fetch initial row counts from database."""
+        """Seed the written-rows counters from the database, if anyone reads them.
+
+        These two numbers exist only to feed the I/O statistics sensors, which
+        are opt-in and off by default. Counting them means aggregating every
+        row across every chunk — 90 million rows over 103 compressed chunks on
+        a real installation — so an install that does not display them should
+        not pay for them at every Home Assistant start.
+        """
+        if not self.enable_stats_io:
+            _LOGGER.debug(
+                "[writer._get_initial_counts] I/O statistics are disabled; "
+                "skipping the initial row counts."
+            )
+            return
+
         _LOGGER.debug("[writer._get_initial_counts] Fetching initial row counts...")
         try:
             if self.record_states:
-                self._states_written = await self._row_count(
-                    "states_raw", self.table_name_states
-                )
+                self._states_written = await self._row_count(self.table_name_states)
 
             if self.record_events:
-                self._events_written = await self._row_count(
-                    self.table_name_events, self.table_name_events
-                )
+                self._events_written = await self._row_count(self.table_name_events)
 
             _LOGGER.debug(
                 "[writer._get_initial_counts] Initial counts: states=%d, events=%d",

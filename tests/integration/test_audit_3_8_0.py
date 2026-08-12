@@ -16,9 +16,9 @@ from custom_components.scribe.const import (
     CONF_INCLUDE_EVENTS,
     DOMAIN,
 )
-from custom_components.scribe.writer import EXACT_COUNT_CEILING, QUERY_TIMEOUT_MS
+from custom_components.scribe.writer import QUERY_TIMEOUT_MS
 
-from .conftest import write_states
+from .conftest import make_writer, write_states
 
 
 @pytest.mark.asyncio
@@ -49,49 +49,62 @@ async def test_query_service_is_stopped_by_the_server(hass, scribe_entry, monkey
 
 
 @pytest.mark.asyncio
-async def test_initial_counts_do_not_scan_every_chunk(hass, writer, db, monkeypatch):
-    """Startup must not aggregate the whole hypertable.
+async def test_initial_counts_are_skipped_when_nobody_displays_them(
+    hass, clean_db, monkeypatch
+):
+    """Counting every row is only worth it if a sensor shows the result.
 
-    On a year-old install `SELECT count(*)` walks tens of millions of rows and
-    decompresses every chunk, at every Home Assistant start. The estimate from
-    the planner statistics must be tried first; the exact count survives only
-    as a fallback for when those statistics are not there yet.
+    The I/O statistics sensors are opt-in and off by default, and seeding
+    their counters aggregates the whole history — 90 million rows over 103
+    compressed chunks on a real installation — at every Home Assistant start.
     """
-    await write_states(writer, "sensor.counted", 5)
-    issued = []
+    w = make_writer(hass, enable_stats_io=False)
+    await w.start()
+    try:
+        issued = []
+        real_fetchval = w._fetchval
 
-    real_fetchval = writer._fetchval
+        async def spy(sql, *args):
+            issued.append(sql)
+            return await real_fetchval(sql, *args)
 
-    async def spy(sql, *args):
-        issued.append(sql)
-        return await real_fetchval(sql, *args)
+        monkeypatch.setattr(w, "_fetchval", spy)
+        await w._get_initial_counts()
 
-    monkeypatch.setattr(writer, "_fetchval", spy)
-    await writer._get_initial_counts()
-
-    assert writer._states_written >= 0
-    assert any("approximate_row_count" in s for s in issued), (
-        "the cheap path was never tried"
-    )
+        assert not issued, f"counted rows nobody asked for: {issued}"
+    finally:
+        await w.stop()
 
 
 @pytest.mark.asyncio
-async def test_row_count_falls_back_without_timescaledb(hass, writer, monkeypatch):
-    """Plain PostgreSQL has no approximate_row_count; the exact count remains."""
-    issued = []
-    real_fetchval = writer._fetchval
+async def test_initial_counts_are_exact_when_someone_does(hass, clean_db, monkeypatch):
+    """With the sensors on, the figure must be the real one.
 
-    async def spy(sql, *args):
-        issued.append(sql)
-        if "approximate_row_count" in sql:
-            raise RuntimeError("function approximate_row_count does not exist")
-        return await real_fetchval(sql, *args)
+    TimescaleDB's approximate_row_count() derives compressed chunks from
+    `reltuples`, which counts batches and assumes each is full: measured at
+    1 270 000 against 444 968 actual on a real chunk, 2.85x too high. A
+    counter that overstates by three times is worse than a slow one.
+    """
+    w = make_writer(hass, enable_stats_io=True)
+    await w.start()
+    try:
+        await write_states(w, "sensor.counted", 6)
+        issued = []
+        real_fetchval = w._fetchval
 
-    monkeypatch.setattr(writer, "_fetchval", spy)
-    count = await writer._row_count("states_raw", "states")
+        async def spy(sql, *args):
+            issued.append(sql)
+            return await real_fetchval(sql, *args)
 
-    assert count == 0
-    assert any("count(*)" in s.lower() for s in issued), "no fallback was attempted"
+        monkeypatch.setattr(w, "_fetchval", spy)
+        await w._get_initial_counts()
+
+        assert w._states_written == 6, "the counter must report the real row count"
+        assert not any("approximate_row_count" in s for s in issued), (
+            "the estimate over-reports on compressed chunks; it must not be used"
+        )
+    finally:
+        await w.stop()
 
 
 @pytest.mark.asyncio
@@ -161,39 +174,3 @@ async def test_exclude_events_beats_include_events_on_overlap(hass, scribe_entry
     types = {r["event_type"] for r in rows}
     assert "audit_kept" in types
     assert "audit_dropped" not in types
-
-
-@pytest.mark.asyncio
-async def test_small_tables_are_still_counted_exactly(hass, writer, db, monkeypatch):
-    """Precision is only traded away once counting actually costs something."""
-    await write_states(writer, "sensor.small", 7)
-    issued = []
-    real_fetchval = writer._fetchval
-
-    async def spy(sql, *args):
-        issued.append(sql)
-        return await real_fetchval(sql, *args)
-
-    monkeypatch.setattr(writer, "_fetchval", spy)
-    count = await writer._row_count("states_raw", "states")
-
-    assert count == 7, "a small table must report its real size"
-    assert any("count(*)" in s.lower() for s in issued)
-
-
-@pytest.mark.asyncio
-async def test_large_tables_use_the_estimate(hass, writer, monkeypatch):
-    """Past the ceiling the exact count must not be attempted at all."""
-    issued = []
-
-    async def spy(sql, *args):
-        issued.append(sql)
-        if "approximate_row_count" in sql:
-            return EXACT_COUNT_CEILING + 1
-        raise AssertionError(f"unexpected query past the ceiling: {sql}")
-
-    monkeypatch.setattr(writer, "_fetchval", spy)
-    count = await writer._row_count("states_raw", "states")
-
-    assert count == EXACT_COUNT_CEILING + 1
-    assert not any("count(*)" in s.lower() for s in issued)

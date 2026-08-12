@@ -93,9 +93,9 @@ async def test_writer_init_db(writer, mock_pool, mock_db_connection):
     assert any("create_hypertable('states_raw'" in c for c in calls)
     assert any("create_hypertable('events'" in c for c in calls)
 
-    # Initial row counts come from the planner statistics: count(*) walks every
-    # chunk on a large install and would run at every Home Assistant start.
-    assert any("approximate_row_count" in c for c in calls)
+    # Initial row counts are only fetched when the I/O statistics sensors are
+    # enabled; this writer leaves them off, so nothing must have been counted.
+    assert not any("count(*)" in c.lower() for c in calls)
 
 
 @pytest.mark.asyncio

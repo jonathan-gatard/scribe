@@ -353,6 +353,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 CONF_ENABLE_INTEGRATIONS, DEFAULT_ENABLE_INTEGRATIONS
             ),
             enable_table_users=get_config(CONF_ENABLE_USERS, DEFAULT_ENABLE_USERS),
+            enable_stats_io=enable_stats_io,
         )
 
         # Start the writer task (async)

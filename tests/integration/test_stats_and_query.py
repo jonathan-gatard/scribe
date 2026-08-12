@@ -117,8 +117,13 @@ async def test_query_without_a_pool_raises(hass, clean_db):
 
 @pytest.mark.asyncio
 async def test_initial_counts_come_from_the_database(hass, clean_db):
-    """A restarting writer picks up the row counts already in the tables."""
-    first = make_writer(hass)
+    """A restarting writer picks up the row counts already in the tables.
+
+    Only when the I/O statistics sensors are enabled: seeding these counters
+    aggregates the whole history, so an install that does not display them
+    should not pay for it at every start.
+    """
+    first = make_writer(hass, enable_stats_io=True)
     await first.start()
     try:
         await write_states(first, "sensor.persisted", 4)
@@ -126,7 +131,7 @@ async def test_initial_counts_come_from_the_database(hass, clean_db):
     finally:
         await first.stop()
 
-    second = make_writer(hass)
+    second = make_writer(hass, enable_stats_io=True)
     await second.start()
     try:
         await second._get_initial_counts()
