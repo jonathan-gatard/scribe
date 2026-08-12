@@ -2,10 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.8.0] - 2026-08-03
-
-Published as a pre-release: HACS only offers it to users who enabled beta
-versions for this repository.
+## [3.8.0] - 2026-08-13
 
 ### Added
 - **Repairs issues for the failures that used to be log-only**: Scribe now surfaces six more conditions in Home Assistant's Repairs dashboard, each explaining the consequence and the fix, and each retiring itself automatically once resolved — an unreachable database (nothing is being recorded), repeated write failures (data held in memory, lost on restart), a saturated buffer (history being discarded), records dropped because buffering is disabled, a missing TimescaleDB extension (no chunking or compression, database grows much faster, size sensors stay empty), and a failed legacy migration (old history stranded in `states_legacy`). Write failures only raise an issue after three consecutive flushes fail, so a database restart or a brief network drop stays silent. Translated in English and French, and documented in the README's Troubleshooting section.
@@ -19,7 +16,7 @@ versions for this repository.
 - **Flush crash on `date` attributes**: an entity exposing a plain `datetime.date` in its attributes (expiry dates, calendar entities, `input_datetime` helpers in date mode) raised `Object of type date is not JSON serializable` inside the jsonb codec, killing the **entire flush batch** — every state and event in it lost or endlessly re-buffered. Home Assistant's `JSONEncoder` handles `datetime` but not a bare `date`; the 3.6.1 fix for #40 addressed the `time` column and left this path open. Dates are now serialized as ISO strings.
 
 ### Changed
-- **End-to-end test suite covering the whole component** (`tests/integration/`): 107 tests driving the real integration against a real TimescaleDB and a real Home Assistant instance. They cover schema and hypertable creation, the flush and sanitization path, metadata sync for all five registries, statistics, the read-only query service, legacy `states` → `states_raw` migration, entity renames, behaviour against **compressed chunks**, failure and load (database loss and recovery, buffer cap, 5000-state batches, concurrent flushes), and the full Home Assistant lifecycle — config flow against a real database, real state changes through the real filters, services, options reload, diagnostics redaction. They assert on what actually lands in the tables rather than on mocked SQL calls; both fixes above were found this way. CI runs them against a service container and fails if they skip.
+- **End-to-end test suite covering the whole component** (`tests/integration/`): 119 tests driving the real integration against a real TimescaleDB and a real Home Assistant instance. They cover schema and hypertable creation, the flush and sanitization path, metadata sync for all five registries, statistics, the read-only query service, legacy `states` → `states_raw` migration, entity renames, behaviour against **compressed chunks**, failure and load (database loss and recovery, buffer cap, 5000-state batches, concurrent flushes), and the full Home Assistant lifecycle — config flow against a real database, real state changes through the real filters, services, options reload, diagnostics redaction. They assert on what actually lands in the tables rather than on mocked SQL calls, which is how most of the fixes above were found. CI runs them against a service container and fails if they skip.
 - **Two redundant statistics queries removed**: `get_states_compression_stats` and `get_events_compression_stats` recomputed keys their `*_size_stats` counterparts already produce, and the states one queried the `states` *view* instead of the `states_raw` hypertable, so it could never return anything. Each statistics refresh now makes two fewer round-trips.
 
 ## [3.7.0] - 2026-08-03
