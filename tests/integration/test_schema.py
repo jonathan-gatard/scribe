@@ -25,7 +25,7 @@ async def test_creates_all_tables(writer, db):
 
 
 @pytest.mark.asyncio
-async def test_states_raw_has_primary_key_and_index(writer, db):
+async def test_states_raw_has_its_primary_key(writer, db):
     """The (metadata_id, time) PK must exist from creation, not from migration.
 
     Migration scripts rely on it for `ON CONFLICT (metadata_id, time)`, which
@@ -43,11 +43,6 @@ async def test_states_raw_has_primary_key_and_index(writer, db):
             """
         )
         assert [r["attname"] for r in pk_columns] == ["metadata_id", "time"]
-
-        assert await conn.fetchval(
-            "SELECT EXISTS (SELECT FROM pg_indexes "
-            "WHERE tablename = 'states_raw' AND indexname = 'states_raw_meta_time_idx')"
-        )
 
 
 @pytest.mark.asyncio
@@ -163,3 +158,62 @@ async def test_the_states_view_materializes_only_what_it_projects(writer, db):
     drive = definition.split("drive AS MATERIALIZED")[1].split(")")[0]
     assert "capabilities" not in drive
     assert "entity_id" in drive and "id" in drive
+
+
+@pytest.mark.asyncio
+async def test_states_raw_carries_no_index_the_primary_key_duplicates(writer, db):
+    """An index on (metadata_id, time DESC) serves nothing the key does not.
+
+    A B-tree is scanned in either direction, so the primary key answers
+    `WHERE metadata_id = x ORDER BY time DESC` on its own. Keeping both
+    doubled the index footprint of the largest table and cost every write.
+    """
+    async with db.acquire() as conn:
+        assert await conn.fetchval(
+            "SELECT to_regclass('states_raw_meta_time_idx') IS NULL"
+        )
+
+
+@pytest.mark.asyncio
+async def test_an_index_left_by_an_earlier_version_is_dropped(hass, clean_db):
+    """Existing installations carry it; starting up removes it."""
+    import asyncpg
+
+    from .conftest import DSN, make_writer
+
+    conn = await asyncpg.connect(DSN)
+    try:
+        await conn.execute(
+            "CREATE TABLE states_raw (time TIMESTAMPTZ NOT NULL, "
+            "metadata_id INTEGER NOT NULL, state TEXT, value DOUBLE PRECISION, "
+            "attributes JSONB, PRIMARY KEY (metadata_id, time))"
+        )
+        await conn.execute(
+            "CREATE INDEX states_raw_meta_time_idx ON states_raw (metadata_id, time DESC)"
+        )
+    finally:
+        await conn.close()
+
+    w = make_writer(hass)
+    await w.start()
+    try:
+        async with w._pool.acquire() as conn:
+            assert await conn.fetchval(
+                "SELECT to_regclass('states_raw_meta_time_idx') IS NULL"
+            )
+
+            # And the query it used to serve still returns the right row.
+            # Which index the planner picks depends on the data, so that is
+            # left to the benchmark rather than asserted here.
+            await conn.execute(
+                "INSERT INTO states_raw (time, metadata_id, state, value, attributes) "
+                "SELECT now() - (s || ' seconds')::interval, 1, 'on', s, NULL "
+                "FROM generate_series(1, 2000) s"
+            )
+            newest = await conn.fetchval(
+                "SELECT value FROM states_raw "
+                "WHERE metadata_id = 1 ORDER BY time DESC LIMIT 1"
+            )
+        assert newest == 1.0
+    finally:
+        await w.stop()

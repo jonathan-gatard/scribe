@@ -1226,10 +1226,20 @@ class ScribeWriter:
                 PRIMARY KEY (metadata_id, time)
             );
         """)
-        await conn.execute("""
-            CREATE INDEX IF NOT EXISTS states_raw_meta_time_idx
-            ON states_raw (metadata_id, time DESC);
-        """)
+        # The primary key is already an index on (metadata_id, time), and a
+        # B-tree is scanned in either direction — so an extra index on
+        # (metadata_id, time DESC) serves no query the key does not, while
+        # doubling the index footprint of the largest table and costing every
+        # write. Dropped where earlier versions created it.
+        if await conn.fetchval(
+            "SELECT to_regclass('states_raw_meta_time_idx') IS NOT NULL"
+        ):
+            _LOGGER.info(
+                "[writer._init_states_table] Dropping states_raw_meta_time_idx: "
+                "the primary key on (metadata_id, time) already serves those "
+                "queries, and maintaining both slows every write."
+            )
+            await conn.execute("DROP INDEX IF EXISTS states_raw_meta_time_idx")
 
         # 2. The view is created separately: `_init_states_view` refuses to
         # replace a *table* that happens to carry the configured name.
