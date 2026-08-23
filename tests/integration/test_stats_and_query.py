@@ -167,3 +167,40 @@ async def test_query_results_can_be_serialized_by_home_assistant(writer, db):
     assert isinstance(rows[0]["epoch"], float)
     assert rows[0]["exact"] == 1.5
     assert rows[0]["span"] == 604800.0
+
+
+@pytest.mark.asyncio
+async def test_the_initial_count_reads_the_table_not_the_view(hass, clean_db):
+    """Both give the same number; only one of them is cheap.
+
+    The `states` view reaches those rows through a lateral join on entities —
+    measured at four times the cost of counting the hypertable directly, paid
+    at every start by anyone with the I/O sensors enabled.
+    """
+    from .conftest import make_writer, write_states
+
+    w = make_writer(hass, enable_stats_io=True)
+    await w.start()
+    try:
+        await write_states(w, "sensor.counted", 5)
+    finally:
+        await w.stop()
+
+    seen = []
+    w2 = make_writer(hass, enable_stats_io=True)
+    await w2.start()
+    try:
+        original = w2._row_count
+
+        async def record(relation):
+            seen.append(relation)
+            return await original(relation)
+
+        w2._row_count = record
+        await w2._get_initial_counts()
+
+        assert "states_raw" in seen
+        assert "states" not in seen
+        assert w2._states_written == 5
+    finally:
+        await w2.stop()
