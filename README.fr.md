@@ -515,7 +515,7 @@ Chacun disparaît de lui-même une fois la cause corrigée.
 
 | Problème | Ce que cela signifie |
 | --- | --- |
-| Base de données injoignable | La connexion a échoué au démarrage : **plus rien n'est enregistré**. Vérifiez que le serveur tourne et que l'URL et les identifiants sont corrects. |
+| Base de données injoignable | La connexion a échoué. Scribe continue de mettre en tampon et réessaie en arrière-plan : l'historique enregistré pendant la panne est écrit dès que la base revient. Vérifiez que le serveur tourne et que l'URL et les identifiants sont corrects. |
 | Écriture impossible en base | Plusieurs écritures consécutives ont échoué. Les données sont gardées en mémoire et écrites au rétablissement — sauf si Home Assistant redémarre avant. |
 | Tampon plein | Les écritures ont échoué assez longtemps pour saturer le tampon ; les enregistrements les plus anciens sont maintenant écartés. Réparez la base, ou augmentez `max_queue_size`. |
 | Enregistrements écartés | Une écriture a échoué alors que la mise en tampon est désactivée : les enregistrements ont été perdus immédiatement. Activez la mise en tampon pour survivre aux coupures brèves. |

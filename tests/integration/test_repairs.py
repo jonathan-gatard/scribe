@@ -46,13 +46,17 @@ async def test_unreachable_database_raises_an_issue(hass, clean_db):
     """A database that refuses connections is reported, not just logged."""
     w = make_writer(hass, db_url=UNREACHABLE_DSN)
     await w.start()
-
-    issue = get_issue(hass, ISSUE_DB_UNREACHABLE)
-    assert issue is not None
-    assert issue.severity == ir.IssueSeverity.ERROR
-    assert issue.translation_key == "db_unreachable"
-    assert "error" in issue.translation_placeholders
-    assert not w.running
+    try:
+        issue = get_issue(hass, ISSUE_DB_UNREACHABLE)
+        assert issue is not None
+        assert issue.severity == ir.IssueSeverity.ERROR
+        assert issue.translation_key == "db_unreachable"
+        assert "error" in issue.translation_placeholders
+        # Still running, and still buffering: the connection is retried in the
+        # background instead of being given up on until the next restart.
+        assert w.running
+    finally:
+        await w.stop()
 
 
 @pytest.mark.asyncio
@@ -61,6 +65,7 @@ async def test_connecting_successfully_clears_the_issue(hass, clean_db):
     failing = make_writer(hass, db_url=UNREACHABLE_DSN)
     await failing.start()
     assert get_issue(hass, ISSUE_DB_UNREACHABLE) is not None
+    await failing.stop()  # it now retries in the background until told to stop
 
     working = make_writer(hass)
     await working.start()

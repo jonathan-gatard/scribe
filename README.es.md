@@ -512,7 +512,7 @@ registros. Cada uno desaparece solo en cuanto se corrige la causa.
 
 | Reparación | Qué significa |
 | --- | --- |
-| No puede acceder a su base de datos | La conexión falló al arrancar: **no se está registrando nada**. Comprueba que el servidor esté activo y que la URL y las credenciales sean correctas. |
+| No puede acceder a su base de datos | La conexión falló. Scribe sigue almacenando en búfer y reintenta en segundo plano, así que el historial registrado durante el corte se escribe en cuanto la base vuelve. Comprueba que el servidor esté activo y que la URL y las credenciales sean correctas. |
 | No puede escribir en su base de datos | Varias escrituras consecutivas fallaron. Los datos se mantienen en memoria y se escriben al recuperarse, salvo que Home Assistant se reinicie antes. |
 | El búfer está lleno | Las escrituras fallaron el tiempo suficiente para saturar el búfer; los registros más antiguos se están descartando. Arregla la base de datos o sube `max_queue_size`. |
 | Descartando registros | Una escritura falló con el búfer desactivado, así que los registros se perdieron de inmediato. Activa el búfer para sobrevivir a cortes breves. |

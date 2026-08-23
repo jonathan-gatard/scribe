@@ -213,6 +213,12 @@ ISSUE_RETENTION_FAILED = "retention_failed_{table}"
 # failure is a blip (a restart, a brief network drop) and self-heals.
 WRITE_FAILURE_ISSUE_THRESHOLD = 3
 
+# How long to wait between connection attempts while the database is down.
+# Doubles from the first to the second, so a database that is merely slow to
+# boot is picked up in seconds while one that is down for hours is left alone.
+RECONNECT_MIN_DELAY = 5
+RECONNECT_MAX_DELAY = 300
+
 # Ceiling for the `scribe.query` service, in milliseconds. Long enough for a
 # genuine report over a year of history, short enough that a runaway query
 # cannot hold a pooled connection and hammer the server indefinitely.
@@ -495,6 +501,9 @@ class ScribeWriter:
         # Consecutive failed flushes, used to decide when a transient blip has
         # become a condition worth surfacing in Repairs.
         self._consecutive_flush_failures = 0
+        # Reconnection backoff, used while the database is unreachable.
+        self._connect_delay = RECONNECT_MIN_DELAY
+        self._next_connect_attempt = 0.0
         # Strong references to fire-and-forget flush tasks (see `enqueue`).
         self._background_tasks: set[asyncio.Task] = set()
         # Resolved once per start, before the hypertable steps run.
@@ -640,8 +649,118 @@ class ScribeWriter:
 
         return context
 
+    async def _connect(self) -> bool:
+        """Create the connection pool and build the schema. False if unreachable.
+
+        Used both by `start()` and by the writer loop: a database that is not
+        up yet when Home Assistant boots — the two often start together — must
+        not leave Scribe dead until the next restart.
+        """
+        try:
+            _LOGGER.debug(
+                "[writer.start] Creating asyncpg pool for %s",
+                _safe_target(self.db_url),
+            )
+
+            ssl_arg = await self._build_ssl_context()
+
+            async def _init_connection(conn):
+                # Home Assistant attributes are dicts; encoding them through
+                # asyncpg's own jsonb codec avoids a round trip through Python
+                # string serialization on every row.
+                await conn.set_type_codec(
+                    "jsonb",
+                    encoder=lambda x: (
+                        b"\x01"
+                        + json.dumps(
+                            x, cls=JSONEncoder, default=_json_default
+                        ).encode("utf-8")
+                    ),
+                    decoder=lambda x: json.loads(x[1:].decode("utf-8")),
+                    schema="pg_catalog",
+                    format="binary",
+                )
+
+            self._pool = await asyncpg.create_pool(
+                dsn=self.db_url,
+                min_size=1,
+                max_size=10,
+                ssl=ssl_arg,
+                init=_init_connection,
+            )
+            self._engine = self._pool
+
+            _LOGGER.debug(
+                "[writer.start] asyncpg pool created successfully (host=%s, ssl=%s)",
+                _safe_target(self.db_url),
+                bool(ssl_arg),
+            )
+            self._clear_issue(ISSUE_DB_UNREACHABLE)
+        except Exception as e:
+            _LOGGER.error(
+                "[writer.start] Failed to create asyncpg pool for %s: %s (%s). Check DB URL, credentials, network and SSL configuration.",
+                _safe_target(self.db_url),
+                e,
+                type(e).__name__,
+                exc_info=True,
+            )
+            # Nothing is being recorded until this is fixed, and the only other
+            # signal is a log line at startup.
+            self._report_issue(
+                ISSUE_DB_UNREACHABLE,
+                "db_unreachable",
+                {
+                    "host": _safe_target(self.db_url),
+                    "error": f"{e} ({type(e).__name__})",
+                },
+                severity=ir.IssueSeverity.ERROR,
+            )
+            self._pool = None
+            self._engine = None
+            return False
+
+        await self.init_db()
+        return self._connected
+
+    async def _ensure_connected(self) -> bool:
+        """Reconnect if needed, no more often than the backoff allows.
+
+        The backoff doubles up to RECONNECT_MAX_DELAY so a database that is
+        down for an hour is not hammered every flush interval, while one that
+        is merely slow to boot is picked up within seconds.
+        """
+        if self._pool is not None:
+            return True
+
+        now = time.time()
+        if now < self._next_connect_attempt:
+            return False
+
+        self._next_connect_attempt = now + self._connect_delay
+        if await self._connect():
+            _LOGGER.info(
+                "[writer._ensure_connected] Reconnected to %s — %d buffered item(s) will be written",
+                _safe_target(self.db_url),
+                len(self._queue),
+            )
+            self._connect_delay = RECONNECT_MIN_DELAY
+            return True
+
+        self._connect_delay = min(self._connect_delay * 2, RECONNECT_MAX_DELAY)
+        _LOGGER.debug(
+            "[writer._ensure_connected] Still unreachable; next attempt in %ss (%d item(s) buffered)",
+            self._connect_delay,
+            len(self._queue),
+        )
+        return False
+
     async def start(self):
-        """Start the writer task."""
+        """Start the writer task.
+
+        A database that cannot be reached does not stop the writer: the loop
+        keeps buffering and retries the connection, so history recorded while
+        the database was down is written once it returns.
+        """
         try:
             if self._running:
                 return
@@ -649,88 +768,20 @@ class ScribeWriter:
             _LOGGER.debug("[writer.start] Starting ScribeWriter...")
             self._running = True
 
-            # Create connection pool
-            if not self._pool:
-                try:
-                    _LOGGER.debug(
-                        "[writer.start] Creating asyncpg pool for %s",
-                        _safe_target(self.db_url),
-                    )
-
-                    ssl_arg = await self._build_ssl_context()
-
-                    async def _init_connection(conn):
-                        # Home Assistant attributes are dicts; encoding them
-                        # through asyncpg's own jsonb codec avoids a round trip
-                        # through Python string serialization on every row.
-                        await conn.set_type_codec(
-                            "jsonb",
-                            encoder=lambda x: (
-                                b"\x01"
-                                + json.dumps(
-                                    x, cls=JSONEncoder, default=_json_default
-                                ).encode("utf-8")
-                            ),
-                            decoder=lambda x: json.loads(x[1:].decode("utf-8")),
-                            schema="pg_catalog",
-                            format="binary",
-                        )
-
-                    self._pool = await asyncpg.create_pool(
-                        dsn=self.db_url,
-                        min_size=1,
-                        max_size=10,
-                        ssl=ssl_arg,
-                        init=_init_connection,
-                    )
-                    self._engine = self._pool
-
-                    _LOGGER.debug(
-                        "[writer.start] asyncpg pool created successfully (host=%s, ssl=%s)",
-                        _safe_target(self.db_url),
-                        bool(ssl_arg),
-                    )
-                    self._clear_issue(ISSUE_DB_UNREACHABLE)
-                except Exception as e:
-                    _LOGGER.error(
-                        "[writer.start] Failed to create asyncpg pool for %s: %s (%s). Check DB URL, credentials, network and SSL configuration.",
-                        _safe_target(self.db_url),
-                        e,
-                        type(e).__name__,
-                        exc_info=True,
-                    )
-                    # Nothing will be recorded at all until this is fixed, and
-                    # the only other signal is a log line at startup.
-                    self._report_issue(
-                        ISSUE_DB_UNREACHABLE,
-                        "db_unreachable",
-                        {
-                            "host": _safe_target(self.db_url),
-                            "error": f"{e} ({type(e).__name__})",
-                        },
-                        severity=ir.IssueSeverity.ERROR,
-                    )
-                    self._running = False
-                    return
-
-            # Perform initialization
-            try:
-                _LOGGER.debug("[writer.start] Starting database initialization...")
+            if self._pool is None:
+                await self._connect()
+            else:
+                # A pool handed in (a restart, or a test): the schema still has
+                # to be checked, which _connect would otherwise have done.
                 await self.init_db()
-                _LOGGER.debug("[writer.start] Database initialization completed")
 
-                # Loop launch (background)
-                self._task = asyncio.create_task(self._run())
-                _LOGGER.info("[writer.start] ScribeWriter started successfully")
-            except Exception as e:
-                _LOGGER.error(
-                    "[writer.start] Database initialization failed: %s (%s)",
-                    e,
-                    type(e).__name__,
-                    exc_info=True,
+            self._task = asyncio.create_task(self._run())
+            if self._pool is None:
+                _LOGGER.warning(
+                    "[writer.start] Database unreachable at startup — buffering and retrying in the background."
                 )
-                self._connected = False
-                raise
+            else:
+                _LOGGER.info("[writer.start] ScribeWriter started successfully")
 
         except Exception as e:
             _LOGGER.error(
@@ -901,6 +952,11 @@ class ScribeWriter:
         while self._running:
             try:
                 await asyncio.sleep(self.flush_interval)
+                # Nothing can be written without a pool, and flushing would
+                # just re-buffer the batch; reconnect first, on a backoff.
+                if not await self._ensure_connected():
+                    self._warn_if_buffer_full()
+                    continue
                 await self._flush()
             # No `except asyncio.CancelledError` here on purpose: it derives
             # from BaseException, so the handler below never sees it and the
@@ -2123,6 +2179,27 @@ class ScribeWriter:
     # ------------------------------------------------------------------
     # Flush / write batch
     # ------------------------------------------------------------------
+
+    def _warn_if_buffer_full(self):
+        """Say so when a disconnection has filled the buffer.
+
+        Without this the queue silently drops its oldest items once it reaches
+        `max_queue_size`, and the only visible sign of a long outage would be
+        a hole in the history.
+        """
+        if len(self._queue) < self.max_queue_size:
+            return
+        _LOGGER.warning(
+            "[writer._run] Buffer full while the database is unreachable: queue size %d (max=%d) — oldest items are being dropped",
+            len(self._queue),
+            self.max_queue_size,
+        )
+        self._report_issue(
+            ISSUE_BUFFER_FULL,
+            "buffer_full",
+            {"max_queue_size": str(self.max_queue_size)},
+            severity=ir.IssueSeverity.ERROR,
+        )
 
     def _prune_rate_history(self):
         """Drop rate samples older than the 60-second window they average over."""

@@ -518,7 +518,7 @@ behoben ist.
 
 | Reparatur | Was sie bedeutet |
 | --- | --- |
-| Datenbank nicht erreichbar | Die Verbindung schlug beim Start fehl: **es wird nichts aufgezeichnet**. Prüfe, ob der Server läuft und ob URL und Zugangsdaten stimmen. |
+| Datenbank nicht erreichbar | Die Verbindung schlug fehl. Scribe puffert weiter und versucht es im Hintergrund erneut, sodass der während des Ausfalls aufgezeichnete Verlauf geschrieben wird, sobald die Datenbank zurück ist. Prüfe, ob der Server läuft und ob URL und Zugangsdaten stimmen. |
 | Schreiben in die Datenbank nicht möglich | Mehrere Schreibvorgänge in Folge sind fehlgeschlagen. Die Daten bleiben im Speicher und werden nach der Erholung geschrieben — sofern Home Assistant nicht vorher neu startet. |
 | Puffer ist voll | Die Schreibfehler dauerten lange genug an, um den Puffer zu füllen; die ältesten Einträge werden nun verworfen. Repariere die Datenbank oder erhöhe `max_queue_size`. |
 | Einträge werden verworfen | Ein Schreibvorgang schlug fehl, während die Pufferung deaktiviert ist — die Einträge gingen sofort verloren. Aktiviere die Pufferung, um kurze Ausfälle zu überstehen. |

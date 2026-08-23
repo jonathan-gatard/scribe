@@ -243,3 +243,107 @@ async def test_server_side_error_still_buffers_the_batch(writer, db):
             )
             == 5
         )
+
+
+@pytest.mark.asyncio
+async def test_a_database_absent_at_startup_is_picked_up_when_it_returns(
+    hass, clean_db
+):
+    """Home Assistant and the database often boot together.
+
+    Before 4.0 a database that was not up yet cost every state until the next
+    Home Assistant restart: the writer gave up, started no task, and `enqueue`
+    dropped what it was handed. It now keeps buffering and retries.
+    """
+    from .conftest import DSN
+
+    w = make_writer(hass, db_url="postgresql://postgres:scribe@127.0.0.1:1/scribe")
+    await w.start()
+    try:
+        assert w._pool is None
+        assert w.running
+
+        # States recorded during the outage are held, not dropped.
+        for i in range(3):
+            w.enqueue(
+                {
+                    "type": "state",
+                    "time": BASE_TIME + timedelta(seconds=i),
+                    "entity_id": "sensor.during_outage",
+                    "state": f"s{i}",
+                    "value": float(i),
+                    "attributes": {},
+                }
+            )
+        assert len(w._queue) == 3
+
+        # The database comes back.
+        w.db_url = DSN
+        w._next_connect_attempt = 0
+        assert await w._ensure_connected() is True
+        await w._flush()
+
+        async with w._pool.acquire() as conn:
+            assert (
+                await conn.fetchval(
+                    "SELECT count(*) FROM states WHERE entity_id = 'sensor.during_outage'"
+                )
+                == 3
+            )
+    finally:
+        await w.stop()
+
+
+@pytest.mark.asyncio
+async def test_reconnection_backs_off_instead_of_hammering(hass, clean_db):
+    """A database down for an hour must not be dialled every flush interval."""
+    w = make_writer(hass, db_url="postgresql://postgres:scribe@127.0.0.1:1/scribe")
+    await w.start()
+    try:
+        from custom_components.scribe.writer import (
+            RECONNECT_MAX_DELAY,
+            RECONNECT_MIN_DELAY,
+        )
+
+        delays = []
+        for _ in range(6):
+            w._next_connect_attempt = 0
+            assert await w._ensure_connected() is False
+            delays.append(w._connect_delay)
+
+        assert delays[0] > RECONNECT_MIN_DELAY, "the delay must grow"
+        assert delays == sorted(delays), "and never shrink while it keeps failing"
+        assert max(delays) <= RECONNECT_MAX_DELAY, "up to a ceiling"
+
+        # And a successful connection resets it, so a later blip recovers fast.
+        from .conftest import DSN
+
+        w.db_url = DSN
+        w._next_connect_attempt = 0
+        assert await w._ensure_connected() is True
+        assert w._connect_delay == RECONNECT_MIN_DELAY
+    finally:
+        await w.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_full_buffer_during_an_outage_is_reported(hass, clean_db):
+    """Silently dropping the oldest records would leave only a hole in history."""
+    from homeassistant.helpers import issue_registry as ir
+
+    w = make_writer(
+        hass,
+        db_url="postgresql://postgres:scribe@127.0.0.1:1/scribe",
+        max_queue_size=5,
+    )
+    await w.start()
+    try:
+        for i in range(10):
+            w.enqueue({"type": "state", "entity_id": "sensor.x", "time": BASE_TIME})
+
+        assert len(w._queue) == 5
+        w._warn_if_buffer_full()
+
+        assert ir.async_get(hass).async_get_issue("scribe", "buffer_full") is not None
+    finally:
+        await w.stop()

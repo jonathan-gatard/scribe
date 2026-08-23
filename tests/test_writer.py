@@ -409,8 +409,17 @@ async def test_writer_engine_creation_failure(hass, caplog):
             ),
         )
         await writer.start()
-        assert writer._pool is None
-        assert writer._connected is False
+        try:
+            assert writer._pool is None
+            assert writer._connected is False
+            # The writer stays up and keeps buffering: a database that is not
+            # ready when Home Assistant boots must not cost every state until
+            # the next restart.
+            assert writer._running is True
+            writer.enqueue({"type": "state", "entity_id": "sensor.x"})
+            assert len(writer._queue) == 1
+        finally:
+            await writer.stop()
 
 
 @pytest.mark.asyncio
