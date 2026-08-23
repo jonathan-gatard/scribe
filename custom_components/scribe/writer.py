@@ -2977,30 +2977,21 @@ class ScribeWriter:
                 type(e).__name__,
             )
 
-        try:
-            compressed_bytes = (
-                await self._fetchval(
-                    "SELECT after_compression_total_bytes FROM hypertable_compression_stats('states_raw')"
-                )
-                or 0
-            )
-        except Exception as e:
-            _LOGGER.debug(
-                "[writer.get_db_stats:states_compressed_size] Failed: %s (%s)",
-                e,
-                type(e).__name__,
-            )
-
+        # One call for both figures: `hypertable_compression_stats` aggregates
+        # over every chunk, and asking it twice per refresh — once for the
+        # compressed size, once for the ratio — doubled that for nothing.
         try:
             row = await self._fetchrow(
-                "SELECT before_compression_total_bytes, after_compression_total_bytes FROM hypertable_compression_stats('states_raw')"
+                "SELECT before_compression_total_bytes, after_compression_total_bytes "
+                "FROM hypertable_compression_stats('states_raw')"
             )
             if row:
                 before_bytes = row["before_compression_total_bytes"] or 0
                 after_bytes = row["after_compression_total_bytes"] or 0
+                compressed_bytes = after_bytes
         except Exception as e:
             _LOGGER.debug(
-                "[writer.get_db_stats:states_compression_ratio] Failed: %s (%s)",
+                "[writer.get_db_stats:states_compression_stats] Failed: %s (%s)",
                 e,
                 type(e).__name__,
             )
@@ -3057,30 +3048,21 @@ class ScribeWriter:
                 type(e).__name__,
             )
 
-        try:
-            compressed_bytes = (
-                await self._fetchval(
-                    f"SELECT after_compression_total_bytes FROM hypertable_compression_stats('{self.table_name_events}')"
-                )
-                or 0
-            )
-        except Exception as e:
-            _LOGGER.debug(
-                "[writer.get_db_stats:events_compressed_size] Failed: %s (%s)",
-                e,
-                type(e).__name__,
-            )
-
+        # One call for both figures: `hypertable_compression_stats` aggregates
+        # over every chunk, and asking it twice per refresh — once for the
+        # compressed size, once for the ratio — doubled that for nothing.
         try:
             row = await self._fetchrow(
-                f"SELECT before_compression_total_bytes, after_compression_total_bytes FROM hypertable_compression_stats('{self.table_name_events}')"
+                "SELECT before_compression_total_bytes, after_compression_total_bytes "
+                f"FROM hypertable_compression_stats('{self.table_name_events}')"
             )
             if row:
                 before_bytes = row["before_compression_total_bytes"] or 0
                 after_bytes = row["after_compression_total_bytes"] or 0
+                compressed_bytes = after_bytes
         except Exception as e:
             _LOGGER.debug(
-                "[writer.get_db_stats:events_compression_ratio] Failed: %s (%s)",
+                "[writer.get_db_stats:events_compression_stats] Failed: %s (%s)",
                 e,
                 type(e).__name__,
             )

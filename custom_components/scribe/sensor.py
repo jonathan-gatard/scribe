@@ -13,7 +13,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorDeviceClass,
 )
-from homeassistant.const import UnitOfInformation, PERCENTAGE
+from homeassistant.const import UnitOfTime, UnitOfInformation, PERCENTAGE
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -513,8 +513,11 @@ class ScribeWriteDurationSensor(ScribeSensor):
             key="write_duration",
             name="Last Write Duration",
             icon="mdi:timer-sand",
+            device_class=SensorDeviceClass.DURATION,
             state_class=SensorStateClass.MEASUREMENT,
-            native_unit_of_measurement="ms",
+            # Same string as before ("ms"), typed: Home Assistant can then
+            # convert it for display like any other duration.
+            native_unit_of_measurement=UnitOfTime.MILLISECONDS,
         )
         super().__init__(writer, entry)
 
