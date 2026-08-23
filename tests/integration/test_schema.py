@@ -145,3 +145,21 @@ async def test_optional_metadata_tables_can_be_disabled(hass, clean_db):
         assert await table_exists(w._pool, "entities")
     finally:
         await w.stop()
+
+
+@pytest.mark.asyncio
+async def test_the_states_view_materializes_only_what_it_projects(writer, db):
+    """The CTE feeding the lateral join must not carry the whole entities row.
+
+    It once selected `*`, which materialized every entity's `capabilities`
+    jsonb — usually the largest column in that table — on every query through
+    the view, while only `id` and `entity_id` are ever used.
+    """
+    async with db.acquire() as conn:
+        definition = await conn.fetchval(
+            "SELECT pg_get_viewdef('states'::regclass, true)"
+        )
+
+    drive = definition.split("drive AS MATERIALIZED")[1].split(")")[0]
+    assert "capabilities" not in drive
+    assert "entity_id" in drive and "id" in drive

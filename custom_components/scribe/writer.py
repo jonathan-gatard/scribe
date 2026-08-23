@@ -1257,7 +1257,11 @@ class ScribeWriter:
             await conn.execute(f"""
                 CREATE VIEW {self.table_name_states} AS
                 WITH drive AS MATERIALIZED (
-                    SELECT * FROM entities
+                    -- Only the two columns the view projects. `SELECT *`
+                    -- materialized every entity's `capabilities` jsonb as well
+                    -- — often the largest column in the table — on every query
+                    -- through this view, for nothing.
+                    SELECT id, entity_id FROM entities
                 )
                 SELECT
                     s.time,
