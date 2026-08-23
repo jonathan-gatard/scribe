@@ -164,7 +164,8 @@ async def test_e2e_self_collision_is_merged(hass, writer, db):
     await sync_metadata(writer, hass, "input_boolean.scribe_test_bis")
     await write_states(writer, "input_boolean.scribe_test_bis", 2, start=100)
     intruder_id, intruder_rows = await entity_rows(db, "input_boolean.scribe_test_bis")
-    assert intruder_id != old_id and intruder_rows == 2
+    assert intruder_id != old_id
+    assert intruder_rows == 2
 
     # Only now does the rename run — straight into a self-collision.
     await writer.rename_entity(

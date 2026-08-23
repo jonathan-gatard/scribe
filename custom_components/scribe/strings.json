@@ -13,11 +13,13 @@
             }
         },
         "error": {
-            "cannot_connect": "Could not connect to the database. Check the URL and make sure PostgreSQL is reachable."
+            "cannot_connect": "Could not connect to the database. Check the URL and make sure PostgreSQL is reachable.",
+            "no_timescaledb": "Connected, but this database has no TimescaleDB extension and Scribe could not enable it. Scribe is a TimescaleDB integration: without it there is no chunking, no compression and no retention, and the database grows several times faster. Run `CREATE EXTENSION timescaledb;` on this database (the user needs CREATE on it), or point Scribe at a TimescaleDB instance."
         },
         "abort": {
             "already_configured": "Scribe is already configured. Use **Configure** to change settings.",
-            "single_instance_allowed": "Only one Scribe instance is allowed."
+            "single_instance_allowed": "Only one Scribe instance is allowed.",
+            "no_timescaledb": "This database has no TimescaleDB extension and Scribe could not enable it, so setup was refused. Run `CREATE EXTENSION timescaledb;` on it, then restart Home Assistant."
         }
     },
     "options": {
@@ -103,6 +105,8 @@
                 "data": {
                     "chunk_time_interval": "Chunk time interval",
                     "compress_after": "Compress after",
+                    "retention_states": "Delete states older than",
+                    "retention_events": "Delete events older than",
                     "db_ssl": "Enable SSL",
                     "ssl_root_cert": "SSL root certificate path",
                     "ssl_cert_file": "SSL client certificate path",
@@ -111,6 +115,8 @@
                 "data_description": {
                     "chunk_time_interval": "TimescaleDB chunk interval (e.g. '7 days'). Affects new chunks only.",
                     "compress_after": "Compress chunks older than this interval (e.g. '7 days'). Requires TimescaleDB compression.",
+                    "retention_states": "Leave empty to keep every state forever (default). Set an interval (e.g. '365 days', '6 months') to have TimescaleDB DELETE state history older than it — permanently, with no undo. Scribe owns this policy: emptying the field removes it.",
+                    "retention_events": "Leave empty to keep every event forever (default). Set an interval (e.g. '30 days') to have TimescaleDB DELETE event history older than it — permanently, with no undo. Scribe owns this policy: emptying the field removes it.",
                     "db_ssl": "Require an SSL/TLS connection to PostgreSQL",
                     "ssl_root_cert": "Path to the CA certificate file (e.g. /ssl/ca.crt)",
                     "ssl_cert_file": "Path to the client certificate file for mTLS",
@@ -119,7 +125,8 @@
             }
         },
         "error": {
-            "must_record_something": "At least one of 'Record state changes' or 'Record events' must be enabled."
+            "must_record_something": "At least one of 'Record state changes' or 'Record events' must be enabled.",
+            "invalid_interval": "Retention must be an interval like '365 days', '6 months' or '1 year' — leave it empty to keep history forever."
         }
     },
     "issues": {
@@ -155,9 +162,29 @@
             "title": "TimescaleDB is not installed on Scribe's database",
             "description": "Scribe is recording to `{host}`, but the TimescaleDB extension is not installed there. History is still being saved and remains queryable — however chunking and **compression are unavailable**, so the database will grow considerably faster, and the size and compression sensors will stay empty.\n\nInstall the extension and run `CREATE EXTENSION timescaledb;` on this database, then restart Home Assistant. This issue disappears once the extension is detected."
         },
-        "migration_failed": {
-            "title": "Scribe could not finish migrating your old history",
-            "description": "Scribe converts the legacy `states` table into its current format in the background, and this failed with: {error}\n\nYour old history is not lost — it is kept in a table named `states_legacy` — but it is not visible to Scribe until the migration completes. New states are being recorded normally in the meantime.\n\nCheck the Home Assistant logs for the failing step, then restart Home Assistant to retry."
+        "retention_failed": {
+            "title": "Scribe could not apply the retention policy on {table}",
+            "description": "Scribe was asked to delete data older than **{retention}** from `{table}`, and setting that policy failed with: {error}\n\nNothing was deleted and nothing is being deleted — the table keeps growing, and its history is intact. Retention is a TimescaleDB feature: it needs the extension installed on this database, `{table}` to be a hypertable, and the Scribe database user to own it.\n\nFix the cause, or clear the retention field in Scribe's options, then restart Home Assistant. This issue disappears once the policy is in place."
+        },
+        "schema_failed": {
+            "title": "Scribe could not create its tables",
+            "description": "Scribe reached `{host}` but failed while building its schema, with: {error}\n\nWhatever it could not create is simply missing: on a new database that means **nothing is being recorded at all**, and on an existing one recording may be partial — some tables kept up to date, others stale or absent. The most common cause is privileges: the database user Scribe connects with needs to create tables in this database, and to own the ones it already created.\n\nGrant it those rights (or point Scribe at a database it owns) and restart Home Assistant. This issue disappears once the schema is in place."
+        },
+        "view_failed": {
+            "title": "Scribe could not create the `{view}` view",
+            "description": "States are being recorded normally into `states_raw`, but the `{view}` view that reads them back could not be created: {error}\n\nEvery query, dashboard and example in the documentation goes through that view, so your history will look empty even though it is not. Nothing is lost.\n\nThis is usually a privileges problem, or another object already holding that name. Fix the cause and restart Home Assistant."
+        },
+        "no_hypertable": {
+            "title": "`{table}` is not a TimescaleDB hypertable",
+            "description": "TimescaleDB is installed on this database, but `{table}` is an ordinary table: it could not be converted. History is recorded and stays queryable, but **chunking, compression and retention do nothing at all** — expect the database to grow several times faster than it should, and the size sensors to stay empty.\n\nConverting a table requires owning it, so this usually means the Scribe database user is not the owner of `{table}`. Grant it ownership and restart Home Assistant; this issue disappears once the conversion succeeds."
+        },
+        "no_compression": {
+            "title": "`{table}` is never compressed",
+            "description": "`{table}` is a hypertable, but no compression policy could be put in place, so chunks older than {compress_after} are never compressed and the table keeps its full uncompressed size — typically several times larger than it needs to be.\n\nThis usually means the Scribe database user does not own the table. Check the Home Assistant logs for the exact error, fix it, and restart Home Assistant."
+        },
+        "legacy_schema": {
+            "title": "Scribe's database predates version 3.0",
+            "description": "The database still holds `{relation}` from the pre-3.0 layout, and this version of Scribe cannot convert it. **Nothing is being recorded** — and nothing has been renamed, created or deleted either, so your history is exactly where it was.\n\nTo convert it: install Scribe **{version}** (in HACS, choose that version explicitly), start Home Assistant and leave it running until the logs report the migration finished — around fifteen minutes on a large database — then update Scribe again. Recording resumes on the next restart, and this issue disappears.\n\nIf you would rather start from a clean database, drop `{relation}` (this deletes the old history) and restart Home Assistant."
         }
     }
 }

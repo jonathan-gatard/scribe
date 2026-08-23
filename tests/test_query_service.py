@@ -1,5 +1,5 @@
 import pytest
-from custom_components.scribe.writer import ScribeWriter
+from custom_components.scribe.writer import ScribeWriter, WriterConfig
 
 # Using mock_pool from conftest.py
 
@@ -8,18 +8,20 @@ from custom_components.scribe.writer import ScribeWriter
 async def writer(hass, mock_pool):
     """Create a writer instance."""
     writer = ScribeWriter(
-        hass=hass,
-        db_url="postgresql://user:pass@host/db",
-        chunk_interval="7 days",
-        compress_after="60 days",
-        record_states=True,
-        record_events=True,
-        batch_size=2,
-        flush_interval=5,
-        max_queue_size=10000,
-        buffer_on_failure=True,
-        table_name_states="states",
-        table_name_events="events",
+        hass,
+        WriterConfig(
+            db_url="postgresql://user:pass@host/db",
+            chunk_interval="7 days",
+            compress_after="60 days",
+            record_states=True,
+            record_events=True,
+            batch_size=2,
+            flush_interval=5,
+            max_queue_size=10000,
+            buffer_on_failure=True,
+            table_name_states="states",
+            table_name_events="events",
+        ),
     )
     writer._pool = mock_pool
     writer._connected = True
@@ -80,21 +82,23 @@ async def test_query_case_insensitive(writer, mock_db_connection):
 async def test_query_no_connection(hass):
     """Test query without connection."""
     writer = ScribeWriter(
-        hass=hass,
-        db_url="postgresql://user:pass@host/db",
-        chunk_interval="7 days",
-        compress_after="60 days",
-        record_states=True,
-        record_events=True,
-        batch_size=2,
-        flush_interval=5,
-        max_queue_size=10000,
-        buffer_on_failure=True,
-        table_name_states="states",
-        table_name_events="events",
-        ssl_root_cert=None,
-        ssl_cert_file=None,
-        ssl_key_file=None,
+        hass,
+        WriterConfig(
+            db_url="postgresql://user:pass@host/db",
+            chunk_interval="7 days",
+            compress_after="60 days",
+            record_states=True,
+            record_events=True,
+            batch_size=2,
+            flush_interval=5,
+            max_queue_size=10000,
+            buffer_on_failure=True,
+            table_name_states="states",
+            table_name_events="events",
+            ssl_root_cert=None,
+            ssl_cert_file=None,
+            ssl_key_file=None,
+        ),
     )
     # Don't start writer, so no engine
 

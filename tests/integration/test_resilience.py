@@ -6,6 +6,7 @@ of states from an integration that just came online.
 """
 
 import asyncio
+from datetime import timedelta
 
 import pytest
 
@@ -196,3 +197,49 @@ async def test_writer_survives_a_restart_with_existing_data(hass, clean_db):
         assert count == 10
     finally:
         await second.stop()
+
+
+@pytest.mark.asyncio
+async def test_server_side_error_still_buffers_the_batch(writer, db):
+    """A PostgreSQL error is the case buffering exists for.
+
+    Losing the connection raises a client-side error; a full disk, a revoked
+    grant or a statement timeout raises a server-side `PostgresError`. Both
+    mean "try again in a moment", and with `buffer_on_failure` enabled neither
+    may cost a single state.
+    """
+    import asyncpg
+
+    for i in range(5):
+        writer._queue.append(
+            {
+                "type": "state",
+                "time": BASE_TIME + timedelta(seconds=i),
+                "entity_id": "sensor.kept",
+                "state": f"s{i}",
+                "value": float(i),
+                "attributes": {},
+            }
+        )
+
+    async def raise_server_error(*args, **kwargs):
+        raise asyncpg.exceptions.DiskFullError("could not extend file: No space left")
+
+    original = writer._copy_records
+    writer._copy_records = raise_server_error
+    try:
+        await writer._flush()
+    finally:
+        writer._copy_records = original
+
+    assert len(writer._queue) == 5, "the batch must be held for the next attempt"
+
+    # And it lands once the database accepts writes again.
+    await writer._flush()
+    async with db.acquire() as conn:
+        assert (
+            await conn.fetchval(
+                "SELECT count(*) FROM states WHERE entity_id = 'sensor.kept'"
+            )
+            == 5
+        )

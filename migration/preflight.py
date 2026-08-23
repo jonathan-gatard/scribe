@@ -7,20 +7,22 @@ all rely on:
   - the `states_raw` table with a PRIMARY KEY on `(metadata_id, time)`
     (used by `INSERT ... ON CONFLICT (metadata_id, time) DO NOTHING`)
 
-The Scribe component creates the tables at startup but the `states_raw`
-PK is added by a background migration that runs ~60s after Home
-Assistant boots. Running a migration script before that completes
-produces cryptic per-chunk errors. This module fails fast with a clear
-message instead.
+Since 3.6.0 both constraints are part of the `CREATE TABLE`, so starting
+Scribe once is enough. A schema that still fails these checks is either a
+database Scribe never initialized (wrong database in the DSN?) or one left
+over from before 3.0. Either way the scripts would produce cryptic per-chunk
+errors, so this module fails fast with a clear message instead.
 """
 
 import logging
 import sys
 
 _GUIDANCE = (
-    "👉 Start Scribe (in Home Assistant) and let it run for at least 15 "
-    "minutes so the background schema migration completes, then re-run "
-    "this script.\n"
+    "👉 Start Scribe (in Home Assistant), check that it reports "
+    "'Database initialized successfully', then re-run this script.\n"
+    "   Make sure this script points at the same database as Scribe.\n"
+    "   If Scribe raises a 'database predates version 3.0' repair instead, "
+    "convert the database with Scribe 3.8 first.\n"
     "   If the error persists, please open an issue and include the lines "
     "above:\n"
     "   https://github.com/jonathan-gtd/scribe/issues"

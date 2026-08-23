@@ -1,5 +1,6 @@
 """End-to-end stats and the read-only query service, against real data."""
 
+import asyncpg
 import pytest
 
 from .conftest import make_writer, write_event, write_states
@@ -78,7 +79,7 @@ async def test_query_is_read_only(writer, db):
     """Writes through the query service are rejected by the transaction itself."""
     await write_states(writer, "sensor.readonly", 1)
 
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(asyncpg.PostgresError) as excinfo:
         await writer.query("DELETE FROM states_raw")
     assert "read-only" in str(excinfo.value).lower()
 
@@ -90,7 +91,7 @@ async def test_query_is_read_only(writer, db):
 @pytest.mark.asyncio
 async def test_query_rejects_ddl_too(writer, db):
     """Schema changes are covered by the same read-only guard."""
-    with pytest.raises(Exception):
+    with pytest.raises(asyncpg.PostgresError):
         await writer.query("DROP TABLE entities CASCADE")
 
     async with db.acquire() as conn:
@@ -103,7 +104,7 @@ async def test_query_rejects_ddl_too(writer, db):
 @pytest.mark.asyncio
 async def test_query_propagates_sql_errors(writer, db):
     """A bad query raises rather than silently returning nothing."""
-    with pytest.raises(Exception):
+    with pytest.raises(asyncpg.UndefinedTableError):
         await writer.query("SELECT * FROM table_that_does_not_exist")
 
 

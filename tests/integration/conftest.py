@@ -23,7 +23,7 @@ import pytest
 
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.scribe.writer import ScribeWriter
+from custom_components.scribe.writer import ScribeWriter, WriterConfig
 
 # Host must be the literal 127.0.0.1: pytest-homeassistant-custom-component
 # installs pytest-socket with only that address allowed.
@@ -121,24 +121,15 @@ async def clean_db(socket_enabled):
 def make_writer(hass, **overrides):
     """Build a writer with test-friendly defaults; `overrides` replace any of them."""
     kwargs = dict(
-        hass=hass,
         db_url=DSN,
-        chunk_interval="7 days",
         compress_after="60 days",
         record_states=True,
         record_events=True,
         batch_size=100,
         flush_interval=3600,  # never fires on its own; tests flush explicitly
-        max_queue_size=10000,
-        buffer_on_failure=True,
-        table_name_states="states",
-        table_name_events="events",
-        ssl_root_cert=None,
-        ssl_cert_file=None,
-        ssl_key_file=None,
     )
     kwargs.update(overrides)
-    return ScribeWriter(**kwargs)
+    return ScribeWriter(hass, WriterConfig(**kwargs))
 
 
 @pytest.fixture

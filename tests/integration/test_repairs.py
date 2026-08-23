@@ -13,7 +13,7 @@ from custom_components.scribe.writer import (
     ISSUE_BUFFER_FULL,
     ISSUE_DATA_DROPPED,
     ISSUE_DB_UNREACHABLE,
-    ISSUE_MIGRATION_FAILED,
+    ISSUE_LEGACY_SCHEMA,
     ISSUE_NO_TIMESCALEDB,
     ISSUE_WRITE_FAILING,
     WRITE_FAILURE_ISSUE_THRESHOLD,
@@ -184,14 +184,14 @@ async def test_missing_timescaledb_raises_an_issue(hass, clean_db, monkeypatch):
     w = make_writer(hass)
     await w.start()
     try:
+        # Scribe enables the extension itself when it can, so the issue only
+        # belongs to a database where that is impossible too.
+        async def cannot_be_enabled(conn):
+            return False
 
-        async def pretend_absent(sql, *args):
-            if "pg_extension" in sql:
-                return False
-            return await original(sql, *args)
-
-        original = w._fetchval
-        monkeypatch.setattr(w, "_fetchval", pretend_absent)
+        monkeypatch.setattr(
+            "custom_components.scribe.writer.ensure_timescaledb", cannot_be_enabled
+        )
 
         await w._check_timescaledb_available()
 
@@ -200,8 +200,8 @@ async def test_missing_timescaledb_raises_an_issue(hass, clean_db, monkeypatch):
         assert issue.severity == ir.IssueSeverity.WARNING
         assert issue.translation_key == "no_timescaledb"
 
-        # And it retires once the extension shows up.
-        monkeypatch.setattr(w, "_fetchval", original)
+        # And it retires once the extension is there.
+        monkeypatch.undo()
         await w._check_timescaledb_available()
         assert get_issue(hass, ISSUE_NO_TIMESCALEDB) is None
     finally:
@@ -209,25 +209,30 @@ async def test_missing_timescaledb_raises_an_issue(hass, clean_db, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_failed_migration_raises_an_issue(hass, writer, monkeypatch):
-    """A half-migrated database leaves history invisible; that must be said."""
-    from custom_components.scribe import migration
+async def test_legacy_schema_raises_an_issue(hass, clean_db):
+    """A database Scribe refuses to convert must say so, and say what to do."""
+    import asyncpg
 
-    async def boom(*args, **kwargs):
-        raise RuntimeError("migration exploded")
+    from .conftest import DSN
 
-    monkeypatch.setattr(migration, "migrate_database", boom)
+    conn = await asyncpg.connect(DSN)
+    try:
+        await conn.execute("DROP VIEW IF EXISTS states CASCADE")
+        await conn.execute(
+            "CREATE TABLE states (time TIMESTAMPTZ NOT NULL, entity_id TEXT)"
+        )
+    finally:
+        await conn.close()
 
-    # Drive the same handler the HA-started event triggers.
-    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
-    await hass.async_block_till_done()
-
-    issue = get_issue(hass, ISSUE_MIGRATION_FAILED)
-    assert issue is not None
-    assert issue.severity == ir.IssueSeverity.ERROR
-    assert "migration exploded" in issue.translation_placeholders["error"]
+    w = make_writer(hass)
+    await w.start()
+    try:
+        issue = get_issue(hass, ISSUE_LEGACY_SCHEMA)
+        assert issue is not None
+        assert issue.severity == ir.IssueSeverity.ERROR
+        assert issue.translation_placeholders["version"] == "3.8"
+    finally:
+        await w.stop()
 
 
 @pytest.mark.asyncio
@@ -243,7 +248,12 @@ async def test_every_issue_has_translations(hass):
         "buffer_full",
         "data_dropped",
         "no_timescaledb",
-        "migration_failed",
+        "legacy_schema",
+        "retention_failed",
+        "schema_failed",
+        "view_failed",
+        "no_hypertable",
+        "no_compression",
         "rename_refused_live",
         "rename_refused_unprovable",
         "rename_failed",
@@ -255,3 +265,113 @@ async def test_every_issue_has_translations(hass):
         for key in keys:
             assert issues[key].get("title"), f"{name}:{key} has no title"
             assert issues[key].get("description"), f"{name}:{key} has no description"
+
+
+@pytest.mark.asyncio
+async def test_schema_failure_raises_an_issue(hass, clean_db, monkeypatch):
+    """A database that answers but refuses the schema records nothing."""
+    from custom_components.scribe.writer import ISSUE_SCHEMA_FAILED, ScribeWriter
+
+    async def boom(self, conn):
+        raise PermissionError("permission denied for schema public")
+
+    monkeypatch.setattr(ScribeWriter, "_init_entities_table", boom)
+
+    w = make_writer(hass)
+    await w.start()
+    try:
+        issue = get_issue(hass, ISSUE_SCHEMA_FAILED)
+        assert issue is not None
+        assert issue.severity == ir.IssueSeverity.ERROR
+        assert "permission denied" in issue.translation_placeholders["error"]
+        assert w._connected is False
+    finally:
+        await w.stop()
+
+
+@pytest.mark.asyncio
+async def test_schema_issue_clears_on_a_healthy_start(hass, writer):
+    """The normal fixture start must leave no schema issue behind."""
+    from custom_components.scribe.writer import ISSUE_SCHEMA_FAILED, ISSUE_VIEW_FAILED
+
+    assert get_issue(hass, ISSUE_SCHEMA_FAILED) is None
+    assert get_issue(hass, ISSUE_VIEW_FAILED) is None
+
+
+@pytest.mark.asyncio
+async def test_view_failure_raises_an_issue(hass, clean_db, monkeypatch):
+    """History keeps being written, but nothing can read it back."""
+    import asyncpg
+
+    from custom_components.scribe.writer import ISSUE_VIEW_FAILED
+
+    original = asyncpg.Connection.execute
+
+    async def refuse_view(self, query, *args, **kwargs):
+        if "CREATE VIEW" in str(query):
+            raise PermissionError("permission denied for schema public")
+        return await original(self, query, *args, **kwargs)
+
+    monkeypatch.setattr(asyncpg.Connection, "execute", refuse_view)
+
+    w = make_writer(hass)
+    await w.start()
+    try:
+        issue = get_issue(hass, ISSUE_VIEW_FAILED)
+        assert issue is not None
+        assert issue.translation_placeholders["view"] == "states"
+    finally:
+        monkeypatch.undo()
+        await w.stop()
+
+
+@pytest.mark.asyncio
+async def test_plain_table_with_timescaledb_raises_an_issue(hass, writer, db):
+    """A table that silently stayed plain grows several times faster."""
+    from custom_components.scribe.writer import ISSUE_NO_HYPERTABLE
+
+    async with db.acquire() as conn:
+        await conn.execute("CREATE TABLE plain_states (time TIMESTAMPTZ NOT NULL)")
+    try:
+        await writer._verify_storage_features("plain_states")
+
+        issue = get_issue(hass, ISSUE_NO_HYPERTABLE.format(table="plain_states"))
+        assert issue is not None
+        assert issue.translation_placeholders["table"] == "plain_states"
+    finally:
+        async with db.acquire() as conn:
+            await conn.execute("DROP TABLE plain_states")
+
+
+@pytest.mark.asyncio
+async def test_missing_compression_policy_raises_an_issue(hass, writer, db):
+    """Chunked but never compressed is a database several times too big."""
+    from custom_components.scribe.writer import ISSUE_NO_COMPRESSION
+
+    issue_id = ISSUE_NO_COMPRESSION.format(table="states_raw")
+    async with db.acquire() as conn:
+        await conn.execute(
+            "SELECT remove_compression_policy('states_raw', if_exists => true)"
+        )
+
+    await writer._verify_storage_features("states_raw")
+    assert get_issue(hass, issue_id) is not None
+
+    # And it retires itself once the policy is back.
+    await writer._apply_compression_policy("states_raw")
+    await writer._verify_storage_features("states_raw")
+    assert get_issue(hass, issue_id) is None
+
+
+@pytest.mark.asyncio
+async def test_healthy_hypertables_raise_nothing(hass, writer):
+    """The verifier must be invisible on a correctly set up database."""
+    from custom_components.scribe.writer import (
+        ISSUE_NO_COMPRESSION,
+        ISSUE_NO_HYPERTABLE,
+    )
+
+    for table in ("states_raw", "events"):
+        await writer._verify_storage_features(table)
+        assert get_issue(hass, ISSUE_NO_HYPERTABLE.format(table=table)) is None
+        assert get_issue(hass, ISSUE_NO_COMPRESSION.format(table=table)) is None

@@ -5,28 +5,30 @@ import asyncio
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, AsyncMock, patch
 from collections import deque
-from custom_components.scribe.writer import ScribeWriter
+from custom_components.scribe.writer import ScribeWriter, WriterConfig
 
 
 @pytest.fixture
 async def writer(hass, mock_pool):
     """Create a writer instance."""
     writer = ScribeWriter(
-        hass=hass,
-        db_url="postgresql://user:pass@host/db",
-        chunk_interval="7 days",
-        compress_after="60 days",
-        record_states=True,
-        record_events=True,
-        batch_size=2,
-        flush_interval=5,
-        max_queue_size=10000,
-        buffer_on_failure=True,
-        table_name_states="states",
-        table_name_events="events",
-        ssl_root_cert="/tmp/root.crt",
-        ssl_cert_file="/tmp/client.crt",
-        ssl_key_file="/tmp/client.key",
+        hass,
+        WriterConfig(
+            db_url="postgresql://user:pass@host/db",
+            chunk_interval="7 days",
+            compress_after="60 days",
+            record_states=True,
+            record_events=True,
+            batch_size=2,
+            flush_interval=5,
+            max_queue_size=10000,
+            buffer_on_failure=True,
+            table_name_states="states",
+            table_name_events="events",
+            ssl_root_cert="/tmp/root.crt",
+            ssl_cert_file="/tmp/client.crt",
+            ssl_key_file="/tmp/client.key",
+        ),
     )
     writer._pool = mock_pool
 
@@ -38,27 +40,21 @@ async def writer(hass, mock_pool):
 @pytest.mark.asyncio
 async def test_writer_init_db(writer, mock_pool, mock_db_connection):
     """Test database initialization."""
-    with patch("custom_components.scribe.migration.migrate_database") as mock_migrate:
-        # Mock fetchval to return False for the table check so view is created
-        async def fetchval_side_effect(sql, *args):
-            if "information_schema.tables" in sql:
-                return False
-            return 0
 
-        mock_db_connection.fetchval.side_effect = fetchval_side_effect
+    # A healthy TimescaleDB with nothing in it yet: no legacy relation, no
+    # `states` table standing in the way of the view, and the storage features
+    # in place once the hypertable steps have run.
+    async def fetchval_side_effect(sql, *args):
+        if "information_schema" in sql:
+            return False
+        if "pg_extension" in sql or "timescaledb_information" in sql:
+            return True
+        return 0
 
-        await writer.start()
-        await asyncio.sleep(0.1)  # Let background init finish
+    mock_db_connection.fetchval.side_effect = fetchval_side_effect
 
-        # Fire HA started event to trigger migration
-        from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-
-        writer.hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
-        await writer.hass.async_block_till_done()
-        await asyncio.sleep(0.1)  # Let migration task get scheduled and run
-
-        # Verify migration was scheduled
-        mock_migrate.assert_called_once()
+    await writer.start()
+    await asyncio.sleep(0.1)  # Let background init finish
 
     # Verify engine creation
     assert writer._pool == mock_pool
@@ -394,21 +390,23 @@ async def test_writer_engine_creation_failure(hass, caplog):
         side_effect=Exception("Pool Error"),
     ):
         writer = ScribeWriter(
-            hass=hass,
-            db_url="postgresql://user:pass@host/db",
-            chunk_interval="7 days",
-            compress_after="60 days",
-            record_states=True,
-            record_events=True,
-            batch_size=2,
-            flush_interval=5,
-            max_queue_size=10000,
-            buffer_on_failure=True,
-            table_name_states="states",
-            table_name_events="events",
-            ssl_root_cert=None,
-            ssl_cert_file=None,
-            ssl_key_file=None,
+            hass,
+            WriterConfig(
+                db_url="postgresql://user:pass@host/db",
+                chunk_interval="7 days",
+                compress_after="60 days",
+                record_states=True,
+                record_events=True,
+                batch_size=2,
+                flush_interval=5,
+                max_queue_size=10000,
+                buffer_on_failure=True,
+                table_name_states="states",
+                table_name_events="events",
+                ssl_root_cert=None,
+                ssl_cert_file=None,
+                ssl_key_file=None,
+            ),
         )
         await writer.start()
         assert writer._pool is None

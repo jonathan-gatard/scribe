@@ -15,6 +15,21 @@ from custom_components.scribe.const import (
 )
 
 
+@pytest.fixture(autouse=True)
+def accept_any_database():
+    """A first YAML setup now validates the database before creating the entry.
+
+    These tests are about filtering and never reach a real database, so the
+    check is answered directly instead of opening a socket.
+    """
+    with patch(
+        "custom_components.scribe.config_flow._check_database",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        yield
+
+
 @pytest.fixture
 def mock_writer():
     """Mock the Scribe writer instance."""

@@ -13,6 +13,8 @@ CONF_SSL_CERT_FILE = "ssl_cert_file"
 CONF_SSL_KEY_FILE = "ssl_key_file"
 CONF_CHUNK_TIME_INTERVAL = "chunk_time_interval"
 CONF_COMPRESS_AFTER = "compress_after"
+CONF_RETENTION_STATES = "retention_states"
+CONF_RETENTION_EVENTS = "retention_events"
 CONF_INCLUDE_DOMAINS = "include_domains"
 CONF_INCLUDE_ENTITIES = "include_entities"
 CONF_INCLUDE_ENTITY_GLOBS = "include_entity_globs"
@@ -38,6 +40,10 @@ CONF_BUFFER_ON_FAILURE = "buffer_on_failure"
 
 DEFAULT_CHUNK_TIME_INTERVAL = "7 days"
 DEFAULT_COMPRESS_AFTER = "7 days"
+# Empty means no retention policy: Scribe keeps history forever unless asked
+# otherwise. Retention *drops* chunks, so it can never be on by default.
+DEFAULT_RETENTION_STATES = ""
+DEFAULT_RETENTION_EVENTS = ""
 DEFAULT_DB_PORT = 5432
 DEFAULT_DB_USER = "scribe"
 DEFAULT_DB_NAME = "scribe"

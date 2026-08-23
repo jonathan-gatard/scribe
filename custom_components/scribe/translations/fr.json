@@ -13,11 +13,13 @@
             }
         },
         "error": {
-            "cannot_connect": "Impossible de se connecter à la base de données. Vérifiez l'URL et que PostgreSQL est accessible."
+            "cannot_connect": "Impossible de se connecter à la base de données. Vérifiez l'URL et que PostgreSQL est accessible.",
+            "no_timescaledb": "Connexion établie, mais cette base n'a pas l'extension TimescaleDB et Scribe n'a pas pu l'activer. Scribe est une intégration TimescaleDB : sans elle, ni découpage en chunks, ni compression, ni rétention — et la base grossit plusieurs fois plus vite. Exécutez `CREATE EXTENSION timescaledb;` sur cette base (l'utilisateur doit avoir le droit CREATE dessus), ou pointez Scribe vers une instance TimescaleDB."
         },
         "abort": {
             "already_configured": "Scribe est déjà configuré. Utilisez **Configurer** pour modifier les paramètres.",
-            "single_instance_allowed": "Une seule instance de Scribe est autorisée."
+            "single_instance_allowed": "Une seule instance de Scribe est autorisée.",
+            "no_timescaledb": "Cette base n'a pas l'extension TimescaleDB et Scribe n'a pas pu l'activer : la configuration a été refusée. Exécutez `CREATE EXTENSION timescaledb;` dessus, puis redémarrez Home Assistant."
         }
     },
     "options": {
@@ -103,6 +105,8 @@
                 "data": {
                     "chunk_time_interval": "Intervalle de temps des chunks",
                     "compress_after": "Compresser après",
+                    "retention_states": "Supprimer les états plus anciens que",
+                    "retention_events": "Supprimer les événements plus anciens que",
                     "db_ssl": "Activer SSL",
                     "ssl_root_cert": "Chemin du certificat racine SSL",
                     "ssl_cert_file": "Chemin du certificat client SSL",
@@ -111,6 +115,8 @@
                 "data_description": {
                     "chunk_time_interval": "Intervalle de chunks TimescaleDB (ex. '7 days'). Affecte les nouveaux chunks uniquement.",
                     "compress_after": "Compresser les chunks plus anciens que cet intervalle (ex. '7 days'). Nécessite la compression TimescaleDB.",
+                    "retention_states": "Laisser vide pour conserver tous les états indéfiniment (défaut). Indiquer un intervalle (ex. '365 days', '6 months') pour que TimescaleDB SUPPRIME l'historique des états plus ancien — définitivement, sans retour possible. Scribe gère cette politique : vider le champ la supprime.",
+                    "retention_events": "Laisser vide pour conserver tous les événements indéfiniment (défaut). Indiquer un intervalle (ex. '30 days') pour que TimescaleDB SUPPRIME l'historique des événements plus ancien — définitivement, sans retour possible. Scribe gère cette politique : vider le champ la supprime.",
                     "db_ssl": "Exiger une connexion SSL/TLS vers PostgreSQL",
                     "ssl_root_cert": "Chemin vers le fichier CA (ex. /ssl/ca.crt)",
                     "ssl_cert_file": "Chemin vers le certificat client pour mTLS",
@@ -119,7 +125,8 @@
             }
         },
         "error": {
-            "must_record_something": "Au moins l'une des options 'Enregistrer les changements d'état' ou 'Enregistrer les événements' doit être activée."
+            "must_record_something": "Au moins l'une des options 'Enregistrer les changements d'état' ou 'Enregistrer les événements' doit être activée.",
+            "invalid_interval": "La rétention doit être un intervalle comme '365 days', '6 months' ou '1 year' — laisser vide pour tout conserver."
         }
     },
     "issues": {
@@ -155,9 +162,29 @@
             "title": "TimescaleDB n'est pas installé sur la base de Scribe",
             "description": "Scribe enregistre bien vers `{host}`, mais l'extension TimescaleDB n'y est pas installée. L'historique est sauvegardé et reste interrogeable — en revanche le découpage en chunks et la **compression sont indisponibles**, donc la base grossira nettement plus vite, et les capteurs de taille et de compression resteront vides.\n\nInstallez l'extension puis exécutez `CREATE EXTENSION timescaledb;` sur cette base, et redémarrez Home Assistant. Cette réparation disparaît dès que l'extension est détectée."
         },
-        "migration_failed": {
-            "title": "Scribe n'a pas pu terminer la migration de votre ancien historique",
-            "description": "Scribe convertit l'ancienne table `states` vers son format actuel en tâche de fond, et cela a échoué avec : {error}\n\nVotre ancien historique n'est pas perdu — il est conservé dans une table nommée `states_legacy` — mais il reste invisible pour Scribe tant que la migration n'est pas terminée. Les nouveaux états sont enregistrés normalement entre-temps.\n\nConsultez les logs de Home Assistant pour identifier l'étape en échec, puis redémarrez Home Assistant pour réessayer."
+        "retention_failed": {
+            "title": "Scribe n'a pas pu appliquer la politique de rétention sur {table}",
+            "description": "Scribe devait supprimer les données de plus de **{retention}** dans `{table}`, et la mise en place de cette politique a échoué avec : {error}\n\nRien n'a été supprimé et rien ne l'est actuellement — la table continue de grossir et son historique est intact. La rétention est une fonctionnalité TimescaleDB : elle nécessite l'extension installée sur cette base, que `{table}` soit une hypertable, et que l'utilisateur PostgreSQL de Scribe en soit propriétaire.\n\nCorrigez la cause, ou videz le champ de rétention dans les options de Scribe, puis redémarrez Home Assistant. Ce problème disparaît une fois la politique en place."
+        },
+        "schema_failed": {
+            "title": "Scribe n'a pas pu créer ses tables",
+            "description": "Scribe a bien joint `{host}` mais a échoué en construisant son schéma, avec : {error}\n\nCe qu'il n'a pas pu créer est tout simplement absent : sur une base neuve, **plus rien n'est enregistré du tout** ; sur une base existante, l'enregistrement peut être partiel — certaines tables à jour, d'autres figées ou manquantes. La cause la plus fréquente est un problème de droits : l'utilisateur PostgreSQL utilisé par Scribe doit pouvoir créer des tables dans cette base, et être propriétaire de celles déjà créées.\n\nAccordez-lui ces droits (ou pointez Scribe vers une base qui lui appartient) puis redémarrez Home Assistant. Ce problème disparaît une fois le schéma en place."
+        },
+        "view_failed": {
+            "title": "Scribe n'a pas pu créer la vue `{view}`",
+            "description": "Les états sont enregistrés normalement dans `states_raw`, mais la vue `{view}` qui permet de les relire n'a pas pu être créée : {error}\n\nToutes les requêtes, tableaux de bord et exemples de la documentation passent par cette vue : votre historique paraîtra vide alors qu'il ne l'est pas. Rien n'est perdu.\n\nIl s'agit généralement d'un problème de droits, ou d'un autre objet portant déjà ce nom. Corrigez la cause puis redémarrez Home Assistant."
+        },
+        "no_hypertable": {
+            "title": "`{table}` n'est pas une hypertable TimescaleDB",
+            "description": "TimescaleDB est installé sur cette base, mais `{table}` est une table ordinaire : la conversion a échoué. L'historique est enregistré et reste interrogeable, mais **le découpage en chunks, la compression et la rétention ne font plus rien du tout** — la base va grossir plusieurs fois plus vite que nécessaire et les capteurs de taille resteront vides.\n\nConvertir une table exige d'en être propriétaire : c'est donc généralement que l'utilisateur PostgreSQL de Scribe ne l'est pas. Donnez-lui la propriété de `{table}` puis redémarrez Home Assistant ; ce problème disparaît dès que la conversion réussit."
+        },
+        "no_compression": {
+            "title": "`{table}` n'est jamais compressée",
+            "description": "`{table}` est bien une hypertable, mais aucune politique de compression n'a pu être mise en place : les chunks de plus de {compress_after} ne sont jamais compressés et la table conserve sa taille non compressée — typiquement plusieurs fois plus que nécessaire.\n\nC'est généralement que l'utilisateur PostgreSQL de Scribe n'est pas propriétaire de la table. Consultez les logs de Home Assistant pour l'erreur exacte, corrigez-la, puis redémarrez Home Assistant."
+        },
+        "legacy_schema": {
+            "title": "La base de données de Scribe est antérieure à la version 3.0",
+            "description": "La base contient encore `{relation}`, issue du schéma pré-3.0, et cette version de Scribe ne sait pas le convertir. **Plus rien n'est enregistré** — et rien n'a été renommé, créé ni supprimé non plus : votre historique est exactement là où il était.\n\nPour le convertir : installez Scribe **{version}** (dans HACS, choisissez explicitement cette version), démarrez Home Assistant et laissez-le tourner jusqu'à ce que les logs indiquent la fin de la migration — une quinzaine de minutes sur une grosse base — puis mettez Scribe à jour de nouveau. L'enregistrement reprend au redémarrage suivant et ce problème disparaît.\n\nSi vous préférez repartir d'une base vide, supprimez `{relation}` (cela efface l'ancien historique) et redémarrez Home Assistant."
         }
     }
 }

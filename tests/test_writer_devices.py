@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock
-from custom_components.scribe.writer import ScribeWriter
+from custom_components.scribe.writer import ScribeWriter, WriterConfig
 
 
 @pytest.fixture
@@ -10,18 +10,20 @@ def writer(hass):
     """Create a writer instance with a mock pool."""
     mock_pool = MagicMock()
     writer = ScribeWriter(
-        hass=hass,
-        db_url="postgresql://user:pass@host/db",
-        chunk_interval="7 days",
-        compress_after="60 days",
-        record_states=True,
-        record_events=True,
-        batch_size=10,
-        flush_interval=5,
-        max_queue_size=100,
-        buffer_on_failure=False,
-        table_name_states="states",
-        table_name_events="events",
+        hass,
+        WriterConfig(
+            db_url="postgresql://user:pass@host/db",
+            chunk_interval="7 days",
+            compress_after="60 days",
+            record_states=True,
+            record_events=True,
+            batch_size=10,
+            flush_interval=5,
+            max_queue_size=100,
+            buffer_on_failure=False,
+            table_name_states="states",
+            table_name_events="events",
+        ),
     )
     # Inject mock pool
     writer._pool = mock_pool

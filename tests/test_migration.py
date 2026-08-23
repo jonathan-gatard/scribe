@@ -1,186 +1,155 @@
-"""Tests for migration module."""
+"""Detection of a pre-3.0 database.
+
+Converting the old schema was dropped in 3.9 (see `_detect_legacy_schema`).
+What is left must be airtight in both directions: a false positive stops
+recording on a healthy install, and a miss lets Scribe write into a schema it
+cannot build.
+"""
 
 import pytest
-from unittest.mock import AsyncMock, patch
-from custom_components.scribe import migration
+from unittest.mock import patch
+
+from custom_components.scribe.writer import (
+    ISSUE_LEGACY_SCHEMA,
+    ScribeWriter,
+    WriterConfig,
+)
 
 
-@pytest.mark.asyncio
-async def test_migrate_database_logic(hass, mock_pool, mock_db_connection):
-    """Test that migrate_database calls sub-migrations."""
-    # Mock states_raw table check returning True to skip 60s delay
-    mock_db_connection.fetchval.return_value = True
-
-    with (
-        patch(
-            "custom_components.scribe.migration._migrate_states_raw_constraints",
-            new_callable=AsyncMock,
-        ) as mock_constraints,
-        patch(
-            "custom_components.scribe.migration.migrate_states_data",
-            new_callable=AsyncMock,
-        ) as mock_data,
-        patch(
-            "custom_components.scribe.migration._convert_to_hypertable",
-            new_callable=AsyncMock,
-        ) as mock_hyper,
-        patch(
-            "custom_components.scribe.migration._migrate_events_pk",
-            new_callable=AsyncMock,
-        ) as mock_events,
-        patch(
-            "custom_components.scribe.migration._check_timescaledb",
-            new_callable=AsyncMock,
-            return_value=True,
+@pytest.fixture
+def writer(hass, mock_pool):
+    w = ScribeWriter(
+        hass,
+        WriterConfig(
+            db_url="postgresql://user:pass@host/db",
+            chunk_interval="7 days",
+            compress_after="7 days",
+            record_states=True,
+            record_events=True,
+            batch_size=2,
+            flush_interval=5,
+            max_queue_size=10,
+            buffer_on_failure=True,
+            table_name_states="states",
+            table_name_events="events",
         ),
-        patch("asyncio.sleep", new_callable=AsyncMock),
-    ):  # Skip sleep
-        await migration.migrate_database(hass, mock_pool, True, True)
-
-        mock_constraints.assert_called_once()
-        mock_data.assert_called_once_with(mock_pool)
-        mock_hyper.assert_called_once()
-        mock_events.assert_called_once()
+    )
+    w._pool = mock_pool
+    return w
 
 
-@pytest.mark.asyncio
-async def test_migrate_states_raw_already_done(mock_pool, mock_db_connection):
-    """Test that migration skips if PK already exists."""
-    # Mock PK check returning a row (exists)
-    mock_db_connection.fetchrow.return_value = {"exists": 1}
+def _schema(states_table=False, states_legacy=False, entities=True, entities_id=True):
+    """Answer the detector's existence queries for a given database shape."""
 
-    await migration._migrate_states_raw_constraints(mock_pool, False)
+    async def fetchval(sql, *args):
+        if "table_name = 'states' AND table_type = 'BASE TABLE'" in sql:
+            return states_table
+        if "table_name = 'states_legacy'" in sql:
+            return states_legacy
+        if "table_name = 'entities'" in sql and "columns" not in sql:
+            return entities
+        if "column_name = 'id'" in sql:
+            return entities_id
+        return False
 
-    # verify check was made
-    call_args = mock_db_connection.fetchrow.call_args[0][0]
-    assert "conname = 'states_raw_pkey'" in call_args
-
-    # verify no other calls (like SELECT COUNT(*) for dups)
-    assert mock_db_connection.fetchval.call_count == 0
+    return fetchval
 
 
 @pytest.mark.asyncio
-async def test_migrate_states_raw_with_duplicates(mock_pool, mock_db_connection):
-    """Test migration with duplicates to clean."""
-    # 1. Check PK -> None (not done)
-    # 2. Check duplicates -> 5 (found)
-    # 3. Delete duplicates
+async def test_healthy_schema_is_not_legacy(writer, mock_db_connection):
+    mock_db_connection.fetchval.side_effect = _schema()
+    assert await writer._detect_legacy_schema(mock_db_connection) is None
 
-    mock_db_connection.fetchrow.return_value = None
-    mock_db_connection.fetchval.return_value = 5
-    mock_db_connection.execute.return_value = "DELETE 5"
 
-    await migration._migrate_states_raw_constraints(mock_pool, False)
+@pytest.mark.asyncio
+async def test_empty_database_is_not_legacy(writer, mock_db_connection):
+    """A first run has no relations at all and must proceed normally."""
+    mock_db_connection.fetchval.side_effect = _schema(entities=False)
+    assert await writer._detect_legacy_schema(mock_db_connection) is None
 
-    # Verify SQL calls
-    assert mock_db_connection.fetchrow.called
-    assert mock_db_connection.fetchval.called
 
-    # Verify duplicates were deleted
-    delete_call = [
-        c
+@pytest.mark.asyncio
+async def test_states_as_a_base_table_is_legacy(writer, mock_db_connection):
+    """On 3.x `states` is a view; a table by that name is pre-3.0 history."""
+    mock_db_connection.fetchval.side_effect = _schema(states_table=True)
+    assert await writer._detect_legacy_schema(mock_db_connection) == "states"
+
+
+@pytest.mark.asyncio
+async def test_interrupted_migration_is_legacy(writer, mock_db_connection):
+    """An older Scribe renamed `states` and never finished the backfill."""
+    mock_db_connection.fetchval.side_effect = _schema(states_legacy=True)
+    assert await writer._detect_legacy_schema(mock_db_connection) == "states_legacy"
+
+
+@pytest.mark.asyncio
+async def test_text_keyed_entities_is_legacy(writer, mock_db_connection):
+    """Writes resolve metadata_ids through entities.id: without it, nothing works."""
+    mock_db_connection.fetchval.side_effect = _schema(entities_id=False)
+    assert await writer._detect_legacy_schema(mock_db_connection) == "entities"
+
+
+@pytest.mark.asyncio
+async def test_init_db_creates_nothing_on_a_legacy_database(writer, mock_db_connection):
+    """The old data must stay untouched so 3.8 can still convert it."""
+    mock_db_connection.fetchval.side_effect = _schema(states_table=True)
+
+    await writer.init_db()
+
+    assert not mock_db_connection.execute.mock_calls
+    assert writer._legacy_blocked is True
+    assert writer._connected is False
+
+
+@pytest.mark.asyncio
+async def test_legacy_database_raises_a_repairs_issue(writer, mock_db_connection):
+    mock_db_connection.fetchval.side_effect = _schema(states_legacy=True)
+
+    with patch.object(writer, "_report_issue") as report:
+        await writer.init_db()
+
+    assert report.call_args.args[0] == ISSUE_LEGACY_SCHEMA
+    assert report.call_args.args[1] == "legacy_schema"
+    placeholders = report.call_args.args[2]
+    assert placeholders["relation"] == "states_legacy"
+    # The whole point of the issue: name the version that can convert it.
+    assert placeholders["version"] == "3.8"
+
+
+@pytest.mark.asyncio
+async def test_blocked_writer_stops_queuing(writer, mock_db_connection):
+    """Buffering states that can never be written only fills the queue."""
+    mock_db_connection.fetchval.side_effect = _schema(states_table=True)
+    await writer.init_db()
+    writer._running = True
+
+    writer.enqueue({"type": "state", "entity_id": "sensor.x"})
+
+    assert len(writer._queue) == 0
+
+
+@pytest.mark.asyncio
+async def test_healthy_database_still_initializes(writer, mock_db_connection):
+    """The gate must not stand in the way of a normal start."""
+    mock_db_connection.fetchval.side_effect = _schema()
+
+    await writer.init_db()
+
+    assert writer._legacy_blocked is False
+    assert writer._connected is True
+    assert any(
+        "CREATE TABLE IF NOT EXISTS states_raw" in str(c.args[0])
         for c in mock_db_connection.execute.mock_calls
-        if "DELETE FROM states_raw" in str(c)
-    ]
-    assert len(delete_call) > 0
-
-    # Verify constraints added
-    execute_calls = [str(c) for c in mock_db_connection.execute.mock_calls]
-    assert any("ADD PRIMARY KEY" in s for s in execute_calls)
-    assert any("ADD CONSTRAINT fk_states_raw_entity" in s for s in execute_calls)
+        if c.args
+    )
 
 
 @pytest.mark.asyncio
-async def test_migrate_events_pk_already_done(mock_pool, mock_db_connection):
-    """Test event migration skips if 'id' column exists."""
-    # 1. Check table events exists -> True
-    # 2. Check is hypertable -> False
-    # 3. Check column id exists -> True
-    mock_db_connection.fetchrow.side_effect = [{"exists": 1}, None, {"exists": 1}]
+async def test_issue_retires_itself_once_converted(writer, mock_db_connection):
+    """An issue that never clears teaches users to ignore the Repairs panel."""
+    mock_db_connection.fetchval.side_effect = _schema()
 
-    await migration._migrate_events_pk(mock_pool, True)
+    with patch.object(writer, "_clear_issue") as clear:
+        await writer.init_db()
 
-    # verify no alter table
-    execute_calls = [str(c) for c in mock_db_connection.execute.mock_calls]
-    assert not any("ADD COLUMN id" in s for s in execute_calls)
-
-
-@pytest.mark.asyncio
-async def test_migrate_events_pk_adds_column(mock_pool, mock_db_connection):
-    """Test event migration adds column if missing."""
-    # 1. Check table events exists -> True
-    # 2. Check is hypertable -> False
-    # 3. Check column id exists -> False
-    mock_db_connection.fetchrow.side_effect = [{"exists": 1}, None, None]
-
-    await migration._migrate_events_pk(mock_pool, True)
-
-    execute_calls = [str(c) for c in mock_db_connection.execute.mock_calls]
-    assert any("ADD COLUMN id BIGSERIAL PRIMARY KEY" in s for s in execute_calls)
-
-
-@pytest.mark.asyncio
-async def test_migrate_states_raw_disables_and_reenables_compression(
-    mock_pool, mock_db_connection
-):
-    """Test that compression is disabled before adding constraints and re-enabled after."""
-    mock_db_connection.fetchrow.side_effect = [
-        None,  # PK check
-        {"compression_enabled": True},  # compression check: enabled
-    ]
-    mock_db_connection.fetchval.return_value = 0  # no duplicates
-    mock_db_connection.execute.return_value = "OK"
-
-    await migration._migrate_states_raw_constraints(mock_pool, True)
-
-    execute_calls = [str(c) for c in mock_db_connection.execute.mock_calls]
-
-    # Verify compression was disabled
-    assert any("timescaledb.compress = false" in s for s in execute_calls)
-    assert any("remove_compression_policy" in s for s in execute_calls)
-
-    # Verify constraints were added
-    assert any("ADD PRIMARY KEY" in s for s in execute_calls)
-    assert any("ADD CONSTRAINT fk_states_raw_entity" in s for s in execute_calls)
-
-    # Verify compression was re-enabled
-    assert any("timescaledb.compress," in s for s in execute_calls)
-    assert any("add_compression_policy" in s for s in execute_calls)
-
-
-@pytest.mark.asyncio
-async def test_migrate_states_raw_enables_compression_even_if_not_previously_on(
-    mock_pool, mock_db_connection
-):
-    """Test that compression is always enabled after constraints, even if it wasn't on before."""
-    mock_db_connection.fetchrow.side_effect = [
-        None,  # PK check
-        {"compression_enabled": False},  # hypertable exists but compression was off
-    ]
-    mock_db_connection.fetchval.return_value = 0  # no duplicates
-    mock_db_connection.execute.return_value = "OK"
-
-    await migration._migrate_states_raw_constraints(mock_pool, True)
-
-    execute_calls = [str(c) for c in mock_db_connection.execute.mock_calls]
-
-    # Verify compression was NOT disabled (it wasn't on)
-    assert not any("timescaledb.compress = false" in s for s in execute_calls)
-
-    # But compression should still be enabled at the end
-    assert any("timescaledb.compress," in s for s in execute_calls)
-    assert any("add_compression_policy" in s for s in execute_calls)
-
-
-@pytest.mark.asyncio
-async def test_migrate_states_data_drops_legacy_cascade(mock_pool, mock_db_connection):
-    """Test that states_legacy is dropped with CASCADE."""
-    # 1. Check legacy exists -> True
-    # 2. MIN/MAX time query -> None (empty table)
-    mock_db_connection.fetchval.return_value = True  # legacy exists
-    mock_db_connection.fetchrow.return_value = (None, None)  # empty table
-
-    await migration.migrate_states_data(mock_pool)
-
-    execute_calls = [str(c) for c in mock_db_connection.execute.mock_calls]
-    assert any("DROP TABLE states_legacy CASCADE" in s for s in execute_calls)
+    assert ISSUE_LEGACY_SCHEMA in [c.args[0] for c in clear.mock_calls]

@@ -14,9 +14,14 @@ TO_REDACT = {CONF_DB_URL, CONF_DB_PASSWORD, CONF_DB_USER}
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: ConfigEntry
+    _hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
-    """Return diagnostics for a config entry."""
+    """Return diagnostics for a config entry.
+
+    `_hass` is unused: Home Assistant calls this platform hook positionally,
+    so the parameter has to stay even though everything reported comes from
+    the entry itself.
+    """
     return {
         "entry": async_redact_data(entry.as_dict(), TO_REDACT),
         "options": async_redact_data(entry.options, TO_REDACT),

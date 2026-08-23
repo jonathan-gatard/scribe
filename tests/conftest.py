@@ -25,7 +25,10 @@ def mock_db_connection():
     mock_conn.execute = AsyncMock()
     mock_conn.executemany = AsyncMock()
     mock_conn.copy_records_to_table = AsyncMock()
-    mock_conn.fetchval = AsyncMock()
+    # Default to a falsy answer: an unconfigured AsyncMock returns a truthy
+    # mock, which would make every existence check ("is there a legacy
+    # `states` table?", "is `states` a view?") answer yes.
+    mock_conn.fetchval = AsyncMock(return_value=None)
     mock_conn.fetchrow = AsyncMock()
     mock_conn.fetch = AsyncMock()
 

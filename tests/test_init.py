@@ -171,8 +171,8 @@ async def test_legacy_config(hass):
         assert await async_setup_entry(hass, entry)
 
         # Verify DB URL construction
-        call_args = mock_writer_cls.call_args[1]
-        assert call_args["db_url"] == "postgresql://user:pass@host:5432/db"
+        config = mock_writer_cls.call_args.args[1]
+        assert config.db_url == "postgresql://user:pass@host:5432/db"
 
 
 @pytest.mark.asyncio

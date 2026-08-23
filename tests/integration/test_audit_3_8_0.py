@@ -7,6 +7,7 @@ attribute. Plus guards for behaviour that was already correct and must stay so.
 
 import asyncio
 
+import asyncpg
 import pytest
 
 from homeassistant.helpers.entity_component import async_update_entity
@@ -36,12 +37,15 @@ async def test_query_service_is_stopped_by_the_server(hass, scribe_entry, monkey
 
     monkeypatch.setattr("custom_components.scribe.writer.QUERY_TIMEOUT_MS", 500)
 
-    with pytest.raises(Exception) as excinfo:
-        await asyncio.wait_for(writer.query("SELECT pg_sleep(30)"), timeout=15)
+    # A server-side cancellation, not asyncio giving up: anything else means
+    # nothing bounds the query on the database side.
+    # wait_for only guards the test against hanging forever; the assertion is
+    # about what the *database* does, so only the await sits inside raises().
+    query = asyncio.wait_for(writer.query("SELECT pg_sleep(30)"), timeout=15)
+    with pytest.raises(asyncpg.PostgresError) as excinfo:
+        await query
 
-    assert not isinstance(excinfo.value, asyncio.TimeoutError), (
-        "the query ran on: nothing bounds it server-side"
-    )
+    assert "statement timeout" in str(excinfo.value).lower()
     assert (
         "cancel" in str(excinfo.value).lower()
         or "timeout" in str(excinfo.value).lower()

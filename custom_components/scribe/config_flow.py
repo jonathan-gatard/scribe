@@ -20,6 +20,7 @@ from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
+from .writer import _validate_interval, ensure_timescaledb
 from .const import (
     DOMAIN,
     CONF_DB_URL,
@@ -32,6 +33,10 @@ from .const import (
     DEFAULT_CHUNK_TIME_INTERVAL,
     CONF_COMPRESS_AFTER,
     DEFAULT_COMPRESS_AFTER,
+    CONF_RETENTION_STATES,
+    DEFAULT_RETENTION_STATES,
+    CONF_RETENTION_EVENTS,
+    DEFAULT_RETENTION_EVENTS,
     CONF_RECORD_STATES,
     DEFAULT_RECORD_STATES,
     CONF_RECORD_EVENTS,
@@ -81,15 +86,33 @@ def _normalize_dsn(db_url: str) -> str:
     return db_url.replace("postgresql+asyncpg://", "postgresql://")
 
 
-async def _test_connection(db_url: str) -> bool:
-    """Attempt a real connection to validate the database URL."""
+async def _check_database(db_url: str) -> str | None:
+    """Validate a database before Scribe is set up against it.
+
+    Returns an error key, or None when the database is usable.
+
+    Scribe is a TimescaleDB integration: on plain PostgreSQL it still records,
+    but chunking, compression, retention and every size sensor do nothing, and
+    the database grows several times faster. Rather than let someone set that
+    up and discover it months later, a new installation is refused — after
+    trying to enable the extension, which usually works when it is merely a
+    forgotten `CREATE EXTENSION`.
+
+    Installations that already exist are never re-checked here: they keep
+    recording, and say what is missing through a Repairs issue instead.
+    """
     try:
         conn = await asyncpg.connect(dsn=_normalize_dsn(db_url), timeout=5)
-        await conn.close()
-        return True
     except Exception as e:
         _LOGGER.debug("Connection test failed: %s", e)
-        return False
+        return "cannot_connect"
+
+    try:
+        if not await ensure_timescaledb(conn):
+            return "no_timescaledb"
+        return None
+    finally:
+        await conn.close()
 
 
 def _multi_text_selector() -> selector.SelectSelector:
@@ -162,10 +185,11 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             db_url = user_input.get(CONF_DB_URL, "").strip()
-            if not db_url:
-                errors[CONF_DB_URL] = "cannot_connect"
-            elif not await _test_connection(db_url):
-                errors["base"] = "cannot_connect"
+            problem = "cannot_connect" if not db_url else await _check_database(db_url)
+            if problem == "cannot_connect" and not db_url:
+                errors[CONF_DB_URL] = problem
+            elif problem:
+                errors["base"] = problem
             else:
                 await self.async_set_unique_id(DOMAIN)
                 self._abort_if_unique_id_configured(updates={CONF_DB_URL: db_url})
@@ -189,7 +213,23 @@ class ScribeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_import(self, user_input=None) -> FlowResult:
         """Handle import from configuration.yaml (YAML-first setup)."""
         await self.async_set_unique_id(DOMAIN)
+        # Existing installations are updated in place and never re-checked:
+        # this aborts before the check below.
         self._abort_if_unique_id_configured(updates=user_input)
+
+        # A first YAML setup gets the same gate as the UI. Aborting leaves no
+        # config entry, so the block is imported again at the next restart —
+        # a database that was merely down comes back on its own.
+        db_url = (user_input or {}).get(CONF_DB_URL)
+        if db_url and await _check_database(db_url) == "no_timescaledb":
+            _LOGGER.error(
+                "[config_flow] Refusing to set up Scribe against a database "
+                "without the TimescaleDB extension. Run "
+                "'CREATE EXTENSION timescaledb;' on it (see the README), then "
+                "restart Home Assistant."
+            )
+            return self.async_abort(reason="no_timescaledb")
+
         return self.async_create_entry(title="Scribe", data=user_input or {})
 
     @staticmethod
@@ -454,6 +494,24 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
         current = {**self.config_entry.data, **self.config_entry.options}
 
         if user_input is not None:
+            # Retention drops chunks: a typo here would either delete the wrong
+            # amount of history or (once interpolated into SQL) not run at all.
+            # Catch it while the user is still looking at the form.
+            errors = {}
+            for key in (CONF_RETENTION_STATES, CONF_RETENTION_EVENTS):
+                value = (user_input.get(key) or "").strip()
+                if value:
+                    try:
+                        _validate_interval(value)
+                    except ValueError:
+                        errors[key] = "invalid_interval"
+            if errors:
+                return self.async_show_form(
+                    step_id="advanced",
+                    data_schema=self._schema_advanced({**current, **user_input}),
+                    errors=errors,
+                )
+
             self._options.update(user_input)
             return self.async_create_entry(
                 title="", data=_coerce_options(self._options)
@@ -477,6 +535,14 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_COMPRESS_AFTER,
                     default=g(CONF_COMPRESS_AFTER, DEFAULT_COMPRESS_AFTER),
+                ): selector.TextSelector(),
+                vol.Optional(
+                    CONF_RETENTION_STATES,
+                    default=g(CONF_RETENTION_STATES, DEFAULT_RETENTION_STATES),
+                ): selector.TextSelector(),
+                vol.Optional(
+                    CONF_RETENTION_EVENTS,
+                    default=g(CONF_RETENTION_EVENTS, DEFAULT_RETENTION_EVENTS),
                 ): selector.TextSelector(),
                 vol.Optional(
                     CONF_DB_SSL, default=g(CONF_DB_SSL, DEFAULT_DB_SSL)

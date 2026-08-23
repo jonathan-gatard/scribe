@@ -1,5 +1,6 @@
 """Schema creation against a real TimescaleDB: tables, hypertables, view."""
 
+import asyncpg
 import pytest
 
 from .conftest import make_writer, table_exists
@@ -54,9 +55,8 @@ async def test_entities_entity_id_is_unique(writer, db):
     """The UNIQUE constraint is what makes rename collisions detectable."""
     async with db.acquire() as conn:
         await conn.execute("INSERT INTO entities (entity_id) VALUES ('sensor.dup')")
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(asyncpg.UniqueViolationError):
             await conn.execute("INSERT INTO entities (entity_id) VALUES ('sensor.dup')")
-        assert "unique" in str(excinfo.value).lower()
 
 
 @pytest.mark.asyncio

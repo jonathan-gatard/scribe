@@ -68,11 +68,11 @@ async def test_default_config_enables_all(hass, mock_config_entry):
         mock_get_users.assert_called_once()
 
         # For others, we can check if the registry getters were called, but simpler to check if writer was initialized with correct flags
-        _, kwargs = mock_writer_cls.call_args
-        assert kwargs["enable_table_users"] is True
-        assert kwargs["enable_table_areas"] is True
-        assert kwargs["enable_table_devices"] is True
-        assert kwargs["enable_table_integrations"] is True
+        config = mock_writer_cls.call_args.args[1]
+        assert config.enable_table_users is True
+        assert config.enable_table_areas is True
+        assert config.enable_table_devices is True
+        assert config.enable_table_integrations is True
 
 
 @pytest.mark.asyncio
@@ -97,8 +97,8 @@ async def test_disable_users_table(hass, mock_config_entry):
         await async_setup_entry(hass, mock_config_entry)
 
         # Verify ScribeWriter init
-        _, kwargs = mock_writer_cls.call_args
-        assert kwargs["enable_table_users"] is False
+        config = mock_writer_cls.call_args.args[1]
+        assert config.enable_table_users is False
 
         # Verify async_get_users was NOT called
         mock_get_users.assert_not_called()
@@ -139,11 +139,11 @@ async def test_disable_all_metadata(hass, mock_config_entry):
         await async_setup_entry(hass, mock_config_entry)
 
         # Verify ScribeWriter init
-        _, kwargs = mock_writer_cls.call_args
-        assert kwargs["enable_table_users"] is False
-        assert kwargs["enable_table_areas"] is False
-        assert kwargs["enable_table_devices"] is False
-        assert kwargs["enable_table_integrations"] is False
+        config = mock_writer_cls.call_args.args[1]
+        assert config.enable_table_users is False
+        assert config.enable_table_areas is False
+        assert config.enable_table_devices is False
+        assert config.enable_table_integrations is False
 
         # Verify no registry calls (entities still syncs since the table is mandatory)
         mock_get_users.assert_not_called()
