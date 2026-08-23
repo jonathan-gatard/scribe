@@ -2165,63 +2165,73 @@ class ScribeWriter:
         return states_res, events_res
 
     async def _resolve_state_metadata_ids(self, states_data):
-        """Replace entity_ids with metadata_ids, dropping what cannot be written.
+        """Turn queued states into the rows COPY writes, resolving their entity.
 
         Must run under `_metadata_lock`: a concurrent rename may move or delete
         a metadata_id, and the COPY that follows would strand its rows.
+
+        The queued items are read, never written: a failed COPY re-buffers those
+        very dicts, and an earlier version resolved them by popping `entity_id`
+        off each one — which made every state of the retry unresolvable, dropped
+        as "unknown entity" on the way back in. Building the rows here instead
+        of copying each dict also keeps the batch allocation-free.
         """
         eids = {s["entity_id"] for s in states_data if "entity_id" in s}
         if eids:
             await self._ensure_metadata_ids(list(eids))
-
-        # Copied, never mutated in place: a failed COPY re-buffers these very
-        # items, and popping `entity_id` off them made every state of the retry
-        # unresolvable — silently dropped as "unknown entity" on the way back in.
-        resolved = []
-        for state in states_data:
-            eid = state.get("entity_id")
-            if eid and eid in self._entity_id_map:
-                resolved.append({**state, "metadata_id": self._entity_id_map[eid]})
-            else:
-                _LOGGER.warning(
-                    "[writer._flush] Skipping state for unknown entity_id: %r (not in cache — INSERT into entities may have failed)",
-                    eid,
-                )
 
         # states_raw is keyed by (metadata_id, time). Home Assistant can emit
         # two states for one entity at the same instant — a restored state
         # alongside a live one, or a force_update — and COPY has no ON CONFLICT,
         # so a single duplicate would abort the whole batch. Since the batch
         # would then be re-buffered and fail again on every retry, that is a
-        # permanent stall, not a hiccup. Keep the last state seen for each key.
-        deduped = {(s["metadata_id"], s["time"]): s for s in resolved}
-        if len(deduped) != len(resolved):
+        # permanent stall, not a hiccup. Keying by (metadata_id, time) keeps the
+        # last state seen for each.
+        rows = {}
+        skipped = 0
+        for state in states_data:
+            eid = state.get("entity_id")
+            metadata_id = self._entity_id_map.get(eid) if eid else None
+            if metadata_id is None:
+                skipped += 1
+                _LOGGER.warning(
+                    "[writer._flush] Skipping state for unknown entity_id: %r (not in cache — INSERT into entities may have failed)",
+                    eid,
+                )
+                continue
+            when = state["time"]
+            rows[(metadata_id, when)] = (
+                when,
+                metadata_id,
+                state.get("state"),
+                state.get("value"),
+                state.get("attributes"),
+            )
+
+        dropped = len(states_data) - skipped - len(rows)
+        if dropped:
             _LOGGER.debug(
                 "[writer._flush] Dropped %d state(s) sharing a "
                 "(metadata_id, time) key within the batch",
-                len(resolved) - len(deduped),
+                dropped,
             )
-        return list(deduped.values())
+        return list(rows.values())
 
-    async def _copy_batch(self, states_data, events_data):
-        """Write both halves of a batch in one transaction."""
+    async def _copy_batch(self, state_rows, events_data):
+        """Write both halves of a batch in one transaction.
+
+        `state_rows` are already the tuples COPY takes (see
+        `_resolve_state_metadata_ids`); events still carry their dicts, since
+        nothing has to be resolved for them.
+        """
         async with self._pool.acquire() as conn:
             async with conn.transaction():
-                if states_data:
+                if state_rows:
                     await self._copy_records(
                         conn=conn,
                         table_name="states_raw",
                         columns=["time", "metadata_id", "state", "value", "attributes"],
-                        records=[
-                            (
-                                s["time"],
-                                s["metadata_id"],
-                                s.get("state"),
-                                s.get("value"),
-                                s.get("attributes"),
-                            )
-                            for s in states_data
-                        ],
+                        records=state_rows,
                         conflict_target="metadata_id, time",
                     )
                 if events_data:
