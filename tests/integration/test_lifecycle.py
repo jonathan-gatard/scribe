@@ -317,3 +317,41 @@ async def test_connection_binary_sensor_reflects_the_pool(hass, scribe_entry):
     state = hass.states.get("binary_sensor.scribe_database_connection")
     assert state is not None
     assert state.state == "on"
+
+
+@pytest.mark.asyncio
+async def test_everything_fired_during_shutdown_is_written(hass, scribe_entry):
+    """Home Assistant shuts down in stages, and Scribe must outlast the first.
+
+    Within one event its specific listeners run before the MATCH_ALL ones, so
+    stopping on `homeassistant_stop` ran the final flush *before* Scribe's own
+    event listener had been handed that very event. Everything fired during
+    shutdown was dropped — the stop event, and every state change integrations
+    emit as they unload. `homeassistant_final_write` is the stage meant for
+    writing last data, and is what Home Assistant's own recorder uses.
+    """
+    import asyncpg
+    from homeassistant.const import (
+        EVENT_HOMEASSISTANT_FINAL_WRITE,
+        EVENT_HOMEASSISTANT_STOP,
+    )
+
+    from .conftest import DSN
+
+    entry, writer = await scribe_entry()
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
+    await hass.async_block_till_done()
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_FINAL_WRITE)
+    await hass.async_block_till_done()
+
+    conn = await asyncpg.connect(DSN)
+    try:
+        assert (
+            await conn.fetchval(
+                "SELECT count(*) FROM events WHERE event_type = 'homeassistant_stop'"
+            )
+            == 1
+        )
+    finally:
+        await conn.close()

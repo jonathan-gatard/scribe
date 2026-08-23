@@ -25,7 +25,7 @@ from homeassistant.helpers import (
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.const import (
     EVENT_STATE_CHANGED,
-    EVENT_HOMEASSISTANT_STOP,
+    EVENT_HOMEASSISTANT_FINAL_WRITE,
 )
 from homeassistant.helpers.entityfilter import generate_filter
 
@@ -979,12 +979,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for event_type in ("user_added", "user_updated", "user_removed"):
                 entry.async_on_unload(hass.bus.async_listen(event_type, user_listener))
 
-        # Stop the writer on shutdown so the final flush happens.
+        # Stop on FINAL_WRITE, not STOP. Home Assistant shuts down in stages —
+        # `homeassistant_stop`, then `homeassistant_final_write`, then close —
+        # and within a single event its specific listeners run before the
+        # MATCH_ALL ones. Stopping on `homeassistant_stop` therefore ran the
+        # final flush *before* Scribe's own event listener had been handed that
+        # very event, so everything fired during shutdown was dropped: the stop
+        # event itself, and every state change the integrations emit as they
+        # unload. FINAL_WRITE is the stage meant for exactly this, and it is
+        # what Home Assistant's own recorder uses to commit its last data.
         async def async_stop_scribe(event):
             await writer.stop()
 
         entry.async_on_unload(
-            hass.bus.async_listen(EVENT_HOMEASSISTANT_STOP, async_stop_scribe)
+            hass.bus.async_listen(EVENT_HOMEASSISTANT_FINAL_WRITE, async_stop_scribe)
         )
 
         _register_services(hass, writer)
