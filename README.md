@@ -505,6 +505,7 @@ Scribe reports problems it cannot fix on its own in **Settings → System → Re
 | Could not create the `states` view | History is recorded, but the view every query goes through is missing — the history looks empty even though nothing is lost. |
 | `states_raw` / `events` is not a hypertable | TimescaleDB is installed but the table was never converted (a common outcome when the extension is added *after* the tables filled up). Chunking, compression and retention all do nothing. |
 | `states_raw` / `events` is never compressed | The table is a hypertable but has no compression policy, so it keeps its full uncompressed size. |
+| TLS is not fully in force | Scribe connects over TLS, but a certificate you configured could not be applied — most often a client certificate, so it authenticates as an ordinary client instead of the one you provisioned. |
 | TimescaleDB is not installed | History is recorded, but chunking and compression are unavailable, so the database grows much faster and the size sensors stay empty. |
 | Database predates version 3.0 | The database still uses the pre-3.0 layout, which this version cannot convert. Nothing is recorded and nothing was modified — install Scribe 3.8 to convert it, then update again. |
 | Could not apply the retention policy | You asked Scribe to delete data older than an interval and the policy could not be created. Nothing was deleted, and nothing is being deleted — the table keeps growing. |

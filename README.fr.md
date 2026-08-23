@@ -523,6 +523,7 @@ Chacun disparaît de lui-même une fois la cause corrigée.
 | Impossible de créer la vue `states` | L'historique est enregistré, mais la vue par laquelle passent toutes les requêtes est absente — l'historique paraît vide alors que rien n'est perdu. |
 | `states_raw` / `events` n'est pas une hypertable | TimescaleDB est installé mais la table n'a jamais été convertie (cas fréquent quand l'extension est ajoutée *après* le remplissage des tables). Chunks, compression et rétention ne font plus rien. |
 | `states_raw` / `events` n'est jamais compressée | La table est bien une hypertable mais n'a aucune politique de compression : elle conserve sa taille non compressée. |
+| TLS partiellement appliqué | Scribe se connecte en TLS, mais un certificat configuré n'a pas pu être appliqué — le plus souvent un certificat client : il s'authentifie alors comme un client ordinaire et non comme celui que vous aviez provisionné. |
 | TimescaleDB n'est pas installé | L'historique est enregistré, mais le découpage et la compression sont indisponibles : la base grossit bien plus vite et les capteurs de taille restent vides. |
 | Base antérieure à la version 3.0 | La base utilise encore le schéma pré-3.0, que cette version ne sait pas convertir. Rien n'est enregistré et rien n'a été modifié — installez Scribe 3.8 pour la convertir, puis remettez à jour. |
 | Politique de rétention non appliquée | Vous avez demandé la suppression des données au-delà d'un intervalle et la politique n'a pas pu être créée. Rien n'a été supprimé et rien ne l'est — la table continue de grossir. |

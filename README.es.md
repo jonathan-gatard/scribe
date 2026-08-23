@@ -520,6 +520,7 @@ registros. Cada uno desaparece solo en cuanto se corrige la causa.
 | No pudo crear la vista `states` | El historial se registra, pero falta la vista por la que pasan todas las consultas: el historial parece vacío aunque no se ha perdido nada. |
 | `states_raw` / `events` no es una hypertable | TimescaleDB está instalado pero la tabla nunca se convirtió (algo habitual cuando la extensión se añade *después* de llenar las tablas). Los chunks, la compresión y la retención no hacen nada. |
 | `states_raw` / `events` nunca se comprime | La tabla sí es una hypertable pero no tiene política de compresión, así que mantiene su tamaño sin comprimir. |
+| TLS no aplicado por completo | Scribe conecta por TLS, pero un certificado configurado no pudo aplicarse — casi siempre un certificado de cliente: se autentica como un cliente cualquiera en lugar del que aprovisionaste. |
 | TimescaleDB no está instalado | El historial se registra, pero la división en chunks y la compresión no están disponibles: la base crece mucho más rápido y los sensores de tamaño se quedan vacíos. |
 | La base es anterior a la versión 3.0 | La base todavía usa el esquema anterior a 3.0, que esta versión no sabe convertir. No se registra nada y no se ha modificado nada: instala Scribe 3.8 para convertirla y vuelve a actualizar. |
 | No se pudo aplicar la política de retención | Pediste eliminar los datos anteriores a un intervalo y la política no pudo crearse. No se ha eliminado nada y nada se está eliminando: la tabla sigue creciendo. |

@@ -526,6 +526,7 @@ behoben ist.
 | Sicht `states` konnte nicht angelegt werden | Der Verlauf wird aufgezeichnet, doch die Sicht, über die jede Abfrage läuft, fehlt — der Verlauf wirkt leer, obwohl nichts verloren ist. |
 | `states_raw` / `events` ist keine Hypertable | TimescaleDB ist installiert, die Tabelle wurde aber nie umgewandelt (häufig, wenn die Erweiterung *nach* dem Befüllen der Tabellen hinzukam). Chunks, Komprimierung und Aufbewahrung bewirken nichts. |
 | `states_raw` / `events` wird nie komprimiert | Die Tabelle ist zwar eine Hypertable, hat aber keine Komprimierungsrichtlinie und behält ihre unkomprimierte Größe. |
+| TLS nicht vollständig wirksam | Scribe verbindet sich über TLS, aber ein konfiguriertes Zertifikat konnte nicht angewendet werden — meist ein Client-Zertifikat: Scribe authentifiziert sich dann als gewöhnlicher Client statt als der bereitgestellte. |
 | TimescaleDB ist nicht installiert | Der Verlauf wird aufgezeichnet, aber Chunking und Komprimierung stehen nicht zur Verfügung: Die Datenbank wächst deutlich schneller und die Größen-Sensoren bleiben leer. |
 | Datenbank älter als Version 3.0 | Die Datenbank nutzt noch das Schema vor 3.0, das diese Version nicht umwandeln kann. Es wird nichts aufgezeichnet und nichts verändert — installiere Scribe 3.8 zur Umwandlung und aktualisiere danach erneut. |
 | Aufbewahrungsrichtlinie nicht angewendet | Du hast das Löschen von Daten ab einem Intervall verlangt, die Richtlinie konnte aber nicht angelegt werden. Es wurde nichts gelöscht und es wird nichts gelöscht — die Tabelle wächst weiter. |
