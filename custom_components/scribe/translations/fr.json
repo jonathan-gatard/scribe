@@ -144,7 +144,7 @@
         },
         "db_unreachable": {
             "title": "Scribe ne peut pas joindre sa base de données",
-            "description": "Scribe n'a pas pu se connecter à `{host}` et **n'enregistre plus rien**. La base a répondu : {error}\n\nVérifiez que le serveur tourne et qu'il est joignable depuis Home Assistant, et que l'URL, l'identifiant et le mot de passe dans les réglages de Scribe sont corrects. Cette réparation disparaît d'elle-même dès qu'une connexion aboutit — rechargez l'intégration Scribe pour réessayer immédiatement."
+            "description": "Scribe n'a pas pu se connecter à `{host}`. La base a répondu : {error}\n\nPlus rien n'arrive jusqu'à la base, mais l'enregistrement ne s'est pas arrêté : les états sont conservés en mémoire et Scribe retente la connexion en arrière-plan, puis écrit tout ce qu'il a mis en tampon dès qu'une tentative aboutit. L'historique n'est perdu que si Home Assistant redémarre avant, ou si le tampon se remplit.\n\nVérifiez que le serveur tourne et qu'il est joignable depuis Home Assistant, et que l'URL, l'identifiant et le mot de passe dans les réglages de Scribe sont corrects. Cette réparation disparaît d'elle-même dès qu'une connexion aboutit."
         },
         "write_failing": {
             "title": "Scribe n'arrive plus à écrire dans sa base",

@@ -13,11 +13,13 @@
             }
         },
         "error": {
-            "cannot_connect": "Verbindung zur Datenbank fehlgeschlagen."
+            "cannot_connect": "Verbindung zur Datenbank fehlgeschlagen.",
+            "no_timescaledb": "Verbunden, aber diese Datenbank hat keine TimescaleDB-Erweiterung, und Scribe konnte sie nicht aktivieren. Scribe ist eine TimescaleDB-Integration: Ohne sie gibt es kein Chunking, keine Komprimierung und keine Aufbewahrung, und die Datenbank wächst um ein Vielfaches schneller. Führe `CREATE EXTENSION timescaledb;` auf dieser Datenbank aus (der Benutzer braucht dort das Recht CREATE) oder richte Scribe auf eine TimescaleDB-Instanz."
         },
         "abort": {
             "already_configured": "Scribe ist bereits konfiguriert.",
-            "single_instance_allowed": "Es ist nur eine Scribe-Instanz zulässig."
+            "single_instance_allowed": "Es ist nur eine Scribe-Instanz zulässig.",
+            "no_timescaledb": "Diese Datenbank hat keine TimescaleDB-Erweiterung, und Scribe konnte sie nicht aktivieren — die Einrichtung wurde daher abgelehnt. Führe `CREATE EXTENSION timescaledb;` darauf aus und starte Home Assistant neu."
         }
     },
     "options": {
@@ -34,7 +36,8 @@
                     "include_entity_globs": "Entitäts-Globs einschließen",
                     "exclude_entity_globs": "Entitäts-Globs ausschließen",
                     "exclude_attributes": "Attribute ausschließen",
-                    "include_events": "Ereignistypen einschränken"
+                    "include_events": "Ereignistypen einschränken",
+                    "exclude_events": "Ereignisse ausschließen"
                 },
                 "data_description": {
                     "record_states": "Write every state change to TimescaleDB",
@@ -46,7 +49,8 @@
                     "include_entity_globs": "Only record entities matching these patterns",
                     "exclude_entity_globs": "Never record entities matching these patterns",
                     "exclude_attributes": "Drop these attribute keys before writing",
-                    "include_events": "Only record these specific event types. Leave empty to record all events."
+                    "include_events": "Only record these specific event types. Leave empty to record all events.",
+                    "exclude_events": "Ereignistypen, die nie aufgezeichnet werden. Wird nach der Einschlussliste angewendet: Ein Typ in beiden Listen wird ausgeschlossen."
                 }
             },
             "performance": {
@@ -104,7 +108,9 @@
                     "db_ssl": "Enable SSL",
                     "ssl_root_cert": "SSL root certificate path",
                     "ssl_cert_file": "SSL client certificate path",
-                    "ssl_key_file": "SSL client key path"
+                    "ssl_key_file": "SSL client key path",
+                    "retention_states": "Zustände löschen, die älter sind als",
+                    "retention_events": "Ereignisse löschen, die älter sind als"
                 },
                 "data_description": {
                     "chunk_time_interval": "TimescaleDB chunk interval",
@@ -112,12 +118,77 @@
                     "db_ssl": "Require an SSL/TLS connection",
                     "ssl_root_cert": "Path to the CA certificate file",
                     "ssl_cert_file": "Path to the client certificate file",
-                    "ssl_key_file": "Path to the client private key file"
+                    "ssl_key_file": "Path to the client private key file",
+                    "retention_states": "Leer lassen, um alle Zustände unbegrenzt aufzubewahren (Standard). Ein Intervall (z. B. '365 days', '6 months') lässt TimescaleDB älteren Zustandsverlauf LÖSCHEN — endgültig und ohne Rückgängig. Scribe verwaltet diese Richtlinie: Das Feld zu leeren entfernt sie.",
+                    "retention_events": "Leer lassen, um alle Ereignisse unbegrenzt aufzubewahren (Standard). Ein Intervall (z. B. '30 days') lässt TimescaleDB älteren Ereignisverlauf LÖSCHEN — endgültig und ohne Rückgängig. Scribe verwaltet diese Richtlinie: Das Feld zu leeren entfernt sie."
                 }
             }
         },
         "error": {
-            "must_record_something": "Mindestens eine Option muss aktiviert sein."
+            "must_record_something": "Mindestens eine Option muss aktiviert sein.",
+            "invalid_interval": "Die Aufbewahrung muss ein Intervall wie '365 days', '6 months' oder '1 year' sein — leer lassen, um alles zu behalten."
+        }
+    },
+    "issues": {
+        "rename_refused_live": {
+            "title": "Die Umbenennung nach {new_entity_id} wurde nicht übernommen",
+            "description": "Home Assistant hat `{old_entity_id}` in `{new_entity_id}` umbenannt, aber die Scribe-Datenbank führt `{new_entity_id}` bereits für eine andere, noch aktive Entität (`{occupant}`). Um den Verlauf zweier lebender Entitäten nicht zu vermischen, blieb die Datenbank unverändert: das bisher Aufgezeichnete bleibt unter `{old_entity_id}`, und neue Zustände können unter der vorhandenen Zeile von `{new_entity_id}` landen.\n\nWurde die andere Entität ebenfalls gerade umbenannt, löst sich das meist innerhalb einer Minute von selbst, und der Hinweis verschwindet, sobald die Umbenennung gelingt. Bleibt er bestehen, sieh dir die Tabelle `entities` in deiner Datenbank an."
+        },
+        "rename_refused_unprovable": {
+            "title": "Die Umbenennung nach {new_entity_id} wurde nicht übernommen",
+            "description": "Home Assistant hat `{old_entity_id}` in `{new_entity_id}` umbenannt, aber die Scribe-Datenbank hat für `{new_entity_id}` bereits eine Zeile mit unvollständigen Metadaten — Scribe kann also nicht belegen, dass sie zu einer entfernten Entität gehört. Um den Verlauf nicht zu beschädigen, blieb die Datenbank unverändert: das bisher Aufgezeichnete bleibt unter `{old_entity_id}`.\n\nWenn du sicher bist, dass diese Zeile ein Überbleibsel einer entfernten Entität ist, lösche sie von Hand aus der Tabelle `entities`; Scribe übernimmt die Umbenennung dann beim nächsten Mal."
+        },
+        "rename_failed": {
+            "title": "Umbenennung von {old_entity_id} fehlgeschlagen",
+            "description": "Scribe stieß beim Umbenennen von `{old_entity_id}` nach `{new_entity_id}` in der Datenbank auf einen Fehler: {error}. Der Verlauf der Entität kann nun auf beide Kennungen verteilt sein. Sieh in die Protokolle von Home Assistant; ein erneutes Umbenennen wiederholt den Vorgang."
+        },
+        "db_unreachable": {
+            "title": "Scribe erreicht seine Datenbank nicht",
+            "description": "Scribe konnte sich nicht mit `{host}` verbinden. Die Datenbank meldete: {error}\n\nEs erreicht nichts die Datenbank, aber die Aufzeichnung hat nicht aufgehört: Zustände werden im Speicher gehalten, Scribe versucht die Verbindung im Hintergrund erneut und schreibt anschließend alles Gepufferte, sobald ein Versuch gelingt. Verlauf geht nur verloren, wenn Home Assistant vorher neu startet oder der Puffer voll läuft.\n\nPrüfe, ob der Server läuft und von Home Assistant aus erreichbar ist, und ob URL, Benutzername und Passwort in den Scribe-Einstellungen stimmen. Dieser Hinweis verschwindet von selbst, sobald eine Verbindung zustande kommt."
+        },
+        "write_failing": {
+            "title": "Scribe kann nicht in seine Datenbank schreiben",
+            "description": "Die letzten {failures} Versuche, Verlauf zu schreiben, sind fehlgeschlagen. Die aufgezeichneten Daten liegen im Speicher und werden geschrieben, sobald sich die Datenbank erholt — sie gehen aber verloren, wenn Home Assistant vorher neu startet oder der Puffer voll läuft.\n\nDer letzte Fehler war: {error}\n\nPrüfe den Datenbankserver (Plattenplatz, Verbindungsgrenzen und dessen eigene Protokolle). Dieser Hinweis erledigt sich, sobald ein Schreibvorgang gelingt."
+        },
+        "buffer_full": {
+            "title": "Scribes Puffer ist voll — es geht Verlauf verloren",
+            "description": "Die Schreibfehler dauern lange genug an, um den Speicherpuffer zu füllen ({max_queue_size} Einträge). Die ältesten Einträge werden nun verworfen, um Platz für neue zu schaffen — **es geht dauerhaft Verlauf verloren**.\n\nBehebe zuerst das Datenbankproblem — siehe den anderen Scribe-Hinweis oder die Protokolle von Home Assistant. Ist deine Datenbank schlicht langsamer als deine Rate an Zustandsänderungen, erhöhe die Puffergröße in den Scribe-Einstellungen. Der Hinweis verschwindet, sobald wieder geschrieben wird."
+        },
+        "data_dropped": {
+            "title": "Scribe verwirft Einträge",
+            "description": "Seit dem Start von Home Assistant wurden {dropped} Einträge verworfen, weil ein Schreibvorgang fehlschlug und die Pufferung in den Scribe-Einstellungen deaktiviert ist.\n\nAktiviere die Pufferung, um Einträge während eines vorübergehenden Datenbankausfalls im Speicher zu halten, und sieh in den Protokollen nach dem zugrunde liegenden Schreibfehler."
+        },
+        "no_timescaledb": {
+            "title": "TimescaleDB ist auf Scribes Datenbank nicht installiert",
+            "description": "Scribe zeichnet nach `{host}` auf, aber dort ist die TimescaleDB-Erweiterung nicht installiert. Der Verlauf wird weiterhin gespeichert und bleibt abfragbar — Chunking und **Komprimierung stehen jedoch nicht zur Verfügung**, die Datenbank wächst deutlich schneller, und die Größen- und Komprimierungssensoren bleiben leer.\n\nInstalliere die Erweiterung, führe `CREATE EXTENSION timescaledb;` auf dieser Datenbank aus und starte Home Assistant neu. Der Hinweis verschwindet, sobald die Erweiterung erkannt wird."
+        },
+        "retention_failed": {
+            "title": "Scribe konnte die Aufbewahrungsrichtlinie auf {table} nicht anwenden",
+            "description": "Scribe sollte Daten löschen, die älter als **{retention}** sind, in `{table}` — und das Setzen dieser Richtlinie schlug fehl mit: {error}\n\nEs wurde nichts gelöscht und es wird nichts gelöscht: Die Tabelle wächst weiter und ihr Verlauf ist unversehrt. Aufbewahrung ist eine TimescaleDB-Funktion: Sie braucht die Erweiterung auf dieser Datenbank, `{table}` als Hypertable und den Scribe-Datenbankbenutzer als deren Eigentümer.\n\nBehebe die Ursache oder leere das Aufbewahrungsfeld in den Scribe-Optionen und starte Home Assistant neu. Der Hinweis verschwindet, sobald die Richtlinie steht."
+        },
+        "ssl_degraded": {
+            "title": "Scribes TLS-Konfiguration ist nicht vollständig wirksam",
+            "description": "Scribe verbindet sich über TLS mit seiner Datenbank, aber ein Teil deiner Konfiguration konnte nicht angewendet werden: {problems}\n\nDie Verbindung ist weiterhin verschlüsselt, und das Serverzertifikat wird weiterhin gegen den System-Zertifikatsspeicher geprüft. Es fehlt der zusätzliche Schutz, den du angefordert hast — meist ein Client-Zertifikat: Scribe authentifiziert sich dann als gewöhnlicher Client statt als der bereitgestellte, was von außen identisch aussieht, bis jemand es prüft.\n\nStelle sicher, dass die Pfade stimmen und für Home Assistant lesbar sind (relative Pfade werden vom Konfigurationsverzeichnis aus aufgelöst), und starte neu. Der Hinweis verschwindet, sobald jede konfigurierte Datei geladen wird."
+        },
+        "schema_failed": {
+            "title": "Scribe konnte seine Tabellen nicht anlegen",
+            "description": "Scribe hat `{host}` erreicht, scheiterte aber beim Aufbau seines Schemas mit: {error}\n\nWas nicht angelegt werden konnte, fehlt schlicht: Auf einer neuen Datenbank heißt das, dass **überhaupt nichts aufgezeichnet wird**; auf einer bestehenden kann die Aufzeichnung unvollständig sein — manche Tabellen aktuell, andere veraltet oder gar nicht vorhanden. Häufigste Ursache sind Rechte: Der Benutzer, mit dem Scribe sich verbindet, muss in dieser Datenbank Tabellen anlegen dürfen und Eigentümer der bereits angelegten sein.\n\nGewähre ihm diese Rechte (oder richte Scribe auf eine Datenbank, die ihm gehört) und starte Home Assistant neu. Der Hinweis verschwindet, sobald das Schema steht."
+        },
+        "view_failed": {
+            "title": "Scribe konnte die Sicht `{view}` nicht anlegen",
+            "description": "Zustände werden normal nach `states_raw` geschrieben, aber die Sicht `{view}`, die sie zurückliest, konnte nicht angelegt werden: {error}\n\nJede Abfrage, jedes Dashboard und jedes Beispiel in der Dokumentation läuft über diese Sicht — dein Verlauf wirkt daher leer, obwohl er es nicht ist. Es geht nichts verloren.\n\nMeist ist es ein Rechteproblem oder ein anderes Objekt, das diesen Namen bereits belegt. Behebe die Ursache und starte Home Assistant neu."
+        },
+        "no_hypertable": {
+            "title": "`{table}` ist keine TimescaleDB-Hypertable",
+            "description": "TimescaleDB ist auf dieser Datenbank installiert, aber `{table}` ist eine gewöhnliche Tabelle: Die Umwandlung ist nicht erfolgt. Der Verlauf wird aufgezeichnet und bleibt abfragbar, doch **Chunking, Komprimierung und Aufbewahrung bewirken überhaupt nichts** — die Datenbank wächst um ein Vielfaches schneller als nötig, und die Größen-Sensoren bleiben leer.\n\nEine Tabelle umzuwandeln setzt Eigentum an ihr voraus; meist ist der Scribe-Datenbankbenutzer also nicht ihr Eigentümer. Übertrage ihm das Eigentum an `{table}` und starte Home Assistant neu; der Hinweis verschwindet, sobald die Umwandlung gelingt."
+        },
+        "no_compression": {
+            "title": "`{table}` wird nie komprimiert",
+            "description": "`{table}` ist zwar eine Hypertable, es konnte aber keine Komprimierungsrichtlinie eingerichtet werden: Chunks, die älter als {compress_after} sind, werden nie komprimiert, und die Tabelle behält ihre unkomprimierte Größe — typischerweise ein Vielfaches des Nötigen.\n\nMeist heißt das, dass der Scribe-Datenbankbenutzer nicht Eigentümer der Tabelle ist. Sieh in den Protokollen von Home Assistant nach dem genauen Fehler, behebe ihn und starte Home Assistant neu."
+        },
+        "legacy_schema": {
+            "title": "Scribes Datenbank ist älter als Version 3.0",
+            "description": "Die Datenbank enthält noch `{relation}` aus dem Schema vor 3.0, und diese Version von Scribe kann es nicht umwandeln. **Es wird nichts aufgezeichnet** — und es wurde auch nichts umbenannt, angelegt oder gelöscht: Dein Verlauf liegt genau dort, wo er lag.\n\nZum Umwandeln: Installiere Scribe **{version}** (wähle diese Version in HACS ausdrücklich), starte Home Assistant und lass es laufen, bis die Protokolle die abgeschlossene Migration melden — bei einer großen Datenbank rund fünfzehn Minuten — und aktualisiere Scribe danach erneut. Die Aufzeichnung läuft beim nächsten Neustart wieder an, und dieser Hinweis verschwindet.\n\nWenn du lieber mit einer leeren Datenbank beginnst, lösche `{relation}` (das entfernt den alten Verlauf) und starte Home Assistant neu."
         }
     }
 }

@@ -157,3 +157,66 @@ def test_a_single_filter_value_is_accepted_as_a_list():
 def test_an_empty_filter_value_becomes_an_empty_list():
     coerced = _coerce_options({CONF_EXCLUDE_DOMAINS: ""})
     assert coerced[CONF_EXCLUDE_DOMAINS] == []
+
+
+def _keys(node, prefix=""):
+    """Every leaf path in a translation file."""
+    found = set()
+    for key, value in node.items():
+        path = f"{prefix}.{key}" if prefix else key
+        found |= _keys(value, path) if isinstance(value, dict) else {path}
+    return found
+
+
+def test_the_documented_languages_are_fully_translated():
+    """English, French, Spanish and German — the four the README exists in.
+
+    A missing key falls back to English silently, which is how the whole
+    Repairs panel stayed untranslated for three of them without anyone
+    noticing.
+    """
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "scribe"
+    reference = _keys(json.loads((root / "strings.json").read_text()))
+
+    for language in ("en", "fr", "es", "de"):
+        path = root / "translations" / f"{language}.json"
+        missing = reference - _keys(json.loads(path.read_text()))
+        assert not missing, f"{language}.json is missing {sorted(missing)}"
+
+
+def test_no_translation_invents_a_key_of_its_own():
+    """A key nothing reads is a typo, and it renders as nothing at all."""
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "scribe"
+    reference = _keys(json.loads((root / "strings.json").read_text()))
+
+    for path in sorted((root / "translations").glob("*.json")):
+        extra = _keys(json.loads(path.read_text())) - reference
+        assert not extra, f"{path.name} defines {sorted(extra)}"
+
+
+def test_every_placeholder_survives_translation():
+    """A dropped {placeholder} renders as an empty gap in the Repairs card."""
+    import json
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "scribe"
+    reference = json.loads((root / "strings.json").read_text())["issues"]
+
+    for language in ("fr", "es", "de"):
+        translated = json.loads(
+            (root / "translations" / f"{language}.json").read_text()
+        )["issues"]
+        for issue, texts in reference.items():
+            for field in ("title", "description"):
+                expected = set(re.findall(r"\{(\w+)\}", texts[field]))
+                actual = set(re.findall(r"\{(\w+)\}", translated[issue][field]))
+                assert expected == actual, (
+                    f"{language} {issue}.{field}: {expected ^ actual}"
+                )

@@ -144,7 +144,7 @@
         },
         "db_unreachable": {
             "title": "Scribe cannot reach its database",
-            "description": "Scribe could not connect to `{host}` and is **not recording anything**. The database reported: {error}\n\nCheck that the server is running and reachable from Home Assistant, and that the URL, username and password in Scribe's settings are correct. This issue disappears on its own once a connection succeeds — reload the Scribe integration to retry immediately."
+            "description": "Scribe could not connect to `{host}`. The database reported: {error}\n\nNothing is reaching the database, but recording has not stopped: states are held in memory and Scribe retries the connection in the background, then writes everything it buffered once one succeeds. History is lost only if Home Assistant restarts first, or if the buffer fills up.\n\nCheck that the server is running and reachable from Home Assistant, and that the URL, username and password in Scribe's settings are correct. This issue disappears on its own once a connection succeeds."
         },
         "write_failing": {
             "title": "Scribe cannot write to its database",
