@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **A null byte in an attribute *key* stopped recording for good**: PostgreSQL refuses `\u0000` in a jsonb key exactly as it does in a value. Values were cleaned before reaching the codec — entity_id, state, event fields, attribute values — but the keys of an attributes mapping went through untouched, and a key is entirely under the control of whichever integration produced the state. One such key failed the `COPY`, which fails the whole batch, which is re-buffered and fails again on every retry: the same permanent stall as the duplicate timestamps fixed in 3.8, reached from the other end of the same document. Keys that are not strings are coerced too, since `json.dumps` refuses a tuple key outright with the same outcome.
+- **A failure to register an entity silently dropped its states**: `_ensure_metadata_ids` logged its errors and returned, after which every state of an unregistered entity was skipped as "unknown entity_id" while the flush reported success — the queue was cleared and those states were gone. It hits hardest exactly where it hurts most, on a cold cache after a restart where every entity is unregistered. Resolving an entity is part of writing its state, so the error now fails the flush and the batch is re-buffered.
+- **A database that was not up yet at boot cost the whole session**: Home Assistant and the database usually start together, and the database is often slower. When the pool could not be created, the writer raised its Repairs issue and gave up — no task was started, so `enqueue` dropped every state, and `buffer_on_failure` could not help because the queue was never fed. Scribe stayed dead until the next Home Assistant restart, *including* after the database came back. Connecting is now separate from starting: the loop reconnects on a backoff that doubles from 5s to a 5-minute ceiling, and everything recorded meanwhile is buffered and written when the database answers.
+- **`db_url` was the one setting a YAML edit could not change**: it was read from the config entry before `configuration.yaml`, and the entry keeps the URL it was created with — so editing the line did nothing, and moving Scribe to another database meant deleting the integration and setting it up again. It now follows the same precedence as every other setting.
+
+### Added
+- **A TLS setup that could not be fully applied is reported**: a configured client certificate that is missing, or whose key does not match, was logged and stepped over, and the connection went ahead without client authentication. It is encrypted either way and looks exactly like a working mutual-TLS setup from the outside — which is the problem, since the part that fails is the part nobody notices until an audit. A self-clearing Repairs issue now names each problem.
+- **Diagnostics report what the writer is doing**: the download carried only the config entry, which says what was asked for and nothing about what is happening. It now includes the connection state, whether TimescaleDB was found, the queue and what it has dropped, consecutive flush failures, the counters, the storage and retention settings, and how many entities are cached. The database URL never appears, and `last_error` goes through the same DSN redaction as the connectivity entity.
+
+### Changed
+- **The rows written by `COPY` are built while resolving, not twice**: resolution produced dicts that the write path then walked again to build tuples. Measured over 5000 states, the whole path from resolution to the tuples `COPY` receives went from 2.95 ms (3.8's behaviour, which mutated the queued items) to 1.95 ms, while keeping the items read-only so a re-buffered batch still resolves on the retry.
+- **Test coverage from 91% to 95%**, with the config flow and diagnostics at 100%: the TLS path, the config flow, the registry listeners and services, the attribute sanitizer and the TimescaleDB gate had no tests of their own. Two of the bugs above were found writing them.
+
 ## [4.0.0] - 2026-08-23
 
 > **Breaking changes.** Two things can stop Scribe from starting on an
