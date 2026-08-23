@@ -146,3 +146,18 @@ def test_the_sanitized_attributes_survive_json(writer):
     encoded = json.dumps(writer._sanitize_obj(hostile))
 
     assert "\\u0000" not in encoded
+
+
+def test_a_numeric_becomes_a_number(writer):
+    """PostgreSQL `numeric` arrives as Decimal, which JSON has no room for."""
+    from decimal import Decimal
+
+    assert writer._sanitize_obj(Decimal("1.5")) == 1.5
+    assert isinstance(writer._sanitize_obj(Decimal("1.5")), float)
+
+
+def test_an_interval_becomes_seconds(writer):
+    """`interval` arrives as timedelta — usable in a template as a number."""
+    from datetime import timedelta
+
+    assert writer._sanitize_obj(timedelta(days=7)) == 604800.0

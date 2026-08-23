@@ -140,3 +140,30 @@ async def test_initial_counts_come_from_the_database(hass, clean_db):
         assert second._events_written == 1
     finally:
         await second.stop()
+
+
+@pytest.mark.asyncio
+async def test_query_results_can_be_serialized_by_home_assistant(writer, db):
+    """`scribe.query` answers a service call, so its rows have to be JSON.
+
+    A query selecting a `numeric` — EXTRACT(EPOCH …), avg(), any ::numeric —
+    or an `interval` used to come back as Decimal and timedelta, which Home
+    Assistant cannot serialize: the caller got an obscure error instead of
+    rows.
+    """
+    import json
+
+    from homeassistant.helpers.json import JSONEncoder
+
+    rows = await writer.query(
+        "SELECT EXTRACT(EPOCH FROM now()) AS epoch, "
+        "1.5::numeric AS exact, "
+        "INTERVAL '7 days' AS span, "
+        "now() AS moment"
+    )
+
+    json.dumps(rows, cls=JSONEncoder)  # the bar: this must not raise
+
+    assert isinstance(rows[0]["epoch"], float)
+    assert rows[0]["exact"] == 1.5
+    assert rows[0]["span"] == 604800.0

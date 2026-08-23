@@ -22,7 +22,8 @@ import dataclasses
 import json
 import math
 import uuid
-from datetime import date, datetime as dt_datetime
+from datetime import date, datetime as dt_datetime, timedelta
+from decimal import Decimal
 
 import asyncpg
 
@@ -2151,6 +2152,17 @@ class ScribeWriter:
             # jsonb has no way to spell inf/nan, and asyncpg raises on them.
             return None if (math.isinf(obj) or math.isnan(obj)) else obj
 
+        # Numbers PostgreSQL hands back in types JSON has no room for.
+        # `numeric` arrives as Decimal — from EXTRACT(EPOCH …), avg() and any
+        # ::numeric — and `interval` as timedelta. Both used to end up as
+        # strings here and as an unserializable response from `scribe.query`;
+        # as numbers they are usable in a template either way.
+        if isinstance(obj, Decimal):
+            return float(obj)
+
+        if isinstance(obj, timedelta):
+            return obj.total_seconds()
+
         if isinstance(obj, str):
             if "\0" in obj:
                 _LOGGER.warning(
@@ -2901,7 +2913,10 @@ class ScribeWriter:
                         f"SET LOCAL statement_timeout = {QUERY_TIMEOUT_MS}"
                     )
                     rows = await conn.fetch(sql)
-                    return [dict(row) for row in rows]
+                    # Through the same sanitizer the write path uses: a query
+                    # can select any type at all, and the result becomes a
+                    # service response Home Assistant has to serialize.
+                    return [self._sanitize_obj(dict(row)) for row in rows]
         except Exception as e:
             sqlstate = getattr(e, "sqlstate", None)
             _LOGGER.error(
