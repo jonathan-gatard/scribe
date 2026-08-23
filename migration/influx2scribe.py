@@ -95,6 +95,102 @@ def ensure_metadata_id(pg_cur, entity_id):
     return metadata_id
 
 
+# Columns Flux returns that describe the query rather than the state itself.
+_FLUX_META_COLUMNS = frozenset(
+    {"result", "table", "_start", "_stop", "_time", "entity_id", "value", "state"}
+)
+
+
+def _record_entity_id(record) -> str | None:
+    """The Home Assistant entity_id for one Influx record, or None to skip it."""
+    entity_id_raw = record.values.get("entity_id")
+    if not entity_id_raw:
+        return None
+
+    domain = record.values.get("domain")
+    if domain and not entity_id_raw.startswith(f"{domain}."):
+        entity_id_raw = f"{domain}.{entity_id_raw}"
+    return clean_null_bytes(entity_id_raw)
+
+
+def _record_state(record) -> tuple:
+    """Split one record into (state, value): numeric goes to value, text to state."""
+    pg_value = None
+    if record.values.get("value") is not None:
+        # Non-numeric values keep pg_value NULL and live in pg_state.
+        with contextlib.suppress(ValueError):
+            pg_value = float(record.values.get("value"))
+
+    state_val = record.values.get("state")
+    if state_val is not None:
+        return clean_null_bytes(str(state_val)), pg_value
+    if pg_value is not None:
+        return str(pg_value), pg_value
+    return None, pg_value
+
+
+def _record_attributes(record) -> dict:
+    """Everything on the record that is not the query's own metadata."""
+    attributes = {}
+    unit = record.values.get("_measurement")
+    if unit and unit != "state":
+        attributes["unit_of_measurement"] = unit
+
+    for k, v in record.values.items():
+        if k in _FLUX_META_COLUMNS or v is None:
+            continue
+        attributes[clean_null_bytes(k)] = (
+            clean_null_bytes(v) if isinstance(v, str) else v
+        )
+    return attributes
+
+
+def _read_chunk(query_api, pg_cur, current_start, current_end) -> list:
+    """Query one time window from InfluxDB and turn it into states_raw rows."""
+    query = f'''
+    from(bucket: "{INFLUX_BUCKET}")
+      |> range(start: {current_start.isoformat()}, stop: {current_end.isoformat()})
+      |> filter(fn: (r) => r["_field"] == "value" or r["_field"] == "state")
+      |> drop(columns: ["_start", "_stop"])
+      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+    '''
+
+    batch = []
+    for table in query_api.query(query):
+        for record in table.records:
+            entity_id = _record_entity_id(record)
+            if entity_id is None:
+                continue
+            pg_state, pg_value = _record_state(record)
+            batch.append(
+                (
+                    record.get_time(),
+                    ensure_metadata_id(pg_cur, entity_id),
+                    pg_state,
+                    pg_value,
+                    json.dumps(_record_attributes(record)),
+                )
+            )
+    return batch
+
+
+def _insert_rows(pg_cur, pg_conn, rows) -> int:
+    """Insert a batch, skipping rows the destination already holds."""
+    if not rows:
+        return 0
+    execute_batch(
+        pg_cur,
+        """
+        INSERT INTO states_raw (time, metadata_id, state, value, attributes)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (metadata_id, time) DO NOTHING
+    """,
+        rows,
+    )
+    pg_conn.commit()
+    return len(rows)
+
+
 def migrate():
     """
     Main migration logic.
@@ -152,111 +248,14 @@ def migrate():
     )
 
     while current_start < END_TIME:
-        current_end = current_start + CHUNK_SIZE
-        if current_end > END_TIME:
-            current_end = END_TIME
-
+        current_end = min(current_start + CHUNK_SIZE, END_TIME)
         logging.info(f"--- Processing Chunk: {current_start} to {current_end} ---")
 
-        # Flux Query to get data pivoted
-        query = f'''
-        from(bucket: "{INFLUX_BUCKET}")
-          |> range(start: {current_start.isoformat()}, stop: {current_end.isoformat()})
-          |> filter(fn: (r) => r["_field"] == "value" or r["_field"] == "state")
-          |> drop(columns: ["_start", "_stop"])
-          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-        '''
-
-        batch = []
-        chunk_inserted = 0
-
         try:
-            # Query InfluxDB
-            tables = query_api.query(query)
-
-            for table in tables:
-                for record in table.records:
-                    ts = record.get_time()
-                    entity_id_raw = record.values.get("entity_id")
-                    domain = record.values.get("domain")
-
-                    if not entity_id_raw:
-                        continue
-
-                    # Fix Entity ID (ensure domain prefix)
-                    if domain and not entity_id_raw.startswith(f"{domain}."):
-                        pg_entity_id = f"{domain}.{entity_id_raw}"
-                    else:
-                        pg_entity_id = entity_id_raw
-
-                    pg_entity_id = clean_null_bytes(pg_entity_id)
-                    metadata_id = ensure_metadata_id(pg_cur, pg_entity_id)
-
-                    val = record.values.get("value")
-                    state_val = record.values.get("state")
-
-                    pg_value = None
-                    pg_state = None
-
-                    # Try to parse value as float
-                    # Non-numeric values keep pg_value NULL and live in pg_state.
-                    if val is not None:
-                        with contextlib.suppress(ValueError):
-                            pg_value = float(val)
-
-                    # Determine state string
-                    if state_val is not None:
-                        pg_state = clean_null_bytes(str(state_val))
-                    elif pg_value is not None:
-                        pg_state = str(pg_value)
-
-                    # Attributes JSON
-                    attributes = {}
-                    unit = record.values.get("_measurement")
-                    if unit and unit != "state":
-                        attributes["unit_of_measurement"] = unit
-
-                    for k, v in record.values.items():
-                        # Exclude standard fields from attributes
-                        if k not in [
-                            "result",
-                            "table",
-                            "_start",
-                            "_stop",
-                            "_time",
-                            "entity_id",
-                            "value",
-                            "state",
-                        ]:
-                            if v is not None:
-                                # Clean keys and values
-                                k_clean = clean_null_bytes(k)
-                                if isinstance(v, str):
-                                    v_clean = clean_null_bytes(v)
-                                else:
-                                    v_clean = v
-                                attributes[k_clean] = v_clean
-
-                    row = (ts, metadata_id, pg_state, pg_value, json.dumps(attributes))
-                    batch.append(row)
-
-            # Insert Batch into Postgres
-            if batch:
-                execute_batch(
-                    pg_cur,
-                    """
-                    INSERT INTO states_raw (time, metadata_id, state, value, attributes)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (metadata_id, time) DO NOTHING
-                """,
-                    batch,
-                )
-                pg_conn.commit()
-                chunk_inserted = len(batch)
-                total_migrated_rows += chunk_inserted
-
-            logging.info(f"   -> Imported {chunk_inserted} rows.")
-
+            rows = _read_chunk(query_api, pg_cur, current_start, current_end)
+            inserted = _insert_rows(pg_cur, pg_conn, rows)
+            total_migrated_rows += inserted
+            logging.info(f"   -> Imported {inserted} rows.")
         except Exception as e:
             logging.error(f"Error processing chunk {current_start}: {e}")
             pg_conn.rollback()

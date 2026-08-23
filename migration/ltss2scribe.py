@@ -92,6 +92,73 @@ def ensure_metadata_id(pg_cur_scribe, entity_id):
     return metadata_id
 
 
+def _clean_attributes(attributes) -> str:
+    """Serialize LTSS attributes, stripping null bytes from keys and values."""
+    if not isinstance(attributes, dict):
+        return json.dumps({})
+    return json.dumps(
+        {
+            clean_null_bytes(k): clean_null_bytes(v) if isinstance(v, str) else v
+            for k, v in attributes.items()
+        }
+    )
+
+
+def _read_chunk(ltss_conn, scribe_cur, current_start, current_end) -> list:
+    """Read one time window from LTSS and turn it into states_raw rows."""
+    # A new cursor per chunk: one long-running transaction over the whole
+    # migration would pin the source database's snapshot for hours.
+    with ltss_conn.cursor(cursor_factory=RealDictCursor) as ltss_cur:
+        ltss_cur.execute(
+            """
+                SELECT time, entity_id, state, attributes
+                FROM ltss
+                WHERE time >= %s AND time < %s
+            """,
+            (current_start, current_end),
+        )
+        rows = ltss_cur.fetchall()
+
+    batch = []
+    for row in rows:
+        entity_id = clean_null_bytes(row["entity_id"])
+        pg_state = clean_null_bytes(row["state"])
+
+        # Non-numeric states keep pg_value NULL and live in pg_state.
+        pg_value = None
+        if pg_state is not None:
+            with contextlib.suppress(ValueError):
+                pg_value = float(pg_state)
+
+        batch.append(
+            (
+                row["time"],
+                ensure_metadata_id(scribe_cur, entity_id),
+                pg_state,
+                pg_value,
+                _clean_attributes(row["attributes"]),
+            )
+        )
+    return batch
+
+
+def _insert_rows(scribe_cur, scribe_conn, rows) -> int:
+    """Insert a batch, skipping rows the destination already holds."""
+    if not rows:
+        return 0
+    execute_batch(
+        scribe_cur,
+        """
+        INSERT INTO states_raw (time, metadata_id, state, value, attributes)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (metadata_id, time) DO NOTHING
+    """,
+        rows,
+    )
+    scribe_conn.commit()
+    return len(rows)
+
+
 def migrate():
     # 1. Connect to Scribe (Destination)
     try:
@@ -154,78 +221,17 @@ def migrate():
     )
 
     while current_start < END_TIME:
-        current_end = current_start + CHUNK_SIZE
-        if current_end > END_TIME:
-            current_end = END_TIME
-
+        current_end = min(current_start + CHUNK_SIZE, END_TIME)
         logging.info(f"--- Processing Chunk: {current_start} to {current_end} ---")
 
-        # Select from LTSS
         try:
-            # We use a new cursor for each chunk to avoid long-running transaction issues if any
-            with ltss_conn.cursor(cursor_factory=RealDictCursor) as ltss_cur:
-                query = """
-                    SELECT time, entity_id, state, attributes
-                    FROM ltss
-                    WHERE time >= %s AND time < %s
-                """
-                ltss_cur.execute(query, (current_start, current_end))
-
-                rows = ltss_cur.fetchall()
-
-                batch = []
-                for row in rows:
-                    ts = row["time"]
-                    entity_id = clean_null_bytes(row["entity_id"])
-                    metadata_id = ensure_metadata_id(scribe_cur, entity_id)
-                    state_raw = row["state"]
-                    attributes = row["attributes"]
-
-                    # Clean string state
-                    pg_state = clean_null_bytes(state_raw)
-
-                    # Try to extract float value
-                    # Non-numeric states keep pg_value NULL and live in pg_state.
-                    pg_value = None
-                    if pg_state is not None:
-                        with contextlib.suppress(ValueError):
-                            pg_value = float(pg_state)
-
-                    # Clean attributes
-                    if isinstance(attributes, dict):
-                        # We need to sanitize null bytes in keys/values of attributes too
-                        clean_attrs = {}
-                        for k, v in attributes.items():
-                            k_clean = clean_null_bytes(k)
-                            v_clean = v
-                            if isinstance(v, str):
-                                v_clean = clean_null_bytes(v)
-                            clean_attrs[k_clean] = v_clean
-
-                        pg_attributes = json.dumps(clean_attrs)
-                    else:
-                        pg_attributes = json.dumps({})
-
-                    batch.append((ts, metadata_id, pg_state, pg_value, pg_attributes))
-
-                # Insert into Scribe
-                if batch:
-                    execute_batch(
-                        scribe_cur,
-                        """
-                        INSERT INTO states_raw (time, metadata_id, state, value, attributes)
-                        VALUES (%s, %s, %s, %s, %s)
-                        ON CONFLICT (metadata_id, time) DO NOTHING
-                    """,
-                        batch,
-                    )
-                    scribe_conn.commit()
-                    count = len(batch)
-                    total_migrated_rows += count
-                    logging.info(f"   -> Imported {count} rows.")
-                else:
-                    logging.info("   -> No data in this chunk.")
-
+            rows = _read_chunk(ltss_conn, scribe_cur, current_start, current_end)
+            inserted = _insert_rows(scribe_cur, scribe_conn, rows)
+            total_migrated_rows += inserted
+            if inserted:
+                logging.info(f"   -> Imported {inserted} rows.")
+            else:
+                logging.info("   -> No data in this chunk.")
         except Exception as e:
             logging.error(f"Error processing chunk {current_start}: {e}")
             scribe_conn.rollback()

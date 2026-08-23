@@ -117,6 +117,106 @@ def ensure_metadata_id(pg_cur_scribe, entity_id):
     return metadata_id
 
 
+def _read_chunk(cur_recorder, pg_cur_scribe, placeholder, current_start, current_end):
+    """Read one time window from the recorder and turn it into states_raw rows."""
+    cur_recorder.execute(
+        f"""
+            SELECT m.entity_id, s.state, s.last_updated_ts, a.shared_attrs
+                FROM states AS s
+                JOIN states_meta AS m ON s.metadata_id = m.metadata_id
+                LEFT JOIN state_attributes AS a ON a.attributes_id = s.attributes_id
+            WHERE last_updated_ts >= {placeholder} AND last_updated_ts < {placeholder}
+        """,
+        (current_start.timestamp(), current_end.timestamp()),
+    )
+
+    batch = []
+    for entity_id, val, last_updated_ts, attributes in cur_recorder:
+        pg_value = None
+        pg_state = None
+        if val is not None:
+            # Numeric states go to `value`; anything else stays text.
+            try:
+                pg_value = float(val)
+            except ValueError:
+                pg_state = clean_null_bytes(val)
+
+        batch.append(
+            (
+                datetime.fromtimestamp(last_updated_ts, tz=timezone.utc),
+                ensure_metadata_id(pg_cur_scribe, clean_null_bytes(entity_id)),
+                pg_state,
+                pg_value,
+                attributes,
+            )
+        )
+    return batch
+
+
+def _insert_rows(pg_cur_scribe, pg_conn_scribe, rows) -> int:
+    """Insert a batch and report how many rows the destination did not already hold."""
+    if not rows:
+        return 0
+    inserted = execute_values(
+        pg_cur_scribe,
+        """
+        INSERT INTO states_raw (time, metadata_id, state, value, attributes)
+        VALUES %s ON CONFLICT DO NOTHING
+        RETURNING (time, metadata_id)
+    """,
+        rows,
+        fetch=True,
+    )
+    pg_conn_scribe.commit()
+    if len(rows) != len(inserted):
+        logging.warning(
+            f"   -> {len(rows) - len(inserted)} rows were skipped due to conflicts."
+        )
+    return len(inserted)
+
+
+def _connect_recorder():
+    """Open the recorder database, whichever backend it uses.
+
+    Returns (connection, cursor, placeholder) — the placeholder differs because
+    psycopg2 wants %s and sqlite3 wants ?.
+    """
+    if RECORDER_TYPE == "postgres":
+        try:
+            conn = psycopg2.connect(
+                host=RECORDER_HOST,
+                port=RECORDER_PORT,
+                database=RECORDER_DB,
+                user=RECORDER_USER,
+                password=RECORDER_PASS,
+            )
+        except Exception as e:
+            sys.exit(f"Failed to connect to Recorder Postgres: {e}")
+        logging.info("Connected to Recorder (PostgreSQL).")
+        return conn, conn.cursor(), "%s"
+
+    try:
+        conn = sqlite3.connect(RECORDER_DB_PATH)
+    except Exception as e:
+        sys.exit(f"Failed to connect to Recorder SQLite: {e}")
+    logging.info("Connected to Recorder (SQLite).")
+    return conn, conn.cursor(), "?"
+
+
+def _check_recorder_schema(cur_recorder):
+    """Refuse a recorder still mid-migration: its tables would be read half-converted."""
+    cur_recorder.execute(
+        "SELECT schema_version FROM schema_changes ORDER BY change_id DESC LIMIT 1"
+    )
+    result = cur_recorder.fetchone()
+    if result is None or result[0] < MINIMUM_RECORDER_SCHEMA_VERSION:
+        sys.exit(
+            f"Schema version {result[0]} is less than minimum supported schema version {MINIMUM_RECORDER_SCHEMA_VERSION}."
+            " Wait for the recorder database migration to finish before reattempting conversion."
+        )
+    logging.info(f"Recorder schema version: {result[0]}")
+
+
 def migrate():
     """
     Main migration logic.
@@ -138,40 +238,8 @@ def migrate():
     preflight_scribe_schema(pg_cur_scribe)
 
     # 2. Connect to Recorder
-    if RECORDER_TYPE == "postgres":
-        try:
-            conn_recorder = psycopg2.connect(
-                host=RECORDER_HOST,
-                port=RECORDER_PORT,
-                database=RECORDER_DB,
-                user=RECORDER_USER,
-                password=RECORDER_PASS,
-            )
-            cur_recorder = conn_recorder.cursor()
-            logging.info("Connected to Recorder (PostgreSQL).")
-        except Exception as e:
-            sys.exit(f"Failed to connect to Recorder Postgres: {e}")
-        placeholder = "%s"
-    else:
-        try:
-            conn_recorder = sqlite3.connect(RECORDER_DB_PATH)
-            cur_recorder = conn_recorder.cursor()
-            logging.info("Connected to Recorder (SQLite).")
-        except Exception as e:
-            sys.exit(f"Failed to connect to Recorder SQLite: {e}")
-        placeholder = "?"
-
-    cur_recorder.execute(
-        "SELECT schema_version FROM schema_changes ORDER BY change_id DESC LIMIT 1"
-    )
-    result = cur_recorder.fetchone()
-    if result is None or result[0] < MINIMUM_RECORDER_SCHEMA_VERSION:
-        sys.exit(
-            f"Schema version {result[0]} is less than minimum supported schema version {MINIMUM_RECORDER_SCHEMA_VERSION}."
-            " Wait for the recorder database migration to finish before reattempting conversion."
-        )
-
-    logging.info(f"Recorder schema version: {result[0]}")
+    conn_recorder, cur_recorder, placeholder = _connect_recorder()
+    _check_recorder_schema(cur_recorder)
 
     # 3. Cleanup Destination (Optional)
     if PURGE_DESTINATION:
@@ -203,74 +271,19 @@ def migrate():
     )
 
     while current_start < END_TIME:
-        current_end = current_start + CHUNK_SIZE
-        if current_end > END_TIME:
-            current_end = END_TIME
-
+        current_end = min(current_start + CHUNK_SIZE, END_TIME)
         logging.info(f"--- Processing Chunk: {current_start} to {current_end} ---")
 
-        batch = []
-        chunk_inserted = 0
-
         try:
-            # Query Recorder
-            query = f"""
-                SELECT m.entity_id, s.state, s.last_updated_ts, a.shared_attrs
-                    FROM states AS s
-                    JOIN states_meta AS m ON s.metadata_id = m.metadata_id
-                    LEFT JOIN state_attributes AS a ON a.attributes_id = s.attributes_id
-                WHERE last_updated_ts >= {placeholder} AND last_updated_ts < {placeholder}
-            """
-            cur_recorder.execute(
-                query, (current_start.timestamp(), current_end.timestamp())
+            rows = _read_chunk(
+                cur_recorder, pg_cur_scribe, placeholder, current_start, current_end
             )
-
-            for row in cur_recorder:
-                pg_metadata_id = ensure_metadata_id(
-                    pg_cur_scribe, clean_null_bytes(row[0])
-                )
-                val = row[1]
-                ts = datetime.fromtimestamp(row[2], tz=timezone.utc)
-                attributes = row[3]
-
-                pg_value = None
-                pg_state = None
-
-                if val is not None:
-                    # Try to parse value as float, otherwise treat it like a string
-                    try:
-                        pg_value = float(val)
-                    except ValueError:
-                        pg_state = clean_null_bytes(val)
-
-                batch.append((ts, pg_metadata_id, pg_state, pg_value, attributes))
-
-            # Insert Batch into Postgres
-            if batch:
-                inserted = execute_values(
-                    pg_cur_scribe,
-                    """
-                    INSERT INTO states_raw (time, metadata_id, state, value, attributes)
-                    VALUES %s ON CONFLICT DO NOTHING
-                    RETURNING (time, metadata_id)
-                """,
-                    batch,
-                    fetch=True,
-                )
-                pg_conn_scribe.commit()
-                chunk_inserted = len(inserted)
-                if len(batch) != chunk_inserted:
-                    logging.warning(
-                        f"   -> {len(batch) - chunk_inserted} rows were skipped due to conflicts."
-                    )
-                total_migrated_rows += chunk_inserted
-
-            logging.info(f"   -> Imported {chunk_inserted} rows.")
-
+            inserted = _insert_rows(pg_cur_scribe, pg_conn_scribe, rows)
+            total_migrated_rows += inserted
+            logging.info(f"   -> Imported {inserted} rows.")
         except Exception as e:
-            logging.error(f"Error processing chunk {current_start}: {e}", exc_info=True)
+            logging.error(f"Error processing chunk {current_start}: {e}")
             pg_conn_scribe.rollback()
-            # We continue to the next chunk even if one fails
 
         current_start = current_end
 
