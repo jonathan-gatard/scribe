@@ -157,7 +157,8 @@ async def test_the_states_view_materializes_only_what_it_projects(writer, db):
 
     drive = definition.split("drive AS MATERIALIZED")[1].split(")")[0]
     assert "capabilities" not in drive
-    assert "entity_id" in drive and "id" in drive
+    assert "entity_id" in drive
+    assert "id" in drive
 
 
 @pytest.mark.asyncio
