@@ -509,6 +509,19 @@ response_variable: query_result
 
 ## Fehlerbehebung
 
+### Was man zuerst ansieht
+
+Zwei Stellen beantworten „warum wird nichts aufgezeichnet?“, ohne eine einzige Protokollzeile zu lesen:
+
+- **Einstellungen → Geräte & Dienste → Scribe → ⋮ → Diagnose herunterladen** berichtet, was
+  der Writer tatsächlich tut: verbunden oder nicht, ob TimescaleDB gefunden wurde, wie viele
+  Einträge im Puffer warten und wie viele verworfen wurden, aufeinanderfolgende Schreibfehler
+  sowie die geltenden Speicher- und Aufbewahrungseinstellungen. Die Datenbank-URL erscheint
+  nie, und aus Treiberfehlern wird jede Verbindungszeichenfolge entfernt.
+- **Einstellungen → System → Reparaturen** listet die Punkte unten auf, und
+  **Einstellungen → System → Systemzustand** zeigt, auf welche Datenbank Scribe zeigt und
+  ob es gerade verbunden ist.
+
 ### Reparaturen
 
 Scribe meldet Probleme, die es nicht selbst lösen kann, unter

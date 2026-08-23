@@ -504,6 +504,19 @@ response_variable: query_result
 
 ## Solución de problemas
 
+### Lo primero que hay que mirar
+
+Dos sitios responden a «¿por qué no se registra nada?» sin leer una sola línea de registro:
+
+- **Ajustes → Dispositivos y servicios → Scribe → ⋮ → Descargar diagnósticos** informa de
+  lo que está haciendo realmente el escritor: conectado o no, si se encontró TimescaleDB,
+  cuántos elementos esperan en el búfer y cuántos se descartaron, los fallos de escritura
+  consecutivos, y los ajustes de almacenamiento y retención vigentes. La URL de la base de
+  datos nunca aparece, y a los errores del controlador se les quita cualquier cadena de conexión.
+- **Ajustes → Sistema → Reparaciones** lista los problemas de abajo, y
+  **Ajustes → Sistema → Estado del sistema** muestra a qué base apunta Scribe y si está
+  conectado en este momento.
+
 ### Reparaciones
 
 Scribe informa de los problemas que no puede resolver por sí mismo en

@@ -507,6 +507,19 @@ response_variable: query_result
 
 ## Dépannage
 
+### À regarder en premier
+
+Deux endroits répondent à « pourquoi rien n'est enregistré ? » sans lire une seule ligne de log :
+
+- **Paramètres → Appareils et services → Scribe → ⋮ → Télécharger les diagnostics** indique
+  ce que fait réellement l'écrivain : connecté ou non, TimescaleDB trouvé ou non, combien
+  d'éléments attendent dans le tampon et combien ont été écartés, les échecs d'écriture
+  consécutifs, les réglages de stockage et de rétention en vigueur. L'URL de la base n'y
+  figure jamais, et les erreurs du pilote sont expurgées de toute chaîne de connexion.
+- **Paramètres → Système → Réparations** liste les problèmes ci-dessous, et
+  **Paramètres → Système → État du système** indique vers quelle base Scribe pointe et
+  s'il y est connecté à l'instant.
+
 ### Repairs
 
 Scribe signale les problèmes qu'il ne peut pas résoudre seul dans

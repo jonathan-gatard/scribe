@@ -491,6 +491,19 @@ response_variable: query_result
 
 ## Troubleshooting
 
+### Before anything else
+
+Two places answer "why is nothing being recorded?" without reading a single log line:
+
+- **Settings → Devices & Services → Scribe → ⋮ → Download diagnostics** reports what
+  the writer is actually doing: connected or not, whether TimescaleDB was found, how
+  many items are waiting in the buffer and how many were dropped, consecutive write
+  failures, the storage and retention settings in force. The database URL is never
+  included, and driver errors have any connection string stripped out.
+- **Settings → System → Repairs** lists the conditions below, and
+  **Settings → System → System health** shows the database Scribe is pointed at and
+  whether it is connected right now.
+
 ### Repairs
 
 Scribe reports problems it cannot fix on its own in **Settings → System → Repairs**, so you do not have to watch the logs. Each one disappears by itself once the condition is resolved.
