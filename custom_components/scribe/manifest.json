@@ -14,5 +14,5 @@
         "asyncpg>=0.28.0"
     ],
     "single_config_entry": true,
-    "version": "3.8.0"
+    "version": "4.0.0rc1"
 }
