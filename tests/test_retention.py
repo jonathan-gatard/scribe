@@ -437,3 +437,32 @@ async def test_compression_policy_untouched_when_unchanged(
     await writer._apply_compression_policy("states_raw")
 
     assert not [s for s in _executed(mock_db_connection) if "compression_policy" in s]
+
+
+@pytest.mark.asyncio
+async def test_yaml_can_move_scribe_to_another_database(hass):
+    """`db_url` follows the same precedence as everything else.
+
+    The config entry keeps the URL it was created with, so when it was consulted
+    first, editing the line in `configuration.yaml` did nothing at all — the one
+    key a YAML edit could not change.
+    """
+    cfg = await _writer_config(
+        hass,
+        entry_data={"db_url": "postgresql://u:p@old-host/scribe"},
+        entry_options={},
+        yaml_config={"db_url": "postgresql://u:p@new-host/scribe"},
+    )
+    assert cfg.db_url == "postgresql://u:p@new-host/scribe"
+
+
+@pytest.mark.asyncio
+async def test_entry_url_is_used_when_yaml_does_not_name_one(hass):
+    """A UI-only install has no YAML block, and must keep working."""
+    cfg = await _writer_config(
+        hass,
+        entry_data={"db_url": "postgresql://u:p@from-ui/scribe"},
+        entry_options={},
+        yaml_config={},
+    )
+    assert cfg.db_url == "postgresql://u:p@from-ui/scribe"

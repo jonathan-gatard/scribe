@@ -709,11 +709,18 @@ class _Settings:
 
 
 def _resolve_db_url(config: dict, yaml_config: dict) -> str | None:
-    """Find the connection URL, rebuilding it from the pre-3.x pieces if needed."""
-    if CONF_DB_URL in config:
-        return config[CONF_DB_URL]
+    """Find the connection URL, rebuilding it from the pre-3.x pieces if needed.
+
+    YAML first, like every other setting. The config entry was checked first
+    until 4.0, which made `db_url` the one key a `configuration.yaml` edit could
+    not change: the entry keeps the URL it was created with, so editing the
+    line did nothing and moving Scribe to another database meant deleting the
+    integration and setting it up again.
+    """
     if CONF_DB_URL in yaml_config:
         return yaml_config[CONF_DB_URL]
+    if CONF_DB_URL in config:
+        return config[CONF_DB_URL]
 
     db_user = config.get("db_user") or yaml_config.get("db_user")
     db_pass = config.get("db_password") or yaml_config.get("db_password")
