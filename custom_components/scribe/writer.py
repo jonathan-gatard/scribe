@@ -58,7 +58,7 @@ _LOGGER = logging.getLogger(__name__)
 
 def _create_ssl_context(
     ssl_root_cert=None, ssl_cert_file=None, ssl_key_file=None
-) -> ssl.SSLContext:
+) -> tuple[ssl.SSLContext, list[str]]:
     """Create and configure SSL context in executor thread.
 
     asyncpg calls ssl.load_cert_chain() synchronously when establishing SSL connections.
@@ -68,16 +68,17 @@ def _create_ssl_context(
     This function must be run via hass.async_add_executor_job().
 
     Returns:
-        Configured SSLContext ready to be used by asyncpg
+        (context, problems) — `problems` lists what was configured but could
+        not be applied, so the caller can say so instead of connecting with
+        less protection than the user asked for.
     """
     _LOGGER.debug(
         "[writer._create_ssl_context] Creating SSL context in executor thread..."
     )
 
-    # Create SSL context
+    problems: list[str] = []
     ssl_context = ssl.create_default_context()
 
-    # Load system CA certificates
     try:
         ssl_context.load_default_certs()
         _LOGGER.debug("[writer._create_ssl_context] Loaded system CA certificates")
@@ -88,9 +89,19 @@ def _create_ssl_context(
             type(e).__name__,
         )
 
-    # Load PostgreSQL client certificates
+    # Client certificate (mutual TLS). Failing to load it does not stop the
+    # connection — it just makes it an ordinary one, which is why it is
+    # reported rather than logged: the server may well accept it, and nobody
+    # would learn that the client authentication they configured is not
+    # happening.
     if ssl_cert_file:
-        if Path(ssl_cert_file).exists():
+        if not Path(ssl_cert_file).exists():
+            _LOGGER.warning(
+                "[writer._create_ssl_context] SSL cert file configured but not found: %s — connection will proceed without client certificate",
+                ssl_cert_file,
+            )
+            problems.append(f"client certificate not found: {ssl_cert_file}")
+        else:
             try:
                 _LOGGER.debug(
                     "[writer._create_ssl_context] Loading PostgreSQL client certificate from %s (key=%s)",
@@ -107,15 +118,23 @@ def _create_ssl_context(
                     type(e).__name__,
                     exc_info=True,
                 )
-        else:
-            _LOGGER.warning(
-                "[writer._create_ssl_context] SSL cert file configured but not found: %s — connection will proceed without client certificate",
-                ssl_cert_file,
-            )
+                problems.append(
+                    f"client certificate {ssl_cert_file} could not be loaded: "
+                    f"{e} ({type(e).__name__})"
+                )
 
-    # Load CA certificate for server verification
+    # CA certificate for verifying the server. Note that failing to load a
+    # private CA does not disable verification — the system CAs above are still
+    # in force — so the usual outcome is a connection that refuses to establish
+    # at all, which is a much better failure than a silent one.
     if ssl_root_cert:
-        if Path(ssl_root_cert).exists():
+        if not Path(ssl_root_cert).exists():
+            _LOGGER.warning(
+                "[writer._create_ssl_context] SSL root cert configured but not found: %s — falling back to the system CA store",
+                ssl_root_cert,
+            )
+            problems.append(f"CA certificate not found: {ssl_root_cert}")
+        else:
             try:
                 _LOGGER.debug(
                     "[writer._create_ssl_context] Loading CA certificate from %s",
@@ -130,14 +149,13 @@ def _create_ssl_context(
                     type(e).__name__,
                     exc_info=True,
                 )
-        else:
-            _LOGGER.warning(
-                "[writer._create_ssl_context] SSL root cert configured but not found: %s — server certificate will not be verified",
-                ssl_root_cert,
-            )
+                problems.append(
+                    f"CA certificate {ssl_root_cert} could not be loaded: "
+                    f"{e} ({type(e).__name__})"
+                )
 
     _LOGGER.debug("[writer._create_ssl_context] SSL context created successfully")
-    return ssl_context
+    return ssl_context, problems
 
 
 def _normalize_dsn(db_url: str) -> str:
@@ -177,6 +195,7 @@ ISSUE_BUFFER_FULL = "buffer_full"
 ISSUE_DATA_DROPPED = "data_dropped"
 ISSUE_NO_TIMESCALEDB = "no_timescaledb"
 ISSUE_SCHEMA_FAILED = "schema_failed"
+ISSUE_SSL_DEGRADED = "ssl_degraded"
 ISSUE_VIEW_FAILED = "view_failed"
 ISSUE_LEGACY_SCHEMA = "legacy_schema"
 # Per-table: states and events can degrade independently.
@@ -598,12 +617,28 @@ class ScribeWriter:
             return str(path)
 
         _LOGGER.debug("[writer.start] SSL enabled, creating SSL context in executor...")
-        return await self.hass.async_add_executor_job(
+        context, problems = await self.hass.async_add_executor_job(
             _create_ssl_context,
             resolve_path(self.ssl_root_cert),
             resolve_path(self.ssl_cert_file),
             resolve_path(self.ssl_key_file),
         )
+
+        if problems:
+            # The connection will still be encrypted; what the user configured
+            # on top of that is not in force. Saying so is the whole point —
+            # a client certificate that never loads looks exactly like one that
+            # works, right up until an audit.
+            self._report_issue(
+                ISSUE_SSL_DEGRADED,
+                "ssl_degraded",
+                {"problems": "; ".join(problems)},
+                severity=ir.IssueSeverity.WARNING,
+            )
+        else:
+            self._clear_issue(ISSUE_SSL_DEGRADED)
+
+        return context
 
     async def start(self):
         """Start the writer task."""

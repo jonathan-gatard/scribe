@@ -166,6 +166,10 @@
             "title": "Scribe could not apply the retention policy on {table}",
             "description": "Scribe was asked to delete data older than **{retention}** from `{table}`, and setting that policy failed with: {error}\n\nNothing was deleted and nothing is being deleted — the table keeps growing, and its history is intact. Retention is a TimescaleDB feature: it needs the extension installed on this database, `{table}` to be a hypertable, and the Scribe database user to own it.\n\nFix the cause, or clear the retention field in Scribe's options, then restart Home Assistant. This issue disappears once the policy is in place."
         },
+        "ssl_degraded": {
+            "title": "Scribe's TLS configuration is not fully in force",
+            "description": "Scribe is connecting to its database over TLS, but part of what you configured could not be applied: {problems}\n\nThe connection is still encrypted, and the server's certificate is still checked against the system CA store. What is missing is the extra protection you asked for — most often a client certificate, so Scribe authenticates as an ordinary client instead of the one you provisioned, which looks identical from the outside until someone audits it.\n\nCheck that the paths are right and readable by Home Assistant (relative paths are resolved from the configuration directory), then restart. This issue disappears once every configured file loads."
+        },
         "schema_failed": {
             "title": "Scribe could not create its tables",
             "description": "Scribe reached `{host}` but failed while building its schema, with: {error}\n\nWhatever it could not create is simply missing: on a new database that means **nothing is being recorded at all**, and on an existing one recording may be partial — some tables kept up to date, others stale or absent. The most common cause is privileges: the database user Scribe connects with needs to create tables in this database, and to own the ones it already created.\n\nGrant it those rights (or point Scribe at a database it owns) and restart Home Assistant. This issue disappears once the schema is in place."

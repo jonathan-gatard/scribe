@@ -254,6 +254,7 @@ async def test_every_issue_has_translations(hass):
         "view_failed",
         "no_hypertable",
         "no_compression",
+        "ssl_degraded",
         "rename_refused_live",
         "rename_refused_unprovable",
         "rename_failed",
