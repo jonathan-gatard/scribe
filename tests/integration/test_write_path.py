@@ -292,3 +292,35 @@ async def test_queue_is_dropped_when_buffering_is_disabled(hass, clean_db):
     finally:
         w._pool = None  # already closed; keep stop() from touching it
         await w.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_null_byte_in_an_attribute_key_does_not_stall_recording(writer, db):
+    """PostgreSQL refuses \\u0000 in a jsonb key exactly as in a value.
+
+    Values were cleaned before reaching the codec; keys were not, so one
+    attribute key carrying a null byte failed the COPY, which failed the whole
+    batch — and since the batch is re-buffered and retried, it failed forever.
+    Same permanent stall as the duplicate timestamps fixed in 3.8.
+    """
+    writer._queue.append(
+        {
+            "type": "state",
+            "time": BASE_TIME,
+            "entity_id": "sensor.hostile_attrs",
+            "state": "on",
+            "value": 1.0,
+            "attributes": {"na\0me": "value", (1, 2): "tuple key"},
+        }
+    )
+
+    await writer._flush()
+
+    assert len(writer._queue) == 0, "the batch must not be stuck in the buffer"
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT attributes FROM states WHERE entity_id = 'sensor.hostile_attrs'"
+        )
+    assert row is not None
+    assert row["attributes"]["name"] == "value"
+    assert row["attributes"]["(1, 2)"] == "tuple key"

@@ -391,6 +391,21 @@ _RENAME_ENTITY_SQL = "UPDATE entities SET entity_id = $1 WHERE entity_id = $2"
 _NOT_SCALAR = object()
 
 
+def _sanitize_key(key) -> str:
+    """Make a mapping key something jsonb can actually hold.
+
+    Two ways an attribute key kills a write, both fatal to the *whole* batch
+    and both permanent — the batch is re-buffered and fails again on every
+    retry. A null byte, which PostgreSQL refuses in a key exactly as in a
+    value ("\\u0000 cannot be converted to text"), and a key that is not a
+    string — a tuple, say — which `json.dumps` refuses outright. Values were
+    already cleaned before reaching the codec; keys were not.
+    """
+    if not isinstance(key, str):
+        key = str(key)
+    return key.replace("\0", "")
+
+
 def _validate_interval(value: str) -> str:
     """Validate an interval string before it reaches SQL.
 
@@ -672,9 +687,9 @@ class ScribeWriter:
                     "jsonb",
                     encoder=lambda x: (
                         b"\x01"
-                        + json.dumps(
-                            x, cls=JSONEncoder, default=_json_default
-                        ).encode("utf-8")
+                        + json.dumps(x, cls=JSONEncoder, default=_json_default).encode(
+                            "utf-8"
+                        )
                     ),
                     decoder=lambda x: json.loads(x[1:].decode("utf-8")),
                     schema="pg_catalog",
@@ -2151,7 +2166,10 @@ class ScribeWriter:
             # walking, and recursing further risks the stack.
             if depth <= 100:
                 if isinstance(obj, dict):
-                    return {k: self._sanitize_obj(v, depth + 1) for k, v in obj.items()}
+                    return {
+                        _sanitize_key(k): self._sanitize_obj(v, depth + 1)
+                        for k, v in obj.items()
+                    }
                 if isinstance(obj, (list, tuple)):
                     values = [self._sanitize_obj(v, depth + 1) for v in obj]
                     return tuple(values) if isinstance(obj, tuple) else values
