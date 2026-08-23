@@ -1,13 +1,4 @@
-> [!WARNING]
-> # ⚠️ v3.x.x Database Schema Migration
-> 
-> **Version 3.x.x introduces a major database schema optimization (`states_raw` table).**
->
-> *This only applies if you are upgrading from a previous version of Scribe*
-> 
-> *The automated background migration ran perfectly on several production setup without any issues.*
-> **However, it is strongly recommended to perform a database backup before updating.**
->
+**🇬🇧 English** · [🇫🇷 Français](README.fr.md) · [🇪🇸 Español](README.es.md) · [🇩🇪 Deutsch](README.de.md)
 
 # Scribe - High-Performance TimescaleDB Integration for Home Assistant
 
@@ -25,6 +16,8 @@ An explanation of the data structure how to query can be found here: [Data struc
 - [Features](#features)
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [Storage tuning](#storage-tuning)
+- [Retention](#retention)
 - [Migration](#migration)
 - [Statistics Sensors](#statistics-sensors)
 - [Services](#services)
@@ -45,7 +38,7 @@ An explanation of the data structure how to query can be found here: [Data struc
 - 🏠 **Area & Device Context**: Automatically syncs areas and devices to `areas` and `devices` tables.
 - 🔌 **Integration Info**: Automatically syncs integration config entries to the `integrations` table.
 - 🎯 **Smart Filtering**: Include/exclude by domain, entity, entity glob, or attribute.
-- ✅ **100% Test Coverage**: Robust and reliable.
+- ✅ **Tested against a real database**: ~90% line coverage, and an end-to-end suite that drives the integration against a real TimescaleDB rather than mocks.
 
 ## Installation
 
@@ -66,6 +59,15 @@ An explanation of the data structure how to query can be found here: [Data struc
 ### 2. Database Setup
 
 You need a running TimescaleDB instance. I recommend PostgreSQL 17 or 18.
+
+> [!IMPORTANT]
+> **The TimescaleDB extension is required.** Chunking, compression, retention
+> and the size sensors are the whole point of Scribe, and none of them exist on
+> plain PostgreSQL. A new installation is refused if the extension is missing —
+> although Scribe enables it for you when the server has it available and your
+> database user holds `CREATE` on the database, which the setup below grants.
+> Installations that already run without it keep recording and are told what
+> they are missing through a Repairs issue.
 
 #### Option A: Home Assistant OS (Add-on)
 
@@ -115,6 +117,8 @@ scribe:
   db_ssl: false
   chunk_time_interval: "7 days"
   compress_after: "7 days"
+  retention_states: ""   # empty = keep forever
+  retention_events: ""   # empty = keep forever
   record_states: true
   record_events: false
   batch_size: 500
@@ -151,8 +155,10 @@ scribe:
 | :--- | :--- |
 | `db_url` | **Required.** The connection string for your TimescaleDB database. |
 | `db_ssl` | Enable SSL/TLS for the database connection. |
-| `chunk_time_interval` | The duration of each data chunk in TimescaleDB. |
-| `compress_after` | How old data should be before it is compressed. |
+| `chunk_time_interval` | How much time each chunk of the table covers. See [Storage tuning](#storage-tuning). |
+| `compress_after` | Chunks older than this are compressed. See [Storage tuning](#storage-tuning). |
+| `retention_states` | **Deletes** state history older than this interval (e.g. `"365 days"`). Empty (default) keeps everything. See [Retention](#retention). |
+| `retention_events` | **Deletes** event history older than this interval. Empty (default) keeps everything. See [Retention](#retention). |
 | `record_states` | Whether to record state changes. |
 | `record_events` | Whether to record events. |
 | `batch_size` | Number of items to buffer before writing to the database. |
@@ -179,7 +185,138 @@ scribe:
 | `enable_table_users` | Enable creation and sync of the `users` table. |
 </details>
 
+## Storage tuning
+
+Scribe stores history in TimescaleDB **hypertables**: a table that looks and
+queries like any other, but is physically split into **chunks**, each covering a
+slice of time. Almost everything about Scribe's disk usage and query speed comes
+down to that split — a query for last week reads only the chunks that overlap
+last week, compression works one chunk at a time, and [retention](#retention)
+deletes whole chunks rather than individual rows.
+
+Two settings control it, both in YAML and in the UI under **Configure →
+Advanced (TimescaleDB & SSL)**:
+
+### `chunk_time_interval` (default `7 days`)
+
+How much time one chunk covers.
+
+- **Smaller chunks** (e.g. `1 day`) mean more, smaller files: finer-grained
+  retention, and queries over short recent windows touch less data. Past a
+  point, a query spanning months has to open hundreds of chunks.
+- **Larger chunks** (e.g. `30 days`) mean fewer, bigger files: better for long
+  historical queries, worse for memory — TimescaleDB's own guidance is that the
+  chunks you write to should comfortably fit in memory alongside their indexes,
+  so an oversized chunk on a small machine hurts write performance.
+
+The default suits a typical Home Assistant instance. Consider `1 day` if you
+record thousands of entities, and only then.
+
+> **Changing it affects new chunks only.** Chunks already written keep the span
+> they were created with, and nothing is rewritten or moved — you will simply
+> have a mix of old and new spans, which TimescaleDB handles natively.
+
+### `compress_after` (default `7 days`)
+
+How old a chunk must be before TimescaleDB compresses it. Compression is
+typically a large reduction in size for this kind of data (many repeated
+`entity_id`s and slowly-changing values), which is why it is on by default.
+
+Compressed chunks are still fully queryable — the `states` view does not care.
+Writing *into* one is slower, which is why compression only kicks in once a
+chunk is old enough to be effectively finished. Keep `compress_after` comfortably
+above the age of the data you still write to; states arriving out of order (a
+backfill, a migration script) land in old chunks.
+
+> **Changing it takes effect on the next restart**, and chunks already
+> compressed stay compressed — the setting only decides when the *next* ones
+> are.
+
+### How the three settings fit together
+
+| Setting | What it does | Reversible |
+| :--- | :--- | :--- |
+| `chunk_time_interval` | How much time one chunk covers | Yes — future chunks only |
+| `compress_after` | When a chunk gets compressed | Yes |
+| `retention_states` / `retention_events` | When a chunk gets **deleted** | **No** |
+
+They apply in that order to the same chunk over its life: written → compressed →
+dropped. Two consequences worth knowing:
+
+- If `compress_after` is greater than your retention, chunks are deleted before
+  they are ever compressed, and compression does nothing.
+- Retention deletes whole chunks, so your real retention window is the interval
+  you set *plus* up to one `chunk_time_interval`. Smaller chunks make it tighter.
+
+If the size and chunk statistics sensors are enabled (`enable_stats_size`,
+`enable_stats_chunk`), they report exactly what these settings produce: chunk
+counts, compressed and uncompressed sizes, and the compression ratio.
+
+## Retention
+
+By default Scribe keeps everything, forever. If you only want to store a bounded
+window — because you aggregate the raw history elsewhere, or simply to cap disk
+usage — set a retention interval and TimescaleDB will drop chunks older than it:
+
+```yaml
+scribe:
+  db_url: postgresql://scribe:password@192.168.1.10:5432/scribe
+  retention_states: "365 days"
+  retention_events: "30 days"
+```
+
+Both are also in the UI under **Configure → Advanced (TimescaleDB & SSL)**.
+
+> [!WARNING]
+> Retention **deletes data permanently**. There is no undo and no trip to a bin:
+> once a chunk falls outside the window it is dropped, and only a backup brings
+> it back. States and events are configured separately so you can expire noisy
+> events while keeping state history.
+
+Details worth knowing:
+
+- **No setting means "keep forever", always.** Clearing the field in the UI and
+  deleting the line from `configuration.yaml` both remove the policy — a value
+  Scribe once imported from YAML is never allowed to outlive the line that set
+  it.
+- **Scribe owns the retention policy on its own tables.** Emptying the field
+  removes the policy — including one you created by hand with
+  `add_retention_policy()`, which is the only way clearing the setting in the UI
+  can actually stop the deletions.
+- **It starts immediately.** TimescaleDB runs the policy within seconds of it
+  being created, not at the next daily interval — everything outside the window
+  is gone on the first run, right after the restart that enabled it.
+- **Deletion happens by chunk, not by row.** A chunk is dropped only once *all*
+  of its rows are older than the interval, so with the default `chunk_time_interval`
+  of 7 days you keep up to a week more than you asked for. That is what makes
+  retention nearly free: it drops files rather than deleting rows.
+- **Only the history is deleted.** The `entities` table and the other metadata
+  tables are not touched, so an entity whose history has fully expired still
+  resolves.
+- **TimescaleDB is required** — it is the extension that runs the policy. On
+  plain PostgreSQL, setting a retention interval raises a Repairs issue instead
+  of silently doing nothing.
+- Accepted values are plain intervals: `30 days`, `6 months`, `1 year`.
+  Anything else is refused with an error rather than sent to the database.
+
 ## Migration
+
+### Upgrading from Scribe 2.x
+
+Scribe 3.0 replaced the `states` table with `states_raw` plus a compatibility
+view, and gave `entities` a numeric primary key. The conversion of an old
+database was carried by 3.x and **removed in 3.9**.
+
+If your database still has a `states` *table* (rather than a view), a
+`states_legacy` table, or an `entities` table without an `id` column, Scribe
+stops at startup, records nothing, and raises a Repairs issue — without
+renaming, creating or deleting anything. Install **Scribe 3.8**, let Home
+Assistant run until the logs report the migration finished (around fifteen
+minutes on a large database), then update again.
+
+Fresh installs and any database created by 3.x are unaffected.
+
+### Backfilling from other sources
 
 Scribe provided helper scripts to backfill data from various sources.
 
@@ -364,8 +501,13 @@ Scribe reports problems it cannot fix on its own in **Settings → System → Re
 | Cannot write to its database | Several consecutive writes failed. Data is held in memory and written on recovery — unless Home Assistant restarts first. |
 | Buffer is full | Writes failed long enough to saturate the buffer; the oldest records are now being discarded. Fix the database, or raise `max_queue_size`. |
 | Discarding records | A write failed while buffering is disabled, so records were dropped immediately. Enable buffering to survive short outages. |
+| Could not create its tables | Scribe reached the database but failed to build its schema, usually a privileges problem. On a new database nothing is recorded at all. |
+| Could not create the `states` view | History is recorded, but the view every query goes through is missing — the history looks empty even though nothing is lost. |
+| `states_raw` / `events` is not a hypertable | TimescaleDB is installed but the table was never converted (a common outcome when the extension is added *after* the tables filled up). Chunking, compression and retention all do nothing. |
+| `states_raw` / `events` is never compressed | The table is a hypertable but has no compression policy, so it keeps its full uncompressed size. |
 | TimescaleDB is not installed | History is recorded, but chunking and compression are unavailable, so the database grows much faster and the size sensors stay empty. |
-| Could not finish migrating old history | The legacy `states` table was not fully converted. Your data is safe in `states_legacy`, but Scribe cannot see it yet. |
+| Database predates version 3.0 | The database still uses the pre-3.0 layout, which this version cannot convert. Nothing is recorded and nothing was modified — install Scribe 3.8 to convert it, then update again. |
+| Could not apply the retention policy | You asked Scribe to delete data older than an interval and the policy could not be created. Nothing was deleted, and nothing is being deleted — the table keeps growing. |
 | Entity rename was not applied | A rename collided with an existing row in the database. The entity's history is split across the two IDs. |
 
 ### High memory usage
