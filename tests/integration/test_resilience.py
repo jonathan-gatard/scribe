@@ -347,3 +347,42 @@ async def test_a_full_buffer_during_an_outage_is_reported(hass, clean_db):
         assert ir.async_get(hass).async_get_issue("scribe", "buffer_full") is not None
     finally:
         await w.stop()
+
+
+@pytest.mark.asyncio
+async def test_states_are_kept_when_their_entity_cannot_be_registered(writer, db):
+    """Resolving an entity is part of writing it, not a best-effort extra.
+
+    `_ensure_metadata_ids` swallowed its errors, so a failure to register left
+    every state of an unknown entity skipped as "unknown entity_id" while the
+    flush reported success — the batch was cleared and those states were gone.
+    """
+    # The real condition, not a stubbed method: the table is briefly out of
+    # reach, exactly as it would be during a failover or a permissions change.
+    async with db.acquire() as conn:
+        await conn.execute("ALTER TABLE entities RENAME TO entities_away")
+    try:
+        writer._queue.append(
+            {
+                "type": "state",
+                "time": BASE_TIME,
+                "entity_id": "sensor.brand_new",
+                "state": "on",
+                "value": 1.0,
+                "attributes": {},
+            }
+        )
+        await writer._flush()
+        assert len(writer._queue) == 1, "the state must be held for the next attempt"
+    finally:
+        async with db.acquire() as conn:
+            await conn.execute("ALTER TABLE entities_away RENAME TO entities")
+
+    await writer._flush()
+    async with db.acquire() as conn:
+        assert (
+            await conn.fetchval(
+                "SELECT count(*) FROM states WHERE entity_id = 'sensor.brand_new'"
+            )
+            == 1
+        )

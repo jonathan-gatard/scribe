@@ -902,6 +902,13 @@ class ScribeWriter:
                 type(e).__name__,
                 exc_info=True,
             )
+            # Raised, not swallowed: resolving an entity is part of writing its
+            # state, not a best-effort extra. Returning here left every state
+            # of an unregistered entity skipped as "unknown entity_id" while
+            # the flush reported success — the batch was cleared and those
+            # states were gone. The caller re-buffers instead, and the next
+            # attempt registers them.
+            raise
 
     async def stop(self):
         """Stop the writer task."""
