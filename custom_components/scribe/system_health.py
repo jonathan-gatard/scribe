@@ -45,6 +45,7 @@ async def system_health_info(hass: HomeAssistant) -> dict[str, Any]:
         return info
 
     info["database"] = _safe_target(writer.db_url)
+    info["schema"] = writer.active_schema
     info["connected"] = writer._connected
     info["timescaledb"] = writer._has_timescaledb
     info["buffered_items"] = len(writer._queue)

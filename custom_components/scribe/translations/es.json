@@ -103,6 +103,7 @@
             "advanced": {
                 "title": "Avanzado (TimescaleDB y SSL)",
                 "data": {
+                    "db_schema": "Esquema de la base de datos",
                     "chunk_time_interval": "Chunk time interval",
                     "compress_after": "Compress after",
                     "db_ssl": "Enable SSL",
@@ -113,6 +114,7 @@
                     "retention_events": "Eliminar eventos anteriores a"
                 },
                 "data_description": {
+                    "db_schema": "Déjelo vacío para usar aquello a lo que ya apunta la conexión (normalmente `public`). Indique un nombre y Scribe crea ese esquema y registra en él: sus tablas, sus hipertablas, sus políticas. Solo van allí los datos nuevos: el historial ya escrito en otro sitio no se mueve, y Scribe no registra nada si el esquema es inaccesible.",
                     "chunk_time_interval": "TimescaleDB chunk interval",
                     "compress_after": "Compress chunks older than this interval",
                     "db_ssl": "Require an SSL/TLS connection",
@@ -126,7 +128,8 @@
         },
         "error": {
             "must_record_something": "Debe habilitarse al menos 'Grabar cambios de estado' o 'Grabar eventos'.",
-            "invalid_interval": "La retención debe ser un intervalo como '365 days', '6 months' o '1 year' — déjalo vacío para conservarlo todo."
+            "invalid_interval": "La retención debe ser un intervalo como '365 days', '6 months' o '1 year' — déjalo vacío para conservarlo todo.",
+            "invalid_schema": "Un nombre de esquema solo puede contener letras, dígitos y guiones bajos, y no puede empezar por un dígito — déjelo vacío para usar el esquema de la conexión."
         }
     },
     "issues": {
@@ -189,6 +192,10 @@
         "legacy_schema": {
             "title": "La base de datos de Scribe es anterior a la versión 3.0",
             "description": "La base todavía contiene `{relation}`, del esquema anterior a 3.0, y esta versión de Scribe no sabe convertirlo. **No se está registrando nada** — y tampoco se ha renombrado, creado ni borrado nada, así que tu historial está exactamente donde estaba.\n\nPara convertirlo: instala Scribe **{version}** (en HACS, elige esa versión explícitamente), arranca Home Assistant y déjalo en marcha hasta que los registros indiquen que la migración terminó — unos quince minutos en una base grande — y después actualiza Scribe de nuevo. El registro se reanuda en el siguiente reinicio y este aviso desaparece.\n\nSi prefieres empezar con una base limpia, elimina `{relation}` (esto borra el historial antiguo) y reinicia Home Assistant."
+        },
+        "schema_unavailable": {
+            "title": "Scribe no puede alcanzar el esquema indicado",
+            "description": "Scribe está configurado para registrar en el esquema `{schema}` de `{host}`, pero la sesión acaba en `{fallback}`: el esquema no existe, o el usuario de base de datos de Scribe no tiene permisos sobre él.\n\n**No se está registrando nada.** PostgreSQL no falla ante un esquema ausente: pasa en silencio al siguiente del search path. Continuar habría escrito todo su historial en `{fallback}` mientras la interfaz seguía mostrando `{schema}`. Scribe se detiene en lugar de llenar el esquema equivocado.\n\nO bien créelo y conceda los permisos:\n\n```sql\nCREATE SCHEMA IF NOT EXISTS {schema};\nGRANT USAGE, CREATE ON SCHEMA {schema} TO scribe;\n```\n\no bien vacíe el campo en Configurar → Avanzado. Después reinicie Home Assistant: este problema desaparece en cuanto Scribe registra en el esquema indicado."
         }
     }
 }

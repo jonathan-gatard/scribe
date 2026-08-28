@@ -38,6 +38,7 @@ from .const import (
     DEFAULT_BUFFER_ON_FAILURE,
     DEFAULT_CHUNK_TIME_INTERVAL,
     DEFAULT_COMPRESS_AFTER,
+    DEFAULT_DB_SCHEMA,
     DEFAULT_DB_SSL,
     DEFAULT_ENABLE_AREAS,
     DEFAULT_ENABLE_DEVICES,
@@ -199,6 +200,7 @@ ISSUE_SCHEMA_FAILED = "schema_failed"
 ISSUE_SSL_DEGRADED = "ssl_degraded"
 ISSUE_VIEW_FAILED = "view_failed"
 ISSUE_LEGACY_SCHEMA = "legacy_schema"
+ISSUE_SCHEMA_UNAVAILABLE = "schema_unavailable"
 # Per-table: states and events can degrade independently.
 ISSUE_NO_HYPERTABLE = "no_hypertable_{table}"
 ISSUE_NO_COMPRESSION = "no_compression_{table}"
@@ -249,6 +251,11 @@ def _affected_rows(status: str) -> int:
         return -1
 
 
+# An unquoted SQL identifier. Table and schema names reach SQL through
+# f-strings, so both are held to it rather than escaped at each call site.
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
 def _validate_table_name(name: str) -> str:
     """Validate that a table name contains only safe characters.
 
@@ -257,9 +264,27 @@ def _validate_table_name(name: str) -> str:
 
     Raises ValueError if the name is invalid.
     """
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+    if not _IDENTIFIER_RE.fullmatch(name):
         raise ValueError(
             f"Invalid table name '{name}': only letters, digits, and underscores are allowed"
+        )
+    return name
+
+
+def _validate_schema_name(name: str) -> str:
+    """Validate a PostgreSQL schema name, empty meaning "leave search_path alone".
+
+    Same rule as a table name: the value is quoted into `SET search_path` and
+    `CREATE SCHEMA`, both of which are DDL that cannot take a parameter.
+
+    Raises ValueError if the name is invalid.
+    """
+    name = (name or "").strip()
+    if not name:
+        return ""
+    if not _IDENTIFIER_RE.fullmatch(name):
+        raise ValueError(
+            f"Invalid schema name '{name}': only letters, digits, and underscores are allowed"
         )
     return name
 
@@ -430,6 +455,7 @@ class WriterConfig:
     """
 
     db_url: str
+    db_schema: str = DEFAULT_DB_SCHEMA
     chunk_interval: str = DEFAULT_CHUNK_TIME_INTERVAL
     compress_after: str = DEFAULT_COMPRESS_AFTER
     retention_states: str = DEFAULT_RETENTION_STATES
@@ -470,6 +496,16 @@ class ScribeWriter:
 
         # Normalize DSN - strip SQLAlchemy dialect prefix if present
         self.db_url = _normalize_dsn(config.db_url)
+
+        # Empty = use whatever the connection already resolves to. Non-empty =
+        # Scribe creates the schema and puts it first on the session's
+        # search_path, so every unqualified name below lands in it.
+        self.db_schema = _validate_schema_name(config.db_schema)
+        # What the catalog lookups filter on: the configured schema once it is
+        # in place, otherwise whatever `current_schema()` reports. Resolved by
+        # `_ensure_schema`; `public` until then, and on a database that never
+        # answered.
+        self.active_schema = self.db_schema or "public"
 
         self.chunk_interval = config.chunk_interval
         self.compress_after = config.compress_after
@@ -527,6 +563,12 @@ class ScribeWriter:
         # Set when the database predates Scribe 3.0: nothing is recorded until
         # it is converted, so there is no point queuing anything either.
         self._legacy_blocked = False
+        # Set when a configured `db_schema` could not be reached. Recording is
+        # refused rather than silently redirected: a search_path entry that
+        # does not exist is not an error in PostgreSQL, it just falls through
+        # to the next one — so carrying on would write the history into
+        # `public` while the user believes it is going somewhere else.
+        self._schema_blocked = False
 
         # asyncpg connection pool (replaces SQLAlchemy engine)
         self._pool: asyncpg.Pool = None
@@ -543,6 +585,16 @@ class ScribeWriter:
     # ------------------------------------------------------------------
     # Internal helpers: acquire connection with/without transaction
     # ------------------------------------------------------------------
+
+    def _qualified(self, relation: str) -> str:
+        """`schema.relation`, for the statements that must not follow search_path.
+
+        Creating and reading unqualified is exactly what `search_path` is for.
+        *Dropping* is not: DROP resolves across the whole path, so an install
+        recording into its own schema would find — and remove — the `states`
+        view or the legacy index of another install sitting in `public`.
+        """
+        return f'"{self.active_schema}"."{relation}"'
 
     async def _execute(self, sql: str, *args):
         """Execute a statement (no return value needed) using a pooled connection."""
@@ -665,6 +717,25 @@ class ScribeWriter:
 
         return context
 
+    def _server_settings(self) -> dict[str, str] | None:
+        """Session settings sent in the connection's startup packet.
+
+        `search_path` has to go here rather than in the pool's `init` hook:
+        asyncpg resets a connection when it is released back to the pool, and
+        `RESET ALL` takes any `SET` issued from `init` with it — the first
+        acquire would use the configured schema and every later one would
+        quietly fall back to `public`. A startup parameter is what `RESET ALL`
+        resets *to*, so it survives.
+
+        `public` stays second on the path because that is where the TimescaleDB
+        extension installs its functions — `create_hypertable`,
+        `add_retention_policy`, `hypertable_detailed_size` — and they have to
+        stay callable from here.
+        """
+        if not self.db_schema:
+            return None
+        return {"search_path": f'"{self.db_schema}", public'}
+
     async def _connect(self) -> bool:
         """Create the connection pool and build the schema. False if unreachable.
 
@@ -703,6 +774,7 @@ class ScribeWriter:
                 max_size=10,
                 ssl=ssl_arg,
                 init=_init_connection,
+                server_settings=self._server_settings(),
             )
             self._engine = self._pool
 
@@ -1009,7 +1081,7 @@ class ScribeWriter:
         We use deque with maxlen, so old items are automatically dropped if full.
         """
         try:
-            if not self._running or self._legacy_blocked:
+            if not self._running or self._legacy_blocked or self._schema_blocked:
                 return
 
             self._queue.append(data)
@@ -1042,6 +1114,71 @@ class ScribeWriter:
     # ------------------------------------------------------------------
     # Database initialisation
     # ------------------------------------------------------------------
+
+    async def _ensure_schema(self, conn) -> bool:
+        """Put the configured schema in place, and prove writes will land in it.
+
+        PostgreSQL does not fail on a `search_path` entry that does not exist —
+        it just moves on to the next one. So a schema Scribe could not create
+        (no CREATE on the database, most often) would not raise anywhere:
+        `search_path` would quietly resolve to `public` and the whole history
+        would be recorded there, under a UI still showing the schema the user
+        asked for. The only reliable check is to ask the session where it
+        actually ended up, which is what `current_schema()` answers.
+
+        Returns False when the configured schema is not the one in effect, and
+        recording is refused. With nothing configured this only resolves the
+        name the catalog lookups filter on, and always returns True.
+        """
+        if not self.db_schema:
+            # A DSN carrying its own `options=-csearch_path=...`, or a role
+            # with a `search_path` default, lands here: the catalog filters
+            # below must follow the connection rather than assume `public`.
+            current = await conn.fetchval("SELECT current_schema()")
+            self.active_schema = current or "public"
+            return True
+
+        try:
+            await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{self.db_schema}"')
+        except Exception as e:
+            # Not fatal on its own: a schema someone else created and granted
+            # USAGE on is perfectly usable without CREATE on the database.
+            # `current_schema()` below is what decides.
+            _LOGGER.debug(
+                "[writer._ensure_schema] Could not create schema '%s': %s (%s)",
+                self.db_schema,
+                e,
+                type(e).__name__,
+            )
+
+        current = await conn.fetchval("SELECT current_schema()")
+        if current != self.db_schema:
+            self._schema_blocked = True
+            self._connected = False
+            _LOGGER.error(
+                "[writer._ensure_schema] Schema '%s' is not usable (writes would "
+                "go to '%s' instead): recording nothing rather than filling the "
+                "wrong schema. Create it and grant USAGE and CREATE on it to the "
+                "Scribe database user, then restart Home Assistant.",
+                self.db_schema,
+                current,
+            )
+            self._report_issue(
+                ISSUE_SCHEMA_UNAVAILABLE,
+                "schema_unavailable",
+                {
+                    "schema": self.db_schema,
+                    "fallback": current or "none",
+                    "host": _safe_target(self.db_url),
+                },
+                severity=ir.IssueSeverity.ERROR,
+            )
+            return False
+
+        self._schema_blocked = False
+        self.active_schema = self.db_schema
+        self._clear_issue(ISSUE_SCHEMA_UNAVAILABLE)
+        return True
 
     async def _create_tables(self, conn):
         """Create every table this configuration asks for, in dependency order."""
@@ -1101,14 +1238,22 @@ class ScribeWriter:
             return
 
         try:
-            # 1. Refuse to touch a pre-3.0 database (see _detect_legacy_schema)
+            # 1. Settle which schema everything below reads and writes. It
+            # comes before the legacy check on purpose: that check looks for
+            # relations by name, and in the wrong schema it would find another
+            # installation's `states` and block on it.
+            async with self._pool.acquire() as conn:
+                if not await self._ensure_schema(conn):
+                    return
+
+            # 2. Refuse to touch a pre-3.0 database (see _detect_legacy_schema)
             async with self._pool.acquire() as conn:
                 legacy = await self._detect_legacy_schema(conn)
             if legacy:
                 self._block_on_legacy_schema(legacy)
                 return
 
-            # 2. Create tables (own transaction)
+            # 3. Create tables (own transaction)
             async with self._pool.acquire() as conn:
                 async with conn.transaction():
                     await self._create_tables(conn)
@@ -1125,6 +1270,7 @@ class ScribeWriter:
             self._clear_issue(ISSUE_SCHEMA_FAILED)
             # The database was converted (or replaced) since the last start.
             self._clear_issue(ISSUE_LEGACY_SCHEMA)
+            self._clear_issue(ISSUE_SCHEMA_UNAVAILABLE)
 
         except Exception as e:
             _LOGGER.error(
@@ -1165,7 +1311,9 @@ class ScribeWriter:
         # is the pre-3.0 history itself.
         if await conn.fetchval(
             "SELECT EXISTS (SELECT FROM information_schema.tables "
-            "WHERE table_name = 'states' AND table_type = 'BASE TABLE')"
+            "WHERE table_schema = $1 AND table_name = 'states' "
+            "AND table_type = 'BASE TABLE')",
+            self.active_schema,
         ):
             return "states"
 
@@ -1173,7 +1321,8 @@ class ScribeWriter:
         # during) the backfill: the history is there, but nothing reads it.
         if await conn.fetchval(
             "SELECT EXISTS (SELECT FROM information_schema.tables "
-            "WHERE table_name = 'states_legacy')"
+            "WHERE table_schema = $1 AND table_name = 'states_legacy')",
+            self.active_schema,
         ):
             return "states_legacy"
 
@@ -1181,10 +1330,13 @@ class ScribeWriter:
         # resolve metadata_ids through that column, so this one is fatal.
         if await conn.fetchval(
             "SELECT EXISTS (SELECT FROM information_schema.tables "
-            "WHERE table_name = 'entities')"
+            "WHERE table_schema = $1 AND table_name = 'entities')",
+            self.active_schema,
         ) and not await conn.fetchval(
             "SELECT EXISTS (SELECT FROM information_schema.columns "
-            "WHERE table_name = 'entities' AND column_name = 'id')"
+            "WHERE table_schema = $1 AND table_name = 'entities' "
+            "AND column_name = 'id')",
+            self.active_schema,
         ):
             return "entities"
 
@@ -1236,15 +1388,16 @@ class ScribeWriter:
         # (metadata_id, time DESC) serves no query the key does not, while
         # doubling the index footprint of the largest table and costing every
         # write. Dropped where earlier versions created it.
-        if await conn.fetchval(
-            "SELECT to_regclass('states_raw_meta_time_idx') IS NOT NULL"
-        ):
+        # Qualified on both sides: unqualified, this would find and drop the
+        # index of an installation recording into another schema.
+        legacy_index = self._qualified("states_raw_meta_time_idx")
+        if await conn.fetchval(f"SELECT to_regclass('{legacy_index}') IS NOT NULL"):
             _LOGGER.info(
                 "[writer._init_states_table] Dropping states_raw_meta_time_idx: "
                 "the primary key on (metadata_id, time) already serves those "
                 "queries, and maintaining both slows every write."
             )
-            await conn.execute("DROP INDEX IF EXISTS states_raw_meta_time_idx")
+            await conn.execute(f"DROP INDEX IF EXISTS {legacy_index}")
 
         # 2. The view is created separately: `_init_states_view` refuses to
         # replace a *table* that happens to carry the configured name.
@@ -1254,8 +1407,11 @@ class ScribeWriter:
         """Create the backward-compatible states view, if the name isn't taken by a table."""
         try:
             is_table = await conn.fetchval(
-                "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1 AND table_type = 'BASE TABLE')",
+                "SELECT EXISTS (SELECT FROM information_schema.tables "
+                "WHERE table_schema = $2 AND table_name = $1 "
+                "AND table_type = 'BASE TABLE')",
                 self.table_name_states,
+                self.active_schema,
             )
             if is_table:
                 _LOGGER.debug(
@@ -1268,9 +1424,10 @@ class ScribeWriter:
                 "[writer._init_states_view] Creating/Replacing view '%s'",
                 self.table_name_states,
             )
-            await conn.execute(f"DROP VIEW IF EXISTS {self.table_name_states} CASCADE;")
+            view = self._qualified(self.table_name_states)
+            await conn.execute(f"DROP VIEW IF EXISTS {view} CASCADE;")
             await conn.execute(f"""
-                CREATE VIEW {self.table_name_states} AS
+                CREATE VIEW {view} AS
                 WITH drive AS MATERIALIZED (
                     -- Only the two columns the view projects. `SELECT *`
                     -- materialized every entity's `capabilities` jsonb as well
@@ -1866,8 +2023,9 @@ class ScribeWriter:
         try:
             is_hypertable = await self._fetchval(
                 "SELECT EXISTS (SELECT FROM timescaledb_information.hypertables "
-                "WHERE hypertable_name = $1)",
+                "WHERE hypertable_name = $1 AND hypertable_schema = $2)",
                 table_name,
+                self.active_schema,
             )
         except Exception as e:
             _LOGGER.debug(
@@ -1900,8 +2058,10 @@ class ScribeWriter:
         try:
             has_policy = await self._fetchval(
                 "SELECT EXISTS (SELECT FROM timescaledb_information.jobs "
-                "WHERE proc_name = 'policy_compression' AND hypertable_name = $1)",
+                "WHERE proc_name = 'policy_compression' "
+                "AND hypertable_name = $1 AND hypertable_schema = $2)",
                 table_name,
+                self.active_schema,
             )
         except Exception as e:
             _LOGGER.debug(
@@ -1948,10 +2108,12 @@ class ScribeWriter:
                 """
                 SELECT time_interval = $2::text::interval
                 FROM timescaledb_information.dimensions
-                WHERE hypertable_name = $1 AND column_name = 'time'
+                WHERE hypertable_name = $1 AND hypertable_schema = $3
+                  AND column_name = 'time'
                 """,
                 table_name,
                 self.chunk_interval,
+                self.active_schema,
             )
             if unchanged is None or unchanged:
                 return
@@ -1991,9 +2153,11 @@ class ScribeWriter:
                 """
                 SELECT config ->> 'compress_after'
                 FROM timescaledb_information.jobs
-                WHERE proc_name = 'policy_compression' AND hypertable_name = $1
+                WHERE proc_name = 'policy_compression'
+                  AND hypertable_name = $1 AND hypertable_schema = $2
                 """,
                 table_name,
+                self.active_schema,
             )
 
             if current is not None:
@@ -2069,9 +2233,10 @@ class ScribeWriter:
                 SELECT config ->> 'drop_after'
                 FROM timescaledb_information.jobs
                 WHERE proc_name = 'policy_retention'
-                  AND hypertable_name = $1
+                  AND hypertable_name = $1 AND hypertable_schema = $2
                 """,
                 table_name,
+                self.active_schema,
             )
 
             if not retention:
@@ -2954,14 +3119,17 @@ class ScribeWriter:
 
     async def _get_states_chunk_stats(self):
         try:
-            row = await self._fetchrow("""
+            row = await self._fetchrow(
+                """
                 SELECT
                     COUNT(*) AS total_chunks,
                     SUM(CASE WHEN is_compressed THEN 1 ELSE 0 END) AS compressed_chunks,
                     SUM(CASE WHEN NOT is_compressed THEN 1 ELSE 0 END) AS uncompressed_chunks
                 FROM timescaledb_information.chunks
-                WHERE hypertable_name = 'states_raw'
-            """)
+                WHERE hypertable_name = 'states_raw' AND hypertable_schema = $1
+            """,
+                self.active_schema,
+            )
             if row:
                 return {
                     "states_total_chunks": row["total_chunks"] or 0,
@@ -3025,14 +3193,18 @@ class ScribeWriter:
 
     async def _get_events_chunk_stats(self):
         try:
-            row = await self._fetchrow(f"""
+            row = await self._fetchrow(
+                f"""
                 SELECT
                     COUNT(*) AS total_chunks,
                     SUM(CASE WHEN is_compressed THEN 1 ELSE 0 END) AS compressed_chunks,
                     SUM(CASE WHEN NOT is_compressed THEN 1 ELSE 0 END) AS uncompressed_chunks
                 FROM timescaledb_information.chunks
                 WHERE hypertable_name = '{self.table_name_events}'
-            """)
+                  AND hypertable_schema = $1
+            """,
+                self.active_schema,
+            )
             if row:
                 return {
                     "events_total_chunks": row["total_chunks"] or 0,

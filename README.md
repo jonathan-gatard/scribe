@@ -18,6 +18,7 @@ An explanation of the data structure how to query can be found here: [Data struc
 - [Configuration](#configuration)
 - [Storage tuning](#storage-tuning)
 - [Retention](#retention)
+- [Database schema](#database-schema)
 - [Migration](#migration)
 - [Statistics Sensors](#statistics-sensors)
 - [Services](#services)
@@ -115,6 +116,7 @@ scribe:
 scribe:
   db_url: postgresql://scribe:password@192.168.1.10:5432/scribe
   db_ssl: false
+  db_schema: ""      # empty = the connection's own schema
   chunk_time_interval: "7 days"
   compress_after: "7 days"
   retention_states: ""   # empty = keep forever
@@ -155,6 +157,7 @@ scribe:
 | :--- | :--- |
 | `db_url` | **Required.** The connection string for your TimescaleDB database. |
 | `db_ssl` | Enable SSL/TLS for the database connection. |
+| `db_schema` | PostgreSQL schema to record into. Empty (default) uses the connection's own schema, normally `public`. See [Database schema](#database-schema). |
 | `chunk_time_interval` | How much time each chunk of the table covers. See [Storage tuning](#storage-tuning). |
 | `compress_after` | Chunks older than this are compressed. See [Storage tuning](#storage-tuning). |
 | `retention_states` | **Deletes** state history older than this interval (e.g. `"365 days"`). Empty (default) keeps everything. See [Retention](#retention). |
@@ -298,6 +301,59 @@ Details worth knowing:
   of silently doing nothing.
 - Accepted values are plain intervals: `30 days`, `6 months`, `1 year`.
   Anything else is refused with an error rather than sent to the database.
+
+## Database schema
+
+By default Scribe records into whatever schema your connection already points
+at — normally `public`. Set `db_schema` and it creates that schema and puts
+everything in it instead: its tables, its views, its hypertables and its
+policies.
+
+```yaml
+scribe:
+  db_url: postgresql://scribe:password@192.168.1.10:5432/scribe
+  db_schema: scribe
+```
+
+It is also in the UI under **Configure → Advanced (TimescaleDB & SSL)**.
+
+This is what you want when Scribe shares a database with something else: your
+own transformed copies of the history, another integration's tables, or a second
+Home Assistant recording into the same server. Each schema is independent —
+separate tables, separate hypertables, separate retention and compression
+policies — and nothing Scribe does in one can reach the other.
+
+Details worth knowing:
+
+- **Only new data goes there.** Setting `db_schema` does not move history that
+  is already recorded; Scribe creates a fresh, empty set of tables in the new
+  schema and starts writing to it. To keep the old history, move it yourself
+  (`ALTER TABLE public.states_raw SET SCHEMA scribe;`) before restarting, or
+  query the old schema directly.
+- **Scribe creates the schema if it can.** The database user needs `CREATE` on
+  the database for that. A schema someone else created works just as well, as
+  long as the user has `USAGE` and `CREATE` on it:
+  ```sql
+  CREATE SCHEMA IF NOT EXISTS scribe;
+  GRANT USAGE, CREATE ON SCHEMA scribe TO scribe;
+  ```
+- **An unreachable schema stops recording.** PostgreSQL does not fail on a
+  missing schema — it quietly falls through to the next entry on the search
+  path — so a typo or a missing grant would otherwise fill `public` while the UI
+  showed something else. Scribe checks where it actually landed and records
+  nothing rather than the wrong thing, with a Repairs issue explaining what to
+  grant.
+- **Your queries do not change.** Scribe puts the schema first on the
+  connection's `search_path`, so `SELECT * FROM states` keeps working through
+  the `scribe.query` service. From anywhere else — Grafana, psql, a dashboard —
+  either qualify the name (`scribe.states`) or set your own `search_path`.
+- **`public` stays on the path.** That is where the TimescaleDB extension
+  installs `create_hypertable()` and friends, which Scribe needs to call.
+- Accepted values are plain identifiers: letters, digits and underscores, not
+  starting with a digit. Leave it empty to keep using the connection's own
+  schema — including one you set yourself with
+  `?options=-csearch_path%3Dmyschema` in the URL, which Scribe follows and does
+  not override.
 
 ## Migration
 
@@ -515,6 +571,7 @@ Scribe reports problems it cannot fix on its own in **Settings → System → Re
 | Buffer is full | Writes failed long enough to saturate the buffer; the oldest records are now being discarded. Fix the database, or raise `max_queue_size`. |
 | Discarding records | A write failed while buffering is disabled, so records were dropped immediately. Enable buffering to survive short outages. |
 | Could not create its tables | Scribe reached the database but failed to build its schema, usually a privileges problem. On a new database nothing is recorded at all. |
+| Cannot reach the schema it was given | The schema in `db_schema` does not exist and could not be created, or the database user has no rights on it. Nothing is recorded — rather than silently filling `public` instead. |
 | Could not create the `states` view | History is recorded, but the view every query goes through is missing — the history looks empty even though nothing is lost. |
 | `states_raw` / `events` is not a hypertable | TimescaleDB is installed but the table was never converted (a common outcome when the extension is added *after* the tables filled up). Chunking, compression and retention all do nothing. |
 | `states_raw` / `events` is never compressed | The table is a hypertable but has no compression policy, so it keeps its full uncompressed size. |

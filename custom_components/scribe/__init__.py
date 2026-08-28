@@ -32,6 +32,7 @@ from homeassistant.helpers.entityfilter import generate_filter
 from .const import (
     DOMAIN,
     CONF_DB_URL,
+    CONF_DB_SCHEMA,
     CONF_DB_SSL,
     CONF_SSL_ROOT_CERT,
     CONF_SSL_CERT_FILE,
@@ -63,6 +64,7 @@ from .const import (
     DEFAULT_COMPRESS_AFTER,
     DEFAULT_RETENTION_STATES,
     DEFAULT_RETENTION_EVENTS,
+    DEFAULT_DB_SCHEMA,
     DEFAULT_DB_SSL,
     DEFAULT_RECORD_STATES,
     DEFAULT_RECORD_EVENTS,
@@ -96,6 +98,7 @@ CONFIG_SCHEMA = vol.Schema(
         DOMAIN: vol.Schema(
             {
                 vol.Required(CONF_DB_URL): cv.string,
+                vol.Optional(CONF_DB_SCHEMA): cv.string,
                 vol.Optional(CONF_DB_SSL): cv.boolean,
                 vol.Optional(CONF_SSL_ROOT_CERT): cv.string,
                 vol.Optional(CONF_SSL_CERT_FILE): cv.string,
@@ -794,6 +797,7 @@ def _resolve_settings(hass: HomeAssistant, entry: ConfigEntry) -> "_Settings | N
     return _Settings(
         writer=WriterConfig(
             db_url=db_url,
+            db_schema=get_config(CONF_DB_SCHEMA, DEFAULT_DB_SCHEMA),
             chunk_interval=get_config(
                 CONF_CHUNK_TIME_INTERVAL, DEFAULT_CHUNK_TIME_INTERVAL
             ),

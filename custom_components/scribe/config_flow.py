@@ -20,10 +20,12 @@ from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
-from .writer import _validate_interval, ensure_timescaledb
+from .writer import _validate_interval, _validate_schema_name, ensure_timescaledb
 from .const import (
     DOMAIN,
     CONF_DB_URL,
+    CONF_DB_SCHEMA,
+    DEFAULT_DB_SCHEMA,
     CONF_DB_SSL,
     DEFAULT_DB_SSL,
     CONF_SSL_ROOT_CERT,
@@ -505,6 +507,15 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
                         _validate_interval(value)
                     except ValueError:
                         errors[key] = "invalid_interval"
+
+            # A schema name reaches `SET search_path` and `CREATE SCHEMA` as
+            # DDL, which takes no parameter — and a name PostgreSQL would not
+            # accept unquoted is refused here rather than at the next start,
+            # where it would only show up as a writer that records nothing.
+            try:
+                _validate_schema_name(user_input.get(CONF_DB_SCHEMA) or "")
+            except ValueError:
+                errors[CONF_DB_SCHEMA] = "invalid_schema"
             if errors:
                 return self.async_show_form(
                     step_id="advanced",
@@ -528,6 +539,9 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
 
         return vol.Schema(
             {
+                vol.Optional(
+                    CONF_DB_SCHEMA, default=g(CONF_DB_SCHEMA, DEFAULT_DB_SCHEMA)
+                ): selector.TextSelector(),
                 vol.Optional(
                     CONF_CHUNK_TIME_INTERVAL,
                     default=g(CONF_CHUNK_TIME_INTERVAL, DEFAULT_CHUNK_TIME_INTERVAL),

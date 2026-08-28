@@ -103,6 +103,7 @@
             "advanced": {
                 "title": "Erweitert (TimescaleDB & SSL)",
                 "data": {
+                    "db_schema": "Datenbankschema",
                     "chunk_time_interval": "Chunk time interval",
                     "compress_after": "Compress after",
                     "db_ssl": "Enable SSL",
@@ -113,6 +114,7 @@
                     "retention_events": "Ereignisse löschen, die älter sind als"
                 },
                 "data_description": {
+                    "db_schema": "Leer lassen, um das zu verwenden, worauf die Verbindung ohnehin zeigt (normalerweise `public`). Wird ein Name angegeben, legt Scribe dieses Schema an und schreibt dorthin — seine Tabellen, seine Hypertables, seine Richtlinien. Nur neue Daten landen dort: bereits anderswo geschriebene Historie wird nicht verschoben, und Scribe zeichnet gar nichts auf, wenn das Schema nicht erreichbar ist.",
                     "chunk_time_interval": "TimescaleDB chunk interval",
                     "compress_after": "Compress chunks older than this interval",
                     "db_ssl": "Require an SSL/TLS connection",
@@ -126,7 +128,8 @@
         },
         "error": {
             "must_record_something": "Mindestens eine Option muss aktiviert sein.",
-            "invalid_interval": "Die Aufbewahrung muss ein Intervall wie '365 days', '6 months' oder '1 year' sein — leer lassen, um alles zu behalten."
+            "invalid_interval": "Die Aufbewahrung muss ein Intervall wie '365 days', '6 months' oder '1 year' sein — leer lassen, um alles zu behalten.",
+            "invalid_schema": "Ein Schemaname darf nur Buchstaben, Ziffern und Unterstriche enthalten und nicht mit einer Ziffer beginnen — leer lassen, um das Schema der Verbindung zu verwenden."
         }
     },
     "issues": {
@@ -189,6 +192,10 @@
         "legacy_schema": {
             "title": "Scribes Datenbank ist älter als Version 3.0",
             "description": "Die Datenbank enthält noch `{relation}` aus dem Schema vor 3.0, und diese Version von Scribe kann es nicht umwandeln. **Es wird nichts aufgezeichnet** — und es wurde auch nichts umbenannt, angelegt oder gelöscht: Dein Verlauf liegt genau dort, wo er lag.\n\nZum Umwandeln: Installiere Scribe **{version}** (wähle diese Version in HACS ausdrücklich), starte Home Assistant und lass es laufen, bis die Protokolle die abgeschlossene Migration melden — bei einer großen Datenbank rund fünfzehn Minuten — und aktualisiere Scribe danach erneut. Die Aufzeichnung läuft beim nächsten Neustart wieder an, und dieser Hinweis verschwindet.\n\nWenn du lieber mit einer leeren Datenbank beginnst, lösche `{relation}` (das entfernt den alten Verlauf) und starte Home Assistant neu."
+        },
+        "schema_unavailable": {
+            "title": "Scribe erreicht das angegebene Schema nicht",
+            "description": "Scribe soll in das Schema `{schema}` auf `{host}` schreiben, die Sitzung landet aber in `{fallback}` — das Schema existiert nicht, oder der Datenbankbenutzer von Scribe hat keine Rechte darauf.\n\n**Es wird nichts aufgezeichnet.** PostgreSQL scheitert nicht an einem fehlenden Schema, sondern fällt stillschweigend auf das nächste im Search Path zurück. Weiterzumachen hätte die gesamte Historie nach `{fallback}` geschrieben, während die Oberfläche weiterhin `{schema}` anzeigt. Scribe hält an, statt das falsche Schema zu füllen.\n\nEntweder anlegen und Rechte vergeben:\n\n```sql\nCREATE SCHEMA IF NOT EXISTS {schema};\nGRANT USAGE, CREATE ON SCHEMA {schema} TO scribe;\n```\n\noder das Feld unter Konfigurieren → Erweitert leeren. Danach Home Assistant neu starten — das Problem verschwindet, sobald Scribe in das angegebene Schema schreibt."
         }
     }
 }

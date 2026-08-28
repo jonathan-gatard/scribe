@@ -18,6 +18,7 @@ Aquí encontrarás una explicación de la estructura de datos y de cómo consult
 - [Configuración](#configuración)
 - [Ajuste del almacenamiento](#ajuste-del-almacenamiento)
 - [Retención](#retención)
+- [Esquema de la base de datos](#esquema-de-la-base-de-datos)
 - [Migración](#migración)
 - [Sensores de estadísticas](#sensores-de-estadísticas)
 - [Servicios](#servicios)
@@ -116,6 +117,7 @@ scribe:
 scribe:
   db_url: postgresql://scribe:password@192.168.1.10:5432/scribe
   db_ssl: false
+  db_schema: ""      # vacío = el esquema de la conexión
   chunk_time_interval: "7 days"
   compress_after: "7 days"
   retention_states: ""   # vacío = conservar para siempre
@@ -156,6 +158,7 @@ scribe:
 | :--- | :--- |
 | `db_url` | **Obligatorio.** Cadena de conexión a tu base de datos TimescaleDB. |
 | `db_ssl` | Activar SSL/TLS para la conexión a la base de datos. |
+| `db_schema` | Esquema PostgreSQL en el que registrar. Vacío (predeterminado): el de la conexión, normalmente `public`. Consulte [Esquema de la base de datos](#esquema-de-la-base-de-datos). |
 | `chunk_time_interval` | Cuánto tiempo abarca cada chunk de la tabla. Ver [Ajuste del almacenamiento](#ajuste-del-almacenamiento). |
 | `compress_after` | Los chunks más antiguos que este intervalo se comprimen. Ver [Ajuste del almacenamiento](#ajuste-del-almacenamiento). |
 | `retention_states` | **Elimina** el historial de estados más antiguo que este intervalo (p. ej. `"365 days"`). Vacío (por defecto) conserva todo. Ver [Retención](#retención). |
@@ -310,6 +313,59 @@ Conviene saber:
 - Los valores aceptados son intervalos simples: `30 days`, `6 months`,
   `1 year`. Cualquier otra cosa se rechaza con un error en vez de enviarse a la
   base de datos.
+
+## Esquema de la base de datos
+
+De forma predeterminada, Scribe registra en el esquema al que ya apunta su
+conexión — normalmente `public`. Indique `db_schema` y creará ese esquema y
+pondrá todo en él: sus tablas, sus vistas, sus hipertablas y sus políticas.
+
+```yaml
+scribe:
+  db_url: postgresql://scribe:password@192.168.1.10:5432/scribe
+  db_schema: scribe
+```
+
+También está en la interfaz, en **Configurar → Avanzado (TimescaleDB y SSL)**.
+
+Esto es lo que necesita cuando Scribe comparte base de datos con otra cosa: sus
+propias copias transformadas del historial, las tablas de otra integración, o un
+segundo Home Assistant registrando en el mismo servidor. Cada esquema es
+independiente — tablas, hipertablas y políticas de retención y compresión
+separadas — y nada de lo que Scribe hace en uno alcanza al otro.
+
+Conviene saber:
+
+- **Solo van allí los datos nuevos.** Indicar `db_schema` no mueve el historial
+  ya registrado: Scribe crea un conjunto de tablas vacío en el nuevo esquema y
+  empieza a escribir en él. Para conservar el historial anterior, muévalo usted
+  mismo (`ALTER TABLE public.states_raw SET SCHEMA scribe;`) antes de reiniciar,
+  o consulte directamente el esquema antiguo.
+- **Scribe crea el esquema si puede.** El usuario de la base de datos necesita
+  `CREATE` sobre ella. Un esquema creado por otra persona sirve igual, siempre
+  que el usuario tenga `USAGE` y `CREATE` sobre él:
+  ```sql
+  CREATE SCHEMA IF NOT EXISTS scribe;
+  GRANT USAGE, CREATE ON SCHEMA scribe TO scribe;
+  ```
+- **Un esquema inaccesible detiene el registro.** PostgreSQL no falla ante un
+  esquema ausente: pasa en silencio a la siguiente entrada del search path, de
+  modo que una errata o un permiso faltante llenarían `public` mientras la
+  interfaz muestra otra cosa. Scribe comprueba dónde ha acabado realmente y no
+  registra nada en lugar de registrar en el sitio equivocado, con un problema en
+  Reparaciones que explica qué permisos conceder.
+- **Sus consultas no cambian.** Scribe pone el esquema primero en el
+  `search_path` de la conexión, así que `SELECT * FROM states` sigue funcionando
+  con el servicio `scribe.query`. Desde cualquier otro sitio — Grafana, psql, un
+  panel — cualifique el nombre (`scribe.states`) o defina su propio
+  `search_path`.
+- **`public` permanece en la ruta.** Ahí es donde la extensión TimescaleDB
+  instala `create_hypertable()` y compañía, que Scribe necesita llamar.
+- Los valores aceptados son identificadores simples: letras, dígitos y guiones
+  bajos, sin empezar por un dígito. Déjelo vacío para seguir usando el esquema de
+  la conexión — incluido el que usted mismo haya fijado con
+  `?options=-csearch_path%3Dmiesquema` en la URL, que Scribe respeta y no
+  sustituye.
 
 ## Migración
 
@@ -530,6 +586,7 @@ registros. Cada uno desaparece solo en cuanto se corrige la causa.
 | El búfer está lleno | Las escrituras fallaron el tiempo suficiente para saturar el búfer; los registros más antiguos se están descartando. Arregla la base de datos o sube `max_queue_size`. |
 | Descartando registros | Una escritura falló con el búfer desactivado, así que los registros se perdieron de inmediato. Activa el búfer para sobrevivir a cortes breves. |
 | No pudo crear sus tablas | Scribe llegó a la base de datos pero no pudo construir su esquema, casi siempre un problema de permisos. En una base nueva no se registra nada en absoluto. |
+| No puede alcanzar el esquema indicado | El esquema de `db_schema` no existe y no se pudo crear, o el usuario de la base de datos no tiene permisos sobre él. No se registra nada, en lugar de llenar `public` en silencio. |
 | No pudo crear la vista `states` | El historial se registra, pero falta la vista por la que pasan todas las consultas: el historial parece vacío aunque no se ha perdido nada. |
 | `states_raw` / `events` no es una hypertable | TimescaleDB está instalado pero la tabla nunca se convirtió (algo habitual cuando la extensión se añade *después* de llenar las tablas). Los chunks, la compresión y la retención no hacen nada. |
 | `states_raw` / `events` nunca se comprime | La tabla sí es una hypertable pero no tiene política de compresión, así que mantiene su tamaño sin comprimir. |

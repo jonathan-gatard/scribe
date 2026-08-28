@@ -103,6 +103,7 @@
             "advanced": {
                 "title": "Advanced (TimescaleDB & SSL)",
                 "data": {
+                    "db_schema": "Database schema",
                     "chunk_time_interval": "Chunk time interval",
                     "compress_after": "Compress after",
                     "retention_states": "Delete states older than",
@@ -113,6 +114,7 @@
                     "ssl_key_file": "SSL client key path"
                 },
                 "data_description": {
+                    "db_schema": "Leave empty to use whatever the connection already points at (normally `public`). Set a name and Scribe creates that schema and records into it — its tables, its hypertables, its policies. Only new data goes there: history already written elsewhere is not moved, and Scribe records nothing at all if the schema cannot be reached.",
                     "chunk_time_interval": "TimescaleDB chunk interval (e.g. '7 days'). Affects new chunks only.",
                     "compress_after": "Compress chunks older than this interval (e.g. '7 days'). Requires TimescaleDB compression.",
                     "retention_states": "Leave empty to keep every state forever (default). Set an interval (e.g. '365 days', '6 months') to have TimescaleDB DELETE state history older than it — permanently, with no undo. Scribe owns this policy: emptying the field removes it.",
@@ -126,7 +128,8 @@
         },
         "error": {
             "must_record_something": "At least one of 'Record state changes' or 'Record events' must be enabled.",
-            "invalid_interval": "Retention must be an interval like '365 days', '6 months' or '1 year' — leave it empty to keep history forever."
+            "invalid_interval": "Retention must be an interval like '365 days', '6 months' or '1 year' — leave it empty to keep history forever.",
+            "invalid_schema": "A schema name may only contain letters, digits and underscores, and cannot start with a digit — leave it empty to use the connection's own schema."
         }
     },
     "issues": {
@@ -189,6 +192,10 @@
         "legacy_schema": {
             "title": "Scribe's database predates version 3.0",
             "description": "The database still holds `{relation}` from the pre-3.0 layout, and this version of Scribe cannot convert it. **Nothing is being recorded** — and nothing has been renamed, created or deleted either, so your history is exactly where it was.\n\nTo convert it: install Scribe **{version}** (in HACS, choose that version explicitly), start Home Assistant and leave it running until the logs report the migration finished — around fifteen minutes on a large database — then update Scribe again. Recording resumes on the next restart, and this issue disappears.\n\nIf you would rather start from a clean database, drop `{relation}` (this deletes the old history) and restart Home Assistant."
+        },
+        "schema_unavailable": {
+            "title": "Scribe cannot reach the schema it was given",
+            "description": "Scribe is configured to record into the schema `{schema}` on `{host}`, but the session resolves to `{fallback}` instead — the schema does not exist, or the Scribe database user has no rights on it.\n\n**Nothing is being recorded.** PostgreSQL does not fail on a missing schema, it silently falls through to the next one on the search path, so carrying on would have written your whole history into `{fallback}` while the UI kept showing `{schema}`. Scribe stops instead of filling the wrong schema.\n\nEither create it and grant the rights:\n\n```sql\nCREATE SCHEMA IF NOT EXISTS {schema};\nGRANT USAGE, CREATE ON SCHEMA {schema} TO scribe;\n```\n\nor clear the schema field under Configure → Advanced. Then restart Home Assistant — this issue disappears once Scribe records into the schema it was given."
         }
     }
 }

@@ -80,9 +80,11 @@ async def test_writer_init_db(writer, mock_pool, mock_db_connection):
 
     # Check for specific SQL fragments in calls
     assert any("CREATE TABLE IF NOT EXISTS states_raw" in c for c in calls)
-    # View creation SQL is multi-line, check for a substring
-    assert any("CREATE VIEW states" in c for c in calls)
-    assert any("DROP VIEW IF EXISTS states" in c for c in calls)
+    # View creation SQL is multi-line, check for a substring. The name is
+    # schema-qualified: DROP resolves across the whole search_path, so an
+    # unqualified one could drop another schema's `states` view.
+    assert any('CREATE VIEW "public"."states"' in c for c in calls)
+    assert any('DROP VIEW IF EXISTS "public"."states"' in c for c in calls)
     assert any("CREATE TABLE IF NOT EXISTS events" in c for c in calls)
 
     # Hypertable is on states_raw now

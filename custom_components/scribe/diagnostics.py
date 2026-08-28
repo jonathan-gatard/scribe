@@ -28,6 +28,11 @@ def _writer_state(writer) -> dict[str, Any]:
         "running": writer._running,
         "connected": writer._connected,
         "legacy_schema_blocked": writer._legacy_blocked,
+        "schema_blocked": writer._schema_blocked,
+        # Configured vs. in effect: they differ only on an install that never
+        # set one, where the second is what the connection resolved to.
+        "schema_configured": writer.db_schema or "(connection default)",
+        "schema_in_use": writer.active_schema,
         "has_timescaledb": writer._has_timescaledb,
         "pool": "open" if writer._pool is not None else "none",
         "reconnect_delay_seconds": writer._connect_delay,

@@ -103,6 +103,7 @@
             "advanced": {
                 "title": "Avancé (TimescaleDB & SSL)",
                 "data": {
+                    "db_schema": "Schéma de la base de données",
                     "chunk_time_interval": "Intervalle de temps des chunks",
                     "compress_after": "Compresser après",
                     "retention_states": "Supprimer les états plus anciens que",
@@ -113,6 +114,7 @@
                     "ssl_key_file": "Chemin de la clé privée client SSL"
                 },
                 "data_description": {
+                    "db_schema": "Laissez vide pour utiliser ce que la connexion désigne déjà (normalement `public`). Indiquez un nom et Scribe crée ce schéma et y enregistre — ses tables, ses hypertables, ses politiques. Seules les nouvelles données y vont : l'historique déjà écrit ailleurs n'est pas déplacé, et Scribe n'enregistre plus rien si le schéma est inaccessible.",
                     "chunk_time_interval": "Intervalle de chunks TimescaleDB (ex. '7 days'). Affecte les nouveaux chunks uniquement.",
                     "compress_after": "Compresser les chunks plus anciens que cet intervalle (ex. '7 days'). Nécessite la compression TimescaleDB.",
                     "retention_states": "Laisser vide pour conserver tous les états indéfiniment (défaut). Indiquer un intervalle (ex. '365 days', '6 months') pour que TimescaleDB SUPPRIME l'historique des états plus ancien — définitivement, sans retour possible. Scribe gère cette politique : vider le champ la supprime.",
@@ -126,7 +128,8 @@
         },
         "error": {
             "must_record_something": "Au moins l'une des options 'Enregistrer les changements d'état' ou 'Enregistrer les événements' doit être activée.",
-            "invalid_interval": "La rétention doit être un intervalle comme '365 days', '6 months' ou '1 year' — laisser vide pour tout conserver."
+            "invalid_interval": "La rétention doit être un intervalle comme '365 days', '6 months' ou '1 year' — laisser vide pour tout conserver.",
+            "invalid_schema": "Un nom de schéma ne peut contenir que des lettres, des chiffres et des tirets bas, et ne peut pas commencer par un chiffre — laissez vide pour utiliser le schéma de la connexion."
         }
     },
     "issues": {
@@ -189,6 +192,10 @@
         "legacy_schema": {
             "title": "La base de données de Scribe est antérieure à la version 3.0",
             "description": "La base contient encore `{relation}`, issue du schéma pré-3.0, et cette version de Scribe ne sait pas le convertir. **Plus rien n'est enregistré** — et rien n'a été renommé, créé ni supprimé non plus : votre historique est exactement là où il était.\n\nPour le convertir : installez Scribe **{version}** (dans HACS, choisissez explicitement cette version), démarrez Home Assistant et laissez-le tourner jusqu'à ce que les logs indiquent la fin de la migration — une quinzaine de minutes sur une grosse base — puis mettez Scribe à jour de nouveau. L'enregistrement reprend au redémarrage suivant et ce problème disparaît.\n\nSi vous préférez repartir d'une base vide, supprimez `{relation}` (cela efface l'ancien historique) et redémarrez Home Assistant."
+        },
+        "schema_unavailable": {
+            "title": "Scribe ne peut pas atteindre le schéma indiqué",
+            "description": "Scribe est configuré pour enregistrer dans le schéma `{schema}` sur `{host}`, mais la session aboutit à `{fallback}` — le schéma n'existe pas, ou l'utilisateur de base de données de Scribe n'y a aucun droit.\n\n**Plus rien n'est enregistré.** PostgreSQL n'échoue pas sur un schéma absent : il passe silencieusement au suivant du search path. Continuer aurait donc écrit tout votre historique dans `{fallback}` pendant que l'interface affichait `{schema}`. Scribe s'arrête plutôt que de remplir le mauvais schéma.\n\nSoit créez-le et accordez les droits :\n\n```sql\nCREATE SCHEMA IF NOT EXISTS {schema};\nGRANT USAGE, CREATE ON SCHEMA {schema} TO scribe;\n```\n\nsoit videz le champ sous Configurer → Avancé. Redémarrez ensuite Home Assistant — ce problème disparaît dès que Scribe enregistre dans le schéma indiqué."
         }
     }
 }

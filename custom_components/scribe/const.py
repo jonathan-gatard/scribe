@@ -7,6 +7,7 @@ CONF_DB_USER = "db_user"
 CONF_DB_PASSWORD = "db_password"
 CONF_DB_NAME = "db_name"
 CONF_DB_URL = "db_url"
+CONF_DB_SCHEMA = "db_schema"
 CONF_DB_SSL = "db_ssl"
 CONF_SSL_ROOT_CERT = "ssl_root_cert"
 CONF_SSL_CERT_FILE = "ssl_cert_file"
@@ -47,6 +48,10 @@ DEFAULT_RETENTION_EVENTS = ""
 DEFAULT_DB_PORT = 5432
 DEFAULT_DB_USER = "scribe"
 DEFAULT_DB_NAME = "scribe"
+# Empty means "wherever the connection already points": Scribe leaves
+# search_path alone and keeps using the database's own default (public,
+# unless the DSN or the role says otherwise).
+DEFAULT_DB_SCHEMA = ""
 DEFAULT_DB_SSL = False
 DEFAULT_RECORD_STATES = True
 DEFAULT_RECORD_EVENTS = False
