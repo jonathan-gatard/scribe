@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [4.1.0] - 2026-08-28
 
 ### Fixed
 - **A null byte in an attribute *key* stopped recording for good**: PostgreSQL refuses `\u0000` in a jsonb key exactly as it does in a value. Values were cleaned before reaching the codec — entity_id, state, event fields, attribute values — but the keys of an attributes mapping went through untouched, and a key is entirely under the control of whichever integration produced the state. One such key failed the `COPY`, which fails the whole batch, which is re-buffered and fails again on every retry: the same permanent stall as the duplicate timestamps fixed in 3.8, reached from the other end of the same document. Keys that are not strings are coerced too, since `json.dumps` refuses a tuple key outright with the same outcome.
