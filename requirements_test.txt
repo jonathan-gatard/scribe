@@ -16,7 +16,7 @@ pytest
 # 0.13.348 is the last release that pins a *stable* Home Assistant (2026.7.4);
 # 0.13.351 pins 2026.8.0b3. The gating job must not depend on a beta — that is
 # what upstream-watch.yaml is for.
-pytest-homeassistant-custom-component==0.13.348
+pytest-homeassistant-custom-component==0.13.359
 pytest-asyncio
 psycopg2-binary
 asyncpg
