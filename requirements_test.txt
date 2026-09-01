@@ -20,5 +20,5 @@ pytest-homeassistant-custom-component==0.13.348
 pytest-asyncio
 psycopg2-binary
 asyncpg
-ruff==0.16.1
+ruff==0.16.5
 pycares
