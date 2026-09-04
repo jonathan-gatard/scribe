@@ -220,3 +220,86 @@ def test_every_placeholder_survives_translation():
                 assert expected == actual, (
                     f"{language} {issue}.{field}: {expected ^ actual}"
                 )
+
+
+def _readme_config_keys(text):
+    """The YAML example's keys and the parameter table's keys, from a README."""
+    import re
+
+    # The second ```yaml block is "Full Configuration"; the first is the
+    # minimal one, which is meant to be short.
+    example = text.split("```yaml\nscribe:\n", 2)[2].split("```")[0]
+    return (
+        re.findall(r"^  ([a-z_]+):", example, re.M),
+        re.findall(r"^\| `([a-z_]+)` \|", text, re.M),
+    )
+
+
+def _yaml_schema_keys():
+    """Every key `configuration.yaml` actually accepts, read from CONFIG_SCHEMA."""
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "scribe"
+    source = (root / "__init__.py").read_text()
+    block = source[
+        source.index("CONFIG_SCHEMA = vol.Schema(") : source.index(
+            "extra=vol.ALLOW_EXTRA,\n        )"
+        )
+    ]
+    names = dict(
+        re.findall(
+            r'^(CONF_[A-Z_]+) = "([a-z_]+)"', (root / "const.py").read_text(), re.M
+        )
+    )
+    return [
+        names[c]
+        for c in re.findall(r"vol\.(?:Required|Optional)\((CONF_[A-Z_]+)\)", block)
+    ]
+
+
+@pytest.mark.parametrize(
+    "readme", ["README.md", "README.fr.md", "README.es.md", "README.de.md"]
+)
+def test_every_yaml_option_is_documented_in_every_readme(readme):
+    """ "Full Configuration" and "Parameter Reference" have to mean it.
+
+    Both drifted from CONFIG_SCHEMA without anyone noticing: `include_entities`
+    was in the table but not the example (reported in #53), and the three TLS
+    certificate paths were in neither, in all four languages — so a YAML user
+    had no way to learn names the integration accepts and the UI exposes.
+    """
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / readme).read_text()
+    example, table = _readme_config_keys(text)
+    accepted = _yaml_schema_keys()
+
+    assert not [k for k in accepted if k not in example], (
+        f"{readme}: the full YAML example is missing "
+        f"{[k for k in accepted if k not in example]}"
+    )
+    assert not [k for k in accepted if k not in table], (
+        f"{readme}: the parameter reference is missing "
+        f"{[k for k in accepted if k not in table]}"
+    )
+
+
+@pytest.mark.parametrize(
+    "readme", ["README.md", "README.fr.md", "README.es.md", "README.de.md"]
+)
+def test_no_readme_documents_an_option_that_does_not_exist(readme):
+    """A documented key nothing reads is worse than an undocumented one."""
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / readme).read_text()
+    example, table = _readme_config_keys(text)
+    accepted = set(_yaml_schema_keys())
+
+    assert not [k for k in example if k not in accepted], (
+        f"{readme}: the YAML example invents {[k for k in example if k not in accepted]}"
+    )
+    assert not [k for k in table if k not in accepted], (
+        f"{readme}: the parameter reference invents "
+        f"{[k for k in table if k not in accepted]}"
+    )

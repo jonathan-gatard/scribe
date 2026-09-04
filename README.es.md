@@ -117,6 +117,9 @@ scribe:
 scribe:
   db_url: postgresql://scribe:password@192.168.1.10:5432/scribe
   db_ssl: false
+  ssl_root_cert: ""      # solo se usa si db_ssl es true
+  ssl_cert_file: ""
+  ssl_key_file: ""
   db_schema: ""      # vacío = el esquema de la conexión
   chunk_time_interval: "7 days"
   compress_after: "7 days"
@@ -134,6 +137,7 @@ scribe:
   stats_chunk_interval: 60
   stats_size_interval: 60
   include_domains: []
+  include_entities: []
   include_entity_globs: []
   exclude_domains: []
   exclude_entities: []
@@ -158,6 +162,9 @@ scribe:
 | :--- | :--- |
 | `db_url` | **Obligatorio.** Cadena de conexión a tu base de datos TimescaleDB. |
 | `db_ssl` | Activar SSL/TLS para la conexión a la base de datos. |
+| `ssl_root_cert` | Ruta al archivo de la CA (p. ej. `/ssl/ca.crt`). Una ruta relativa se resuelve desde el directorio de configuración de Home Assistant. |
+| `ssl_cert_file` | Ruta al certificado de cliente, para TLS mutuo. |
+| `ssl_key_file` | Ruta a la clave privada del cliente, para TLS mutuo. |
 | `db_schema` | Esquema PostgreSQL en el que registrar. Vacío (predeterminado): el de la conexión, normalmente `public`. Consulte [Esquema de la base de datos](#esquema-de-la-base-de-datos). |
 | `chunk_time_interval` | Cuánto tiempo abarca cada chunk de la tabla. Ver [Ajuste del almacenamiento](#ajuste-del-almacenamiento). |
 | `compress_after` | Los chunks más antiguos que este intervalo se comprimen. Ver [Ajuste del almacenamiento](#ajuste-del-almacenamiento). |

@@ -116,6 +116,9 @@ scribe:
 scribe:
   db_url: postgresql://scribe:password@192.168.1.10:5432/scribe
   db_ssl: false
+  ssl_root_cert: ""      # only used when db_ssl is true
+  ssl_cert_file: ""
+  ssl_key_file: ""
   db_schema: ""      # empty = the connection's own schema
   chunk_time_interval: "7 days"
   compress_after: "7 days"
@@ -133,6 +136,7 @@ scribe:
   stats_chunk_interval: 60
   stats_size_interval: 60
   include_domains: []
+  include_entities: []
   include_entity_globs: []
   exclude_domains: []
   exclude_entities: []
@@ -157,6 +161,9 @@ scribe:
 | :--- | :--- |
 | `db_url` | **Required.** The connection string for your TimescaleDB database. |
 | `db_ssl` | Enable SSL/TLS for the database connection. |
+| `ssl_root_cert` | Path to the CA certificate file (e.g. `/ssl/ca.crt`). A relative path resolves from the Home Assistant config directory. |
+| `ssl_cert_file` | Path to the client certificate file, for mutual TLS. |
+| `ssl_key_file` | Path to the client private key file, for mutual TLS. |
 | `db_schema` | PostgreSQL schema to record into. Empty (default) uses the connection's own schema, normally `public`. See [Database schema](#database-schema). |
 | `chunk_time_interval` | How much time each chunk of the table covers. See [Storage tuning](#storage-tuning). |
 | `compress_after` | Chunks older than this are compressed. See [Storage tuning](#storage-tuning). |
