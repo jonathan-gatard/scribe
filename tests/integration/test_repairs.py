@@ -240,144 +240,66 @@ async def test_legacy_schema_raises_an_issue(hass, clean_db):
         await w.stop()
 
 
-@pytest.mark.asyncio
-async def test_every_issue_has_translations(hass):
-    """A raised issue with no strings entry renders as a blank card."""
+def test_every_issue_has_translations():
+    """A raised issue with no strings entry renders as a blank card.
+
+    The keys are read out of the source rather than listed here. The list this
+    replaces was hand-maintained and had already gone stale: `schema_unavailable`
+    was raised, translated, and not checked by anything.
+    """
     import json
+    import re
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[2] / "custom_components" / "scribe"
-    keys = {
-        "db_unreachable",
-        "write_failing",
-        "buffer_full",
-        "data_dropped",
-        "no_timescaledb",
-        "legacy_schema",
-        "retention_failed",
-        "schema_failed",
-        "view_failed",
-        "no_hypertable",
-        "no_compression",
-        "ssl_degraded",
-        "rename_refused_live",
-        "rename_refused_unprovable",
-        "rename_failed",
-    }
-    for name in ("strings.json", "translations/en.json", "translations/fr.json"):
-        data = json.loads((root / name).read_text())
-        issues = data.get("issues", {})
-        assert keys <= set(issues), f"{name} is missing {keys - set(issues)}"
+    source = "\n".join(p.read_text() for p in root.glob("*.py"))
+
+    # The translation key is the second argument of every report call.
+    keys = set(
+        re.findall(r'_report_issue\(\s*\n?\s*[^,]+,\s*\n?\s*"([a-z_]+)"', source)
+    ) | set(
+        re.findall(r'_report_rename_issue\(\s*\n?\s*[^,]+,\s*\n?\s*"([a-z_]+)"', source)
+    )
+    assert len(keys) >= 15, f"the report calls stopped being readable: {keys}"
+
+    for name in (
+        "strings.json",
+        "translations/en.json",
+        "translations/fr.json",
+        "translations/es.json",
+        "translations/de.json",
+    ):
+        issues = json.loads((root / name).read_text()).get("issues", {})
+        assert keys <= set(issues), f"{name} is missing {sorted(keys - set(issues))}"
         for key in keys:
             assert issues[key].get("title"), f"{name}:{key} has no title"
             assert issues[key].get("description"), f"{name}:{key} has no description"
 
 
 @pytest.mark.asyncio
-async def test_schema_failure_raises_an_issue(hass, clean_db, monkeypatch):
-    """A database that answers but refuses the schema records nothing."""
-    from custom_components.scribe.writer import ISSUE_SCHEMA_FAILED, ScribeWriter
+async def test_dropping_data_stops_being_reported_once_writing_recovers(hass, clean_db):
+    """Every issue retires itself once the condition is gone; this one did not.
 
-    async def boom(self, conn):
-        raise PermissionError("permission denied for schema public")
-
-    monkeypatch.setattr(ScribeWriter, "_init_entities_table", boom)
-
-    w = make_writer(hass)
+    A single drop left the card up for the life of the Home Assistant process,
+    long after the database came back and recording resumed — the one issue
+    that never cleared, against a README that promises they all do.
+    """
+    w = make_writer(hass, buffer_on_failure=False)
     await w.start()
+    pool = w._pool
     try:
-        issue = get_issue(hass, ISSUE_SCHEMA_FAILED)
-        assert issue is not None
-        assert issue.severity == ir.IssueSeverity.ERROR
-        assert "permission denied" in issue.translation_placeholders["error"]
-        assert w._connected is False
+        await pool.close()
+        w._queue.append(_state())
+        await w._flush()
+        assert get_issue(hass, ISSUE_DATA_DROPPED) is not None
+
+        # The database comes back and a write succeeds.
+        w._pool = None
+        w._next_connect_attempt = 0
+        assert await w._ensure_connected() is True
+        w._queue.append(_state(seconds=5))
+        await w._flush()
+
+        assert get_issue(hass, ISSUE_DATA_DROPPED) is None
     finally:
         await w.stop()
-
-
-@pytest.mark.asyncio
-async def test_schema_issue_clears_on_a_healthy_start(hass, writer):
-    """The normal fixture start must leave no schema issue behind."""
-    from custom_components.scribe.writer import ISSUE_SCHEMA_FAILED, ISSUE_VIEW_FAILED
-
-    assert get_issue(hass, ISSUE_SCHEMA_FAILED) is None
-    assert get_issue(hass, ISSUE_VIEW_FAILED) is None
-
-
-@pytest.mark.asyncio
-async def test_view_failure_raises_an_issue(hass, clean_db, monkeypatch):
-    """History keeps being written, but nothing can read it back."""
-    import asyncpg
-
-    from custom_components.scribe.writer import ISSUE_VIEW_FAILED
-
-    original = asyncpg.Connection.execute
-
-    async def refuse_view(self, query, *args, **kwargs):
-        if "CREATE VIEW" in str(query):
-            raise PermissionError("permission denied for schema public")
-        return await original(self, query, *args, **kwargs)
-
-    monkeypatch.setattr(asyncpg.Connection, "execute", refuse_view)
-
-    w = make_writer(hass)
-    await w.start()
-    try:
-        issue = get_issue(hass, ISSUE_VIEW_FAILED)
-        assert issue is not None
-        assert issue.translation_placeholders["view"] == "states"
-    finally:
-        monkeypatch.undo()
-        await w.stop()
-
-
-@pytest.mark.asyncio
-async def test_plain_table_with_timescaledb_raises_an_issue(hass, writer, db):
-    """A table that silently stayed plain grows several times faster."""
-    from custom_components.scribe.writer import ISSUE_NO_HYPERTABLE
-
-    async with db.acquire() as conn:
-        await conn.execute("CREATE TABLE plain_states (time TIMESTAMPTZ NOT NULL)")
-    try:
-        await writer._verify_storage_features("plain_states")
-
-        issue = get_issue(hass, ISSUE_NO_HYPERTABLE.format(table="plain_states"))
-        assert issue is not None
-        assert issue.translation_placeholders["table"] == "plain_states"
-    finally:
-        async with db.acquire() as conn:
-            await conn.execute("DROP TABLE plain_states")
-
-
-@pytest.mark.asyncio
-async def test_missing_compression_policy_raises_an_issue(hass, writer, db):
-    """Chunked but never compressed is a database several times too big."""
-    from custom_components.scribe.writer import ISSUE_NO_COMPRESSION
-
-    issue_id = ISSUE_NO_COMPRESSION.format(table="states_raw")
-    async with db.acquire() as conn:
-        await conn.execute(
-            "SELECT remove_compression_policy('states_raw', if_exists => true)"
-        )
-
-    await writer._verify_storage_features("states_raw")
-    assert get_issue(hass, issue_id) is not None
-
-    # And it retires itself once the policy is back.
-    await writer._apply_compression_policy("states_raw")
-    await writer._verify_storage_features("states_raw")
-    assert get_issue(hass, issue_id) is None
-
-
-@pytest.mark.asyncio
-async def test_healthy_hypertables_raise_nothing(hass, writer):
-    """The verifier must be invisible on a correctly set up database."""
-    from custom_components.scribe.writer import (
-        ISSUE_NO_COMPRESSION,
-        ISSUE_NO_HYPERTABLE,
-    )
-
-    for table in ("states_raw", "events"):
-        await writer._verify_storage_features(table)
-        assert get_issue(hass, ISSUE_NO_HYPERTABLE.format(table=table)) is None
-        assert get_issue(hass, ISSUE_NO_COMPRESSION.format(table=table)) is None

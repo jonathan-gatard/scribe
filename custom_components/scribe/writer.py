@@ -2596,6 +2596,13 @@ class ScribeWriter:
             self._clear_issue(ISSUE_DB_UNREACHABLE)
         if len(self._queue) < self.max_queue_size:
             self._clear_issue(ISSUE_BUFFER_FULL)
+        # Every other issue retires itself once the condition is gone, and the
+        # README says so. This one did not: a single drop left the card up for
+        # the life of the Home Assistant process, long after writing recovered.
+        # What was lost stays in the log and in the diagnostics counter, which
+        # is where a past event belongs — the Repairs panel is for conditions
+        # that are still true.
+        self._clear_issue(ISSUE_DATA_DROPPED)
 
     def _handle_flush_failure(self, batch, message, detail):
         """Keep a batch that could not be written, or account for dropping it.
