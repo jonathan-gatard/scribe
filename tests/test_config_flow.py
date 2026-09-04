@@ -303,3 +303,83 @@ def test_no_readme_documents_an_option_that_does_not_exist(readme):
         f"{readme}: the parameter reference invents "
         f"{[k for k in table if k not in accepted]}"
     )
+
+
+# A string that is legitimately spelled the same in a target language. Anything
+# here is a deliberate decision, not an untranslated leftover — which is the
+# whole point of listing them rather than loosening the check.
+ALLOWED_IDENTICAL_TO_ENGLISH = {("fr", "options.step.performance.title")}
+
+
+@pytest.mark.parametrize("language", ["fr", "es", "de"])
+def test_no_documented_language_is_secretly_still_english(language):
+    """Key-presence is not translation.
+
+    `test_the_documented_languages_are_fully_translated` only checks that the
+    keys exist, so a value copied verbatim from English passes it. Fourteen
+    strings sat like that in both es.json and de.json — including every label
+    in the metadata step and the three TLS certificate paths — while the suite
+    reported both files complete.
+    """
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "scribe"
+    english = _keys_and_values(
+        json.loads((root / "translations" / "en.json").read_text())
+    )
+    translated = _keys_and_values(
+        json.loads((root / "translations" / f"{language}.json").read_text())
+    )
+
+    identical = sorted(
+        key
+        for key, value in english.items()
+        if translated.get(key) == value
+        and (language, key) not in ALLOWED_IDENTICAL_TO_ENGLISH
+    )
+    assert not identical, f"{language}.json is still English for {identical}"
+
+
+def _keys_and_values(node, prefix=""):
+    """Every leaf path in a translation file, mapped to its text."""
+    found = {}
+    for key, value in node.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            found.update(_keys_and_values(value, path))
+        else:
+            found[path] = value
+    return found
+
+
+def test_every_interval_setting_is_validated_before_it_reaches_sql():
+    """Four settings take an interval; all four must be checked, not just two.
+
+    `chunk_time_interval` was interpolated straight into `create_hypertable`
+    while only the two retention fields were validated, so a value ending the
+    quoted literal ran whatever followed it — asyncpg's simple query protocol
+    executes every statement in the string.
+    """
+    from custom_components.scribe.config_flow import ScribeOptionsFlowHandler
+    import inspect
+
+    source = inspect.getsource(ScribeOptionsFlowHandler.async_step_advanced)
+    for setting in (
+        "CONF_RETENTION_STATES",
+        "CONF_RETENTION_EVENTS",
+        "CONF_CHUNK_TIME_INTERVAL",
+        "CONF_COMPRESS_AFTER",
+    ):
+        assert setting in source, f"{setting} reaches SQL without being validated"
+
+
+def test_the_hypertable_call_never_interpolates_the_chunk_interval():
+    """The value is user input; it has to be a parameter, not text in the SQL."""
+    import inspect
+
+    from custom_components.scribe.writer import ScribeWriter
+
+    source = inspect.getsource(ScribeWriter._init_hypertable)
+    assert "{self.chunk_interval}" not in source
+    assert "create_hypertable($1::regclass" in source

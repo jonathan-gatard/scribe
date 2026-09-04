@@ -11,9 +11,10 @@ compressed.
 
 from datetime import timedelta
 
+import asyncpg
 import pytest
 
-from .conftest import BASE_TIME, make_writer, write_states
+from .conftest import BASE_TIME, DSN, make_writer, write_states
 
 
 async def _chunk_interval(pool, table):
@@ -204,3 +205,39 @@ async def test_plain_postgres_is_not_disturbed(hass, clean_db, monkeypatch):
             )
     finally:
         await w.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_hostile_chunk_interval_cannot_run_sql(hass, clean_db):
+    """`chunk_time_interval` is free-form user input and reaches create_hypertable.
+
+    Interpolated, this value closed the quoted interval and left a second
+    statement behind, which asyncpg's simple query protocol runs like any
+    other — verified against this database before the fix, canary and all.
+    As a parameter it is only ever a malformed interval.
+    """
+    setup = await asyncpg.connect(DSN)
+    try:
+        await setup.execute("CREATE TABLE IF NOT EXISTS canary (x int)")
+    finally:
+        await setup.close()
+
+    w = make_writer(
+        hass, chunk_interval="7 days'); DROP TABLE canary; --", record_events=False
+    )
+    await w.start()
+    try:
+        async with w._pool.acquire() as conn:
+            survived = await conn.fetchval(
+                "SELECT EXISTS (SELECT FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'canary')"
+            )
+    finally:
+        await w.stop()
+        cleanup = await asyncpg.connect(DSN)
+        try:
+            await cleanup.execute("DROP TABLE IF EXISTS canary")
+        finally:
+            await cleanup.close()
+
+    assert survived, "the chunk interval executed SQL of its own"

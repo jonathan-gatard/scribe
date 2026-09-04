@@ -129,7 +129,8 @@
         "error": {
             "must_record_something": "At least one of 'Record state changes' or 'Record events' must be enabled.",
             "invalid_interval": "Retention must be an interval like '365 days', '6 months' or '1 year' — leave it empty to keep history forever.",
-            "invalid_schema": "A schema name may only contain letters, digits and underscores, and cannot start with a digit — leave it empty to use the connection's own schema."
+            "invalid_schema": "A schema name may only contain letters, digits and underscores, and cannot start with a digit — leave it empty to use the connection's own schema.",
+            "invalid_storage_interval": "Chunk interval and compression interval must be an interval like '7 days', '12 hours' or '1 month' — they cannot be left empty."
         }
     },
     "issues": {

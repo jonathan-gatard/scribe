@@ -129,7 +129,8 @@
         "error": {
             "must_record_something": "Au moins l'une des options 'Enregistrer les changements d'état' ou 'Enregistrer les événements' doit être activée.",
             "invalid_interval": "La rétention doit être un intervalle comme '365 days', '6 months' ou '1 year' — laisser vide pour tout conserver.",
-            "invalid_schema": "Un nom de schéma ne peut contenir que des lettres, des chiffres et des tirets bas, et ne peut pas commencer par un chiffre — laissez vide pour utiliser le schéma de la connexion."
+            "invalid_schema": "Un nom de schéma ne peut contenir que des lettres, des chiffres et des tirets bas, et ne peut pas commencer par un chiffre — laissez vide pour utiliser le schéma de la connexion.",
+            "invalid_storage_interval": "L'intervalle de chunk et l'intervalle de compression doivent être un intervalle comme « 7 days », « 12 hours » ou « 1 month » — ils ne peuvent pas être vides."
         }
     },
     "issues": {

@@ -508,6 +508,16 @@ class ScribeOptionsFlowHandler(config_entries.OptionsFlow):
                     except ValueError:
                         errors[key] = "invalid_interval"
 
+            # Chunking and compression take an interval too, and unlike
+            # retention an empty one means nothing at all — there is no "off"
+            # for chunk size. A typo here used to reach the database and leave
+            # the table unchunked with only a log line to say so.
+            for key in (CONF_CHUNK_TIME_INTERVAL, CONF_COMPRESS_AFTER):
+                try:
+                    _validate_interval((user_input.get(key) or "").strip())
+                except ValueError:
+                    errors[key] = "invalid_storage_interval"
+
             # A schema name reaches `SET search_path` and `CREATE SCHEMA` as
             # DDL, which takes no parameter — and a name PostgreSQL would not
             # accept unquoted is refused here rather than at the next start,

@@ -87,9 +87,17 @@ async def test_writer_init_db(writer, mock_pool, mock_db_connection):
     assert any('DROP VIEW IF EXISTS "public"."states"' in c for c in calls)
     assert any("CREATE TABLE IF NOT EXISTS events" in c for c in calls)
 
-    # Hypertable is on states_raw now
-    assert any("create_hypertable('states_raw'" in c for c in calls)
-    assert any("create_hypertable('events'" in c for c in calls)
+    # Hypertable is on states_raw now. The table and the chunk interval are
+    # bound parameters, not text in the statement: the interval is free-form
+    # user input, and interpolated it could close the literal and run SQL of
+    # its own.
+    hypertable_calls = [
+        c
+        for c in mock_db_connection.execute.mock_calls
+        if c.args and "create_hypertable($1::regclass" in str(c.args[0])
+    ]
+    assert [c.args[1] for c in hypertable_calls] == ["states_raw", "events"]
+    assert all(c.args[2] == "7 days" for c in hypertable_calls)
 
     # Initial row counts are only fetched when the I/O statistics sensors are
     # enabled; this writer leaves them off, so nothing must have been counted.

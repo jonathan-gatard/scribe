@@ -1962,8 +1962,19 @@ class ScribeWriter:
                 self.chunk_interval,
             )
             async with self._pool.acquire() as conn:
+                # Both values are parameters, not interpolated text. The table
+                # name is validated, but `chunk_interval` is free-form user
+                # input from YAML or the options flow — interpolated, a value
+                # like "7 days'); DROP TABLE ...; --" closed the call and ran
+                # whatever followed, since asyncpg's simple query protocol
+                # executes every statement in the string. `_apply_chunk_interval`
+                # already passed it as a parameter; this call did not.
                 await conn.execute(
-                    f"SELECT create_hypertable('{table_name}', 'time', chunk_time_interval => INTERVAL '{self.chunk_interval}', if_not_exists => TRUE);"
+                    "SELECT create_hypertable($1::regclass, 'time', "
+                    "chunk_time_interval => $2::text::interval, "
+                    "if_not_exists => TRUE)",
+                    table_name,
+                    self.chunk_interval,
                 )
         except Exception as e:
             _LOGGER.warning(
