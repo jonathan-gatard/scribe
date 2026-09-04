@@ -40,16 +40,16 @@
                     "exclude_events": "Excluir eventos"
                 },
                 "data_description": {
-                    "record_states": "Write every state change to TimescaleDB",
+                    "record_states": "Escribir cada cambio de estado en TimescaleDB",
                     "record_events": "Write Home Assistant events to TimescaleDB",
                     "include_domains": "Only record entities from these domains.",
-                    "exclude_domains": "Never record entities from these domains",
+                    "exclude_domains": "No registrar nunca entidades de estos dominios",
                     "include_entities": "Only record these specific entities.",
-                    "exclude_entities": "Never record these specific entities",
+                    "exclude_entities": "No registrar nunca estas entidades concretas",
                     "include_entity_globs": "Only record entities matching these patterns",
-                    "exclude_entity_globs": "Never record entities matching these patterns",
+                    "exclude_entity_globs": "No registrar nunca las entidades que coincidan con estos patrones",
                     "exclude_attributes": "Drop these attribute keys before writing",
-                    "include_events": "Only record these specific event types. Leave empty to record all events.",
+                    "include_events": "Registrar solo estos tipos de evento. Déjalo vacío para registrar todos los eventos.",
                     "exclude_events": "Tipos de evento que no se registran nunca. Se aplica después de la lista de inclusión: un tipo presente en ambas queda excluido."
                 }
             },
@@ -65,7 +65,7 @@
                     "batch_size": "Number of rows accumulated before a flush is triggered",
                     "flush_interval": "Maximum seconds between automatic flushes",
                     "max_queue_size": "Maximum pending writes before oldest are dropped",
-                    "buffer_on_failure": "Keep events in memory and retry when the database becomes available again"
+                    "buffer_on_failure": "Mantener los eventos en memoria y reintentar cuando la base de datos vuelva a estar disponible"
                 }
             },
             "stats": {
@@ -88,10 +88,10 @@
             "metadata": {
                 "title": "Tablas de Metadatos",
                 "data": {
-                    "enable_table_areas": "Sync areas table",
-                    "enable_table_devices": "Sync devices table",
-                    "enable_table_integrations": "Sync integrations table",
-                    "enable_table_users": "Sync users table"
+                    "enable_table_areas": "Sincronizar la tabla de áreas",
+                    "enable_table_devices": "Sincronizar la tabla de dispositivos",
+                    "enable_table_integrations": "Sincronizar la tabla de integraciones",
+                    "enable_table_users": "Sincronizar la tabla de usuarios"
                 },
                 "data_description": {
                     "enable_table_areas": "Keep a mirror of HA areas in TimescaleDB",
@@ -104,12 +104,12 @@
                 "title": "Avanzado (TimescaleDB y SSL)",
                 "data": {
                     "db_schema": "Esquema de la base de datos",
-                    "chunk_time_interval": "Chunk time interval",
-                    "compress_after": "Compress after",
-                    "db_ssl": "Enable SSL",
-                    "ssl_root_cert": "SSL root certificate path",
-                    "ssl_cert_file": "SSL client certificate path",
-                    "ssl_key_file": "SSL client key path",
+                    "chunk_time_interval": "Intervalo de tiempo por fragmento",
+                    "compress_after": "Comprimir después de",
+                    "db_ssl": "Activar SSL",
+                    "ssl_root_cert": "Ruta del certificado raíz SSL",
+                    "ssl_cert_file": "Ruta del certificado de cliente SSL",
+                    "ssl_key_file": "Ruta de la clave de cliente SSL",
                     "retention_states": "Eliminar estados anteriores a",
                     "retention_events": "Eliminar eventos anteriores a"
                 },
@@ -129,7 +129,8 @@
         "error": {
             "must_record_something": "Debe habilitarse al menos 'Grabar cambios de estado' o 'Grabar eventos'.",
             "invalid_interval": "La retención debe ser un intervalo como '365 days', '6 months' o '1 year' — déjalo vacío para conservarlo todo.",
-            "invalid_schema": "Un nombre de esquema solo puede contener letras, dígitos y guiones bajos, y no puede empezar por un dígito — déjelo vacío para usar el esquema de la conexión."
+            "invalid_schema": "Un nombre de esquema solo puede contener letras, dígitos y guiones bajos, y no puede empezar por un dígito — déjelo vacío para usar el esquema de la conexión.",
+            "invalid_storage_interval": "El intervalo de fragmento y el de compresión deben ser un intervalo como «7 days», «12 hours» o «1 month» — no pueden dejarse vacíos."
         }
     },
     "issues": {

@@ -40,16 +40,16 @@
                     "exclude_events": "Ereignisse ausschließen"
                 },
                 "data_description": {
-                    "record_states": "Write every state change to TimescaleDB",
+                    "record_states": "Jede Zustandsänderung in TimescaleDB schreiben",
                     "record_events": "Write Home Assistant events to TimescaleDB",
                     "include_domains": "Only record entities from these domains.",
-                    "exclude_domains": "Never record entities from these domains",
+                    "exclude_domains": "Entitäten aus diesen Domains niemals aufzeichnen",
                     "include_entities": "Only record these specific entities.",
-                    "exclude_entities": "Never record these specific entities",
+                    "exclude_entities": "Diese bestimmten Entitäten niemals aufzeichnen",
                     "include_entity_globs": "Only record entities matching these patterns",
-                    "exclude_entity_globs": "Never record entities matching these patterns",
+                    "exclude_entity_globs": "Entitäten, die auf diese Muster passen, niemals aufzeichnen",
                     "exclude_attributes": "Drop these attribute keys before writing",
-                    "include_events": "Only record these specific event types. Leave empty to record all events.",
+                    "include_events": "Nur diese Ereignistypen aufzeichnen. Leer lassen, um alle Ereignisse aufzuzeichnen.",
                     "exclude_events": "Ereignistypen, die nie aufgezeichnet werden. Wird nach der Einschlussliste angewendet: Ein Typ in beiden Listen wird ausgeschlossen."
                 }
             },
@@ -65,7 +65,7 @@
                     "batch_size": "Number of rows accumulated before a flush is triggered",
                     "flush_interval": "Maximum seconds between automatic flushes",
                     "max_queue_size": "Maximum pending writes before oldest are dropped",
-                    "buffer_on_failure": "Keep events in memory and retry when the database becomes available again"
+                    "buffer_on_failure": "Ereignisse im Speicher halten und erneut versuchen, sobald die Datenbank wieder erreichbar ist"
                 }
             },
             "stats": {
@@ -88,10 +88,10 @@
             "metadata": {
                 "title": "Metadaten-Tabellen",
                 "data": {
-                    "enable_table_areas": "Sync areas table",
-                    "enable_table_devices": "Sync devices table",
-                    "enable_table_integrations": "Sync integrations table",
-                    "enable_table_users": "Sync users table"
+                    "enable_table_areas": "Tabelle „areas“ synchronisieren",
+                    "enable_table_devices": "Tabelle „devices“ synchronisieren",
+                    "enable_table_integrations": "Tabelle „integrations“ synchronisieren",
+                    "enable_table_users": "Tabelle „users“ synchronisieren"
                 },
                 "data_description": {
                     "enable_table_areas": "Keep a mirror of HA areas in TimescaleDB",
@@ -104,12 +104,12 @@
                 "title": "Erweitert (TimescaleDB & SSL)",
                 "data": {
                     "db_schema": "Datenbankschema",
-                    "chunk_time_interval": "Chunk time interval",
-                    "compress_after": "Compress after",
-                    "db_ssl": "Enable SSL",
-                    "ssl_root_cert": "SSL root certificate path",
-                    "ssl_cert_file": "SSL client certificate path",
-                    "ssl_key_file": "SSL client key path",
+                    "chunk_time_interval": "Chunk-Zeitintervall",
+                    "compress_after": "Komprimieren nach",
+                    "db_ssl": "SSL aktivieren",
+                    "ssl_root_cert": "Pfad zum SSL-Stammzertifikat",
+                    "ssl_cert_file": "Pfad zum SSL-Client-Zertifikat",
+                    "ssl_key_file": "Pfad zum SSL-Client-Schlüssel",
                     "retention_states": "Zustände löschen, die älter sind als",
                     "retention_events": "Ereignisse löschen, die älter sind als"
                 },
@@ -129,7 +129,8 @@
         "error": {
             "must_record_something": "Mindestens eine Option muss aktiviert sein.",
             "invalid_interval": "Die Aufbewahrung muss ein Intervall wie '365 days', '6 months' oder '1 year' sein — leer lassen, um alles zu behalten.",
-            "invalid_schema": "Ein Schemaname darf nur Buchstaben, Ziffern und Unterstriche enthalten und nicht mit einer Ziffer beginnen — leer lassen, um das Schema der Verbindung zu verwenden."
+            "invalid_schema": "Ein Schemaname darf nur Buchstaben, Ziffern und Unterstriche enthalten und nicht mit einer Ziffer beginnen — leer lassen, um das Schema der Verbindung zu verwenden.",
+            "invalid_storage_interval": "Chunk-Intervall und Komprimierungsintervall müssen ein Intervall wie „7 days“, „12 hours“ oder „1 month“ sein — leer lassen ist nicht möglich."
         }
     },
     "issues": {
