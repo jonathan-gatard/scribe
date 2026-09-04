@@ -6,11 +6,11 @@ and the only proof that it *works* is running the job and looking at the rows
 that survive. Both are done here for real.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from .conftest import BASE_TIME, make_writer, write_states
+from .conftest import BASE_TIME, make_writer
 
 
 async def _retention_jobs(pool, table):
@@ -96,8 +96,12 @@ async def test_retention_actually_drops_old_chunks(hass, clean_db):
     w = make_writer(hass, retention_states="30 days", chunk_interval="1 day")
     await w.start()
     try:
-        # Chunks well outside the window, and one inside it. BASE_TIME is a
-        # couple of weeks in the past, so "recent" sits inside 30 days.
+        # Chunks well outside the window, and one inside it. The window is
+        # measured from *now*, so the surviving rows are anchored to the clock
+        # rather than to BASE_TIME: a fixed date silently walks out of a
+        # 30-day window as time passes, and this assertion started failing on
+        # its own once BASE_TIME was more than 30 days old.
+        recent = datetime.now(timezone.utc) - timedelta(days=1)
         for i in range(3):
             w._queue.append(
                 {
@@ -110,7 +114,18 @@ async def test_retention_actually_drops_old_chunks(hass, clean_db):
                 }
             )
         await w._flush()
-        await write_states(w, "sensor.recent", 3)
+        for i in range(3):
+            w._queue.append(
+                {
+                    "type": "state",
+                    "time": recent + timedelta(seconds=i),
+                    "entity_id": "sensor.recent",
+                    "state": f"s{i}",
+                    "value": float(i),
+                    "attributes": {},
+                }
+            )
+        await w._flush()
 
         async with w._pool.acquire() as conn:
             job_id = await conn.fetchval(
